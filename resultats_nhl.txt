@@ -1,0 +1,64 @@
+Match : Los Angeles Kings - New York Islanders (06.03. 03:30)
+  goal dom: Kuemper D.
+  goal ext: Sorokin I.
+  f1 dom: Doughty D., Anderson M., Kempe A., Kopitar A., Panarin A.
+  f1 ext: Pulock R., Schaefer M., Barzal M., Horvat B., Palat O.
+  f2 dom: Clarke B., Edmundson J., Laferriere A., Turcotte A., Moore T.
+  f2 ext: DeAngelo A., Pelech A., Heineman E., Ritchie C., Drouin J.
+----------------------------------------
+Match : Calgary Flames - Ottawa Senators (06.03. 03:00)
+  goal dom: Cooley D.
+  goal ext: Ullmark L.
+  f1 dom: Whitecloud Z., Bahl K., Farabee J., Kadri N., Zary C.
+  f1 ext: Zub A., Sanderson J., Giroux C., Stutzle T., Batherson D.
+  f2 dom: Parekh Z., Kuznetsov Y., Coronato M., Backlund M., Coleman B.
+  f2 ext: Jensen N., Chabot T., Greig R., Cozens D., Tkachuk B.
+----------------------------------------
+Match : Nashville Predators - Boston Bruins (06.03. 02:00)
+  goal dom: Saros J.
+  goal ext: Korpisalo J.
+  f1 dom: Josi R., Skjei B., Evangelista L., Haula E., Forsberg F.
+  f1 ext: McAvoy C., Harris J., Pastrnak D., Lindholm E., Khusnutdinov M.
+  f2 dom: Perbix N., Hague N., Marchessault J., Svechkov F., Stamkos S.
+  f2 ext: Lohrei M., Lindholm H., Arvidsson V., Zacha P., Mittelstadt C.
+----------------------------------------
+Match : Winnipeg Jets - Tampa Bay Lightning (06.03. 02:00)
+  goal dom: Hellebuyck C.
+  goal ext: Vasilevski A.
+  f1 dom: Salomonsson E., Samberg D., Iafallo A., Scheifele M., Connor K.
+  f1 ext: Raddysh D., Moser J.J., Kucherov N., Point B., Guentzel J.
+  f2 dom: DeMelo D., Heinola V., Vilardi G., Lowry A., Perfetti C.
+  f2 ext: Hedman V., D'Astous C., Bjorkstrand O., Cirelli A., Hagel B.
+----------------------------------------
+Match : Columbus Blue Jackets - Florida Panthers (06.03. 01:00)
+  goal dom: Greaves J.
+  goal ext: Tarasov D.
+  f1 dom: Severson D., Mateychuk D., Marchenko K., Fantilli A., Marchment M.
+  f1 ext: Ekblad A., Forsling G., Reinhart S., Lundell A., Vilmanis S.
+  f2 dom: Provorov I., Zamula Y., Jenner B., Monahan S., Johnson K.
+  f2 ext: Kulikov D., Mikkola N., Tkachuk M., Bennett S., Verhaeghe C.
+----------------------------------------
+Match : New York Rangers - Toronto Maple Leafs (06.03. 01:00)
+  goal dom: Shesterkin I.
+  goal ext: Woll J.
+  f1 dom: Fox A., Gavrikov V., Perreault G., Zibanejad M., Cuylle W.
+  f1 ext: Carlo B., Rielly M., Nylander W., Matthews A., Cowan E.
+  f2 dom: Borgen W., Schneider B., Lafreniere A., Brodzinski J., Raddysh T.
+  f2 ext: Stecher T., McCabe J., Domi M., Tavares J., Knies M.
+----------------------------------------
+Match : Philadelphia Flyers - Utah Mammoth (06.03. 01:00)
+  goal dom: Vladar D.
+  goal ext: Vanecek V.
+  f1 dom: Ristolainen R., Sanheim T., Tippett O., Dvorak C., Zegras T.
+  f1 ext: Durzi S., Simashev D., Guenther D., Schmaltz N., Keller C.
+  f2 dom: Drysdale J., York C., Brink B., Cates N., Michkov M.
+  f2 ext: Marino J., Schmidt N., Crouse L., Cooley L., Peterka J.
+----------------------------------------
+Match : Pittsburgh Penguins - Buffalo Sabres (06.03. 01:00)
+  goal dom: Silovs A.
+  goal ext: Luukkonen U.
+  f1 dom: Karlsson E., Wotherspoon P., Malkin E., Novak T., Chinakhov Y.
+  f1 ext: Dahlin R., Samuelsson M., Tuch A., Thompson T., Krebs P.
+  f2 dom: Letang K., Girard S., Rust B., Rakell R., Hayes A.
+  f2 ext: Power O., Byram B., Quinn J., McLeod R., Zucker J.
+----------------------------------------
