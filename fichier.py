@@ -140,4 +140,4 @@ if __name__ == "__main__":
     for url, name, is_player in jobs:
         process_nst_file(url, name, is_player)
 
-    logger.info(f"\n🚀 TOUS LES FICHIERS SONT DANS LE DOSSIER : {os.path.abspath(FOLDER_NAME)}")
+    logger.info(f"\n TOUS LES FICHIERS SONT DANS LE DOSSIER : {os.path.abspath(FOLDER_NAME)}")

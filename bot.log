@@ -140,3 +140,321 @@
 2026-03-09 19:33:06,879 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
 2026-03-09 19:33:06,880 - NHL_Bot - INFO -    1 vague(s) détectée(s) pour ce soir.
 2026-03-09 19:33:07,248 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 19:44:40,189 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:44:40,190 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 19:44:40,190 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 19:44:40,190 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 19:44:40,190 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 19:44:40,191 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:44:40,191 - NHL_Bot - INFO - 
+[19:44:40] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 19:44:42,030 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 19:44:50,788 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 19:44:53,080 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 19:45:11,614 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 19:45:13,938 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 19:45:21,192 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 19:45:23,443 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 19:45:39,848 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 19:45:42,148 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 19:45:59,643 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 19:46:02,287 - NHL_Bot - INFO - [19:46:02] Fichiers NST mis à jour avec succès !
+2026-03-09 19:46:02,288 - NHL_Bot - INFO - 
+[19:46:02]  Lancement de la routine de scan Flashscore...
+2026-03-09 19:46:10,715 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 19:46:25,982 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 19:46:25,982 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 19:46:38,549 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:46:38,549 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 19:46:51,139 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:46:51,140 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 19:47:02,446 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 19:47:02,447 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 19:47:18,269 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 19:47:18,270 - NHL_Bot - INFO -    1 vague(s) détectée(s) pour ce soir.
+2026-03-09 19:47:18,556 - NHL_Bot - INFO - ERREUR CRITIQUE : 'NoneType' object has no attribute 'get'
+2026-03-09 19:47:18,557 - NHL_Bot - INFO - Redémarrage dans 5 minutes...
+2026-03-09 19:49:01,495 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:49:01,495 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 19:49:01,495 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 19:49:01,495 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 19:49:01,495 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 19:49:01,496 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:49:01,496 - NHL_Bot - INFO - 
+[19:49:01] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 19:49:02,943 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 19:49:11,537 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 19:49:13,663 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 19:49:32,717 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 19:49:35,002 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 19:49:42,547 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 19:49:44,824 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 19:50:00,541 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 19:50:02,840 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 19:50:20,506 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 19:50:23,165 - NHL_Bot - INFO - [19:50:23] Fichiers NST mis à jour avec succès !
+2026-03-09 19:50:23,165 - NHL_Bot - INFO - 
+[19:50:23]  Lancement de la routine de scan Flashscore...
+2026-03-09 19:50:33,210 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 19:51:00,792 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:51:00,792 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 19:51:00,792 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 19:51:00,792 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 19:51:00,793 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 19:51:00,793 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:51:00,793 - NHL_Bot - INFO - 
+[19:51:00] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 19:51:02,600 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 19:51:11,237 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 19:51:13,426 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 19:51:33,156 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 19:51:35,587 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 19:51:43,174 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 19:51:45,482 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 19:52:06,204 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 19:52:09,140 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 19:52:32,505 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 19:52:34,997 - NHL_Bot - INFO - 
+ TOUS LES FICHIERS SONT DANS LE DOSSIER : C:\Users\2507m\Desktop\Milan\code\bet\stats
+2026-03-09 19:52:35,649 - NHL_Bot - INFO - [19:52:35] Fichiers NST mis à jour avec succès !
+2026-03-09 19:52:35,650 - NHL_Bot - INFO - 
+[19:52:35]  Lancement de la routine de scan Flashscore...
+2026-03-09 19:52:46,913 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 19:53:03,085 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:53:03,086 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 19:53:16,966 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:53:16,967 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 19:53:31,137 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:53:31,138 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 19:53:47,216 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 19:53:47,217 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 19:54:07,724 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 19:54:07,726 - NHL_Bot - INFO -    2 vague(s) détectée(s) pour ce soir.
+2026-03-09 19:54:07,727 - NHL_Bot - INFO -    Vague 21:00 : toutes les compos sont là   ENVOI !
+2026-03-09 19:54:07,727 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 21:00 (1 matchs) ---
+2026-03-09 19:54:08,181 - NHL_Bot - INFO - ERREUR CRITIQUE : 'NoneType' object has no attribute 'get'
+2026-03-09 19:54:08,187 - NHL_Bot - INFO - Redémarrage dans 5 minutes...
+2026-03-09 19:56:27,928 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:56:27,929 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 19:56:27,929 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 19:56:27,930 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 19:56:27,930 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 19:56:27,930 - NHL_Bot - INFO - =====================================================
+2026-03-09 19:56:27,930 - NHL_Bot - INFO - 
+[19:56:27] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 19:56:30,902 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 19:56:40,711 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 19:56:43,147 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 19:57:06,363 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 19:57:08,655 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 19:57:16,687 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 19:57:19,137 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 19:57:41,573 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 19:57:44,126 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 19:58:11,698 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 19:58:14,360 - NHL_Bot - INFO - 
+ TOUS LES FICHIERS SONT DANS LE DOSSIER : C:\Users\2507m\Desktop\Milan\code\bet\stats
+2026-03-09 19:58:15,173 - NHL_Bot - INFO - [19:58:15] Fichiers NST mis à jour avec succès !
+2026-03-09 19:58:15,177 - NHL_Bot - INFO - 
+[19:58:15]  Lancement de la routine de scan Flashscore...
+2026-03-09 19:58:30,618 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 19:58:50,235 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:58:50,235 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 19:59:06,809 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:59:06,810 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 19:59:22,636 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 19:59:22,637 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 19:59:41,542 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 19:59:41,543 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 20:00:03,198 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:00:03,199 - NHL_Bot - INFO -    2 vague(s) détectée(s) pour ce soir.
+2026-03-09 20:00:03,200 - NHL_Bot - INFO -    Vague 21:00 : toutes les compos sont là   ENVOI !
+2026-03-09 20:00:03,200 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 21:00 (1 matchs) ---
+2026-03-09 20:00:03,639 - NHL_Bot - INFO - ERREUR CRITIQUE : 'NoneType' object has no attribute 'get'
+2026-03-09 20:00:03,641 - NHL_Bot - INFO - Redémarrage dans 5 minutes...
+2026-03-09 20:02:16,959 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:02:16,960 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 20:02:16,960 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 20:02:16,960 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 20:02:16,960 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 20:02:16,961 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:02:16,961 - NHL_Bot - INFO - 
+[20:02:16] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 20:02:19,319 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 20:02:28,146 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 20:02:30,358 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 20:02:55,737 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 20:02:58,060 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 20:03:05,227 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 20:03:07,482 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 20:03:23,553 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 20:03:25,852 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 20:03:41,950 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 20:03:44,243 - NHL_Bot - INFO - 
+ TOUS LES FICHIERS SONT DANS LE DOSSIER : C:\Users\2507m\Desktop\Milan\code\bet\stats
+2026-03-09 20:03:44,606 - NHL_Bot - INFO - [20:03:44] Fichiers NST mis à jour avec succès !
+2026-03-09 20:03:44,606 - NHL_Bot - INFO - 
+[20:03:44]  Lancement de la routine de scan Flashscore...
+2026-03-09 20:03:53,343 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 20:04:06,286 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:04:06,287 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 20:04:18,494 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:04:18,495 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 20:04:30,400 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:04:30,401 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 20:04:43,291 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:04:43,292 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 20:04:57,317 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:04:57,317 - NHL_Bot - INFO -    2 vague(s) détectée(s) pour ce soir.
+2026-03-09 20:04:57,318 - NHL_Bot - INFO -    Vague 21:00 : toutes les compos sont là   ENVOI !
+2026-03-09 20:04:57,318 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 21:00 (1 matchs) ---
+2026-03-09 20:04:57,644 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 21:00 ===
+2026-03-09 20:04:57,854 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:04:57,857 - NHL_Bot - INFO -    Vague 00:00   00:00 (2 matchs) : toutes les compos sont là   ENVOI !
+2026-03-09 20:04:57,857 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 00:00   00:00 (2 matchs) (2 matchs) ---
+2026-03-09 20:04:58,038 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 00:00   00:00 (2 matchs) ===
+2026-03-09 20:04:58,168 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:06:53,922 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:06:53,922 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 20:06:53,923 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 20:06:53,923 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 20:06:53,923 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 20:06:53,923 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:06:53,923 - NHL_Bot - INFO - 
+[20:06:53] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 20:06:55,006 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 20:07:03,095 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 20:07:05,252 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 20:07:20,678 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 20:07:22,914 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 20:07:29,670 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 20:07:31,827 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 20:07:45,519 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 20:07:47,693 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 20:08:01,222 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 20:08:03,486 - NHL_Bot - INFO - 
+ TOUS LES FICHIERS SONT DANS LE DOSSIER : C:\Users\2507m\Desktop\Milan\code\bet\stats
+2026-03-09 20:08:03,645 - NHL_Bot - INFO - [20:08:03] Fichiers NST mis à jour avec succès !
+2026-03-09 20:08:03,646 - NHL_Bot - INFO - 
+[20:08:03]  Lancement de la routine de scan Flashscore...
+2026-03-09 20:08:10,198 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 20:08:19,472 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:08:19,472 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 20:08:30,087 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:08:30,087 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 20:08:40,273 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:08:40,273 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 20:08:49,597 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:08:49,597 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 20:09:00,038 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:09:00,038 - NHL_Bot - INFO -    2 vague(s) détectée(s) pour ce soir.
+2026-03-09 20:09:00,039 - NHL_Bot - INFO -    Vague 21:00 : toutes les compos sont là   ENVOI !
+2026-03-09 20:09:00,039 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 21:00 (1 matchs) ---
+2026-03-09 20:09:00,172 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 21:00 ===
+2026-03-09 20:09:00,379 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:09:00,380 - NHL_Bot - INFO -    Vague 00:00   00:00 (2 matchs) : toutes les compos sont là   ENVOI !
+2026-03-09 20:09:00,380 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 00:00   00:00 (2 matchs) (2 matchs) ---
+2026-03-09 20:09:00,504 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 00:00   00:00 (2 matchs) ===
+2026-03-09 20:09:00,684 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:12:23,483 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:12:23,483 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 20:12:23,484 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 20:12:23,484 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 20:12:23,484 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 20:12:23,484 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:12:23,484 - NHL_Bot - INFO - 
+[20:12:23] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 20:12:24,391 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 20:12:32,798 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 20:12:34,923 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 20:12:49,360 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 20:12:51,565 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 20:12:58,400 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 20:13:00,623 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 20:13:13,852 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 20:13:16,067 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 20:13:29,613 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 20:13:31,778 - NHL_Bot - INFO - 
+ TOUS LES FICHIERS SONT DANS LE DOSSIER : C:\Users\2507m\Desktop\Milan\code\bet\stats
+2026-03-09 20:13:31,948 - NHL_Bot - INFO - [20:13:31] Fichiers NST mis à jour avec succès !
+2026-03-09 20:13:31,948 - NHL_Bot - INFO - 
+[20:13:31]  Lancement de la routine de scan Flashscore...
+2026-03-09 20:13:38,717 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 20:13:48,242 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:13:48,242 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 20:13:57,628 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:13:57,628 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 20:14:07,962 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:14:07,962 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 20:14:17,918 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:14:17,918 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 20:14:27,966 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:14:27,966 - NHL_Bot - INFO -    2 vague(s) détectée(s) pour ce soir.
+2026-03-09 20:14:27,966 - NHL_Bot - INFO -    Vague 21:00 : toutes les compos sont là   ENVOI !
+2026-03-09 20:14:27,966 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 21:00 (1 matchs) ---
+2026-03-09 20:14:28,091 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 21:00 ===
+2026-03-09 20:14:28,262 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:14:28,262 - NHL_Bot - INFO -    Vague 00:00   00:00 (2 matchs) : toutes les compos sont là   ENVOI !
+2026-03-09 20:14:28,262 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 00:00   00:00 (2 matchs) (2 matchs) ---
+2026-03-09 20:14:28,393 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 00:00   00:00 (2 matchs) ===
+2026-03-09 20:14:28,530 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:15:53,402 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:15:53,403 - NHL_Bot - INFO -   DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  
+2026-03-09 20:15:53,403 - NHL_Bot - INFO -  Scan toutes les 15 min — envoi par vague horaire  
+2026-03-09 20:15:53,403 - NHL_Bot - INFO -  Écart max dans une vague : 15 min                 
+2026-03-09 20:15:53,403 - NHL_Bot - INFO -  Force envoi si < 5 min avant le 1er match        
+2026-03-09 20:15:53,403 - NHL_Bot - INFO - =====================================================
+2026-03-09 20:15:53,403 - NHL_Bot - INFO - 
+[20:15:53] MISE À JOUR AUTOMATIQUE NST EN COURS...
+2026-03-09 20:15:54,609 - NHL_Bot - INFO -  Extraction : team.csv...
+2026-03-09 20:16:03,692 - NHL_Bot - INFO -  Terminé : stats\team.csv
+2026-03-09 20:16:05,964 - NHL_Bot - INFO -  Extraction : Player Season Totals.csv...
+2026-03-09 20:16:25,346 - NHL_Bot - INFO -  Terminé : stats\Player Season Totals.csv
+2026-03-09 20:16:27,628 - NHL_Bot - INFO -  Extraction : match.csv...
+2026-03-09 20:16:34,698 - NHL_Bot - INFO -  Terminé : stats\match.csv
+2026-03-09 20:16:36,948 - NHL_Bot - INFO -  Extraction : last 10.csv...
+2026-03-09 20:16:53,135 - NHL_Bot - INFO -  Terminé : stats\last 10.csv
+2026-03-09 20:16:55,369 - NHL_Bot - INFO -  Extraction : power play.csv...
+2026-03-09 20:17:12,917 - NHL_Bot - INFO -  Terminé : stats\power play.csv
+2026-03-09 20:17:15,219 - NHL_Bot - INFO - 
+ TOUS LES FICHIERS SONT DANS LE DOSSIER : C:\Users\2507m\Desktop\Milan\code\bet\stats
+2026-03-09 20:17:15,468 - NHL_Bot - INFO - [20:17:15] Fichiers NST mis à jour avec succès !
+2026-03-09 20:17:15,469 - NHL_Bot - INFO - 
+[20:17:15]  Lancement de la routine de scan Flashscore...
+2026-03-09 20:17:23,606 - NHL_Bot - INFO -    Vérification compo : Columbus Blue Jackets - Los Angeles Kings...
+2026-03-09 20:17:36,679 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:17:36,680 - NHL_Bot - INFO -    Vérification compo : Philadelphia Flyers - New York Rangers...
+2026-03-09 20:17:49,576 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:17:49,576 - NHL_Bot - INFO -    Vérification compo : Washington Capitals - Calgary Flames...
+2026-03-09 20:18:02,214 - NHL_Bot - INFO -     COMPO TROUVÉE ! Mise en mémoire.
+2026-03-09 20:18:02,215 - NHL_Bot - INFO -    Vérification compo : Chicago Blackhawks - Utah Mammoth...
+2026-03-09 20:18:14,359 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:18:14,359 - NHL_Bot - INFO -    Vérification compo : Vancouver Canucks - Ottawa Senators...
+2026-03-09 20:18:29,256 - NHL_Bot - INFO -    compo incomplète ou pub détectée — On réessaiera au prochain cycle.
+2026-03-09 20:18:29,257 - NHL_Bot - INFO -    2 vague(s) détectée(s) pour ce soir.
+2026-03-09 20:18:29,258 - NHL_Bot - INFO -    Vague 21:00 : toutes les compos sont là   ENVOI !
+2026-03-09 20:18:29,258 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 21:00 (1 matchs) ---
+2026-03-09 20:18:29,520 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 21:00 ===
+2026-03-09 20:18:29,685 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !
+2026-03-09 20:18:29,687 - NHL_Bot - INFO -    Vague 00:00   00:00 (2 matchs) : toutes les compos sont là   ENVOI !
+2026-03-09 20:18:29,687 - NHL_Bot - INFO - 
+---  ANALYSE VAGUE 00:00   00:00 (2 matchs) (2 matchs) ---
+2026-03-09 20:18:29,905 - NHL_Bot - INFO - 
+=== RÉSULTATS VAGUE 00:00   00:00 (2 matchs) ===
+2026-03-09 20:18:30,025 - NHL_Bot - INFO - Alerte Telegram envoyée avec succès !

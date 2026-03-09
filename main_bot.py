@@ -89,8 +89,8 @@ def build_waves(match_ids_in_memory):
     """
     Regroupe les match_ids par vague :
     - On trie par heure de match
-    - Si l'écart entre deux matchs consécutifs est < 15 min → même vague
-    - Sinon → nouvelle vague
+    - Si l'écart entre deux matchs consécutifs est < 15 min   même vague
+    - Sinon   nouvelle vague
     
     Retourne une liste de listes : [ [id1, id2], [id3], [id4, id5, id6] ]
     Chaque sous-liste = une vague.
@@ -156,14 +156,14 @@ def is_wave_complete(wave_match_ids, all_scheduled_matches):
         if window_start <= m_dt <= window_end:
             # A-t-il sa compo en mémoire ?
             if m["id"] not in COMPOS_EN_MEMOIRE:
-                return False  # Compo manquante → vague incomplète
+                return False  # Compo manquante   vague incomplète
 
     return True  # Toutes les compos sont là !
 
 def should_force_send(wave_match_ids):
     """
     Retourne True si on est à moins de FORCE_ENVOI_MIN_AVANT minutes
-    du 1er match de la vague → on envoie même si des compos manquent.
+    du 1er match de la vague   on envoie même si des compos manquent.
     """
     first_dt = parse_match_datetime(COMPOS_EN_MEMOIRE[wave_match_ids[0]]["match_info"]["time"])
     if not first_dt:
@@ -216,7 +216,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     Lance l'analyse predictor_v8 sur un ensemble de matchs et envoie le Telegram.
     Paramètres :
       - match_ids_for_wave : liste des match_ids de la vague
-      - wave_label         : label lisible pour les logs (ex: "01:00 → 01:10 (3 matchs)")
+      - wave_label         : label lisible pour les logs (ex: "01:00   01:10 (3 matchs)")
     """
     nb_matchs = len(match_ids_for_wave)
     logger.info(f"\n---  ANALYSE VAGUE {wave_label} ({nb_matchs} matchs) ---")
@@ -334,15 +334,15 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     tg_message = f"🎯 <b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b> 🎯\n\n"
 
     for i, r in enumerate(final_top10):
-        if   r["Score"] >= 7.5: reco = "🔥 <b>ELITE</b>"
-        elif r["Score"] >= 5.5: reco = "✅ <b>JOUABLE</b>"
-        elif r["Score"] >= 3.5: reco = "⚠️ <i>RISQUÉ</i>"
+        if   r["Score"] >= 9.0: reco = "🔥 <b>ELITE</b>"
+        elif r["Score"] >= 7.0: reco = "✅ <b>JOUABLE</b>"
+        elif r["Score"] > 5.5: reco = "☑️ <i> JOUABLE MAIS AVEC RISQUE</i>"
+        elif r["Score"] >= 5.0: reco = "⚠️ <i>RISQUÉ</i>"
         else:                   reco = "❌ À ÉVITER"
 
         team_full = predictor_v8.REVERSE_TEAM_MAPPING.get(r['Equipe'], r['Equipe'])
         adv_full  = predictor_v8.REVERSE_TEAM_MAPPING.get(r['Adversaire'], r['Adversaire'])
 
-        logger.info(f"{i+1:2d}. {r['Joueur']:<20} | {team_full} vs {adv_full} | Score: {r['Score']:>4} | {reco}")
 
         tg_message += f"<b>{i+1}. {r['Joueur']}</b> {r['PP1']} {r['Tag']}\n"
         tg_message += f"🏒 <i>{team_full} vs {adv_full}</i>\n"
@@ -383,7 +383,7 @@ def bot_routine():
         else:
             logger.info(f"   {compo} — On réessaiera au prochain cycle.")
 
-    # 3. Pas de compos en mémoire → rien à faire
+    # 3. Pas de compos en mémoire   rien à faire
     if not COMPOS_EN_MEMOIRE:
         logger.info("   Aucune compo en mémoire. En attente...")
         return
@@ -396,19 +396,19 @@ def bot_routine():
     for wave in waves:
         wave_key = get_wave_key(wave)
 
-        # Déjà envoyée → on skip
+        # Déjà envoyée   on skip
         if wave_key in VAGUES_ENVOYEES:
             continue
 
         # Infos lisibles pour les logs
         heures = [COMPOS_EN_MEMOIRE[mid]["match_info"]["time"].split(" ")[1] for mid in wave]
-        wave_label = f"{heures[0]}" if len(heures) == 1 else f"{heures[0]} → {heures[-1]} ({len(wave)} matchs)"
+        wave_label = f"{heures[0]}" if len(heures) == 1 else f"{heures[0]}   {heures[-1]} ({len(wave)} matchs)"
 
         complete  = is_wave_complete(wave, matches_du_jour)
         force_now = should_force_send(wave)
 
         if complete:
-            logger.info(f"   Vague {wave_label} : toutes les compos sont là → ENVOI !")
+            logger.info(f"   Vague {wave_label} : toutes les compos sont là   ENVOI !")
             run_analysis_and_send(wave, wave_label)
             VAGUES_ENVOYEES.add(wave_key)
 
@@ -421,7 +421,7 @@ def bot_routine():
             ]
             logger.info(
                 f"   Vague {wave_label} : compo(s) manquante(s) mais "
-                f"<{FORCE_ENVOI_MIN_AVANT} min avant le match → ENVOI FORCÉ !"
+                f"<{FORCE_ENVOI_MIN_AVANT} min avant le match   ENVOI FORCÉ !"
             )
             run_analysis_and_send(wave, wave_label + " ⚠️forcé")
             VAGUES_ENVOYEES.add(wave_key)
