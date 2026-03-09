@@ -31,8 +31,16 @@ logger.addHandler(stream_handler)
 # ==========================================
 # CONFIGURATION TELEGRAM
 # ==========================================
-TELEGRAM_BOT_TOKEN = "8798595273:AAFP4sn1ku4CLwaI0H0gJkn8ZLh2YYZimmw"
-TELEGRAM_CHAT_ID = "-1003823875034"
+import os
+from dotenv import load_dotenv
+
+# Charge les variables du fichier .env
+load_dotenv()
+
+# Récupère les variables
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BRAVE_PATH = os.getenv("BRAVE_PATH")
 
 def send_telegram_message(message):
     if TELEGRAM_BOT_TOKEN == "TELEGRAM_BOT_TOKEN" or not TELEGRAM_BOT_TOKEN:

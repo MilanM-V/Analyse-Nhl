@@ -29,7 +29,16 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 # Configuration
-BRAVE_PATH = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+import os
+from dotenv import load_dotenv
+
+# Charge les variables du fichier .env
+load_dotenv()
+
+# Récupère les variables
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BRAVE_PATH = os.getenv("BRAVE_PATH")
 FOLDER_NAME = "stats"
 
 # Création du dossier stats s'il n'existe pas
