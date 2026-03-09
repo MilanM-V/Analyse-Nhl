@@ -26,7 +26,6 @@ def get_driver(show_browser=False):
         options.add_argument("--headless") 
 
     service = Service(log_output=os.devnull)
-    service.creation_flags = 0x08000000 
     return webdriver.Chrome(options=options, service=service)
 
 def is_valid_lineup(player_list):

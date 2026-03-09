@@ -99,6 +99,9 @@ def load_recent_form(filepath):
             'L10_G_G': float(row.get('Goals', 0)) / gp,
             'L10_SOG_G': float(row.get('Shots', 0)) / gp,
             'L10_TOI': toi,
+            'L10_ixG_G': float(row.get('ixG', 0)) / gp,
+            'L10_iSCF_G':  float(row.get('iSCF', 0)) / gp,
+            'L10_iHDCF_G': float(row.get('iHDCF', 0)) / gp,
             'ATOI': toi / gp 
         }
     return form_dict
@@ -116,6 +119,8 @@ def load_matchup_data(filepath):
             matchup_dict[team_abbr] = {
                 'GA_G': float(row.get('GA', 0)) / gp,
                 'SA_G': float(row.get('SA', 0)) / gp,
+                'CA_G':  float(row.get('CA', 0)) / gp,   
+                'CF_pct': float(row.get('CF%', 50.0)),
                 'PK%': pk_pct
             }
     return matchup_dict
@@ -150,7 +155,9 @@ def check_if_backup_goalie(goalie_name, v5_stats, form_dict):
     if not g_form and not g_season: return False
     l10_gp = g_form.get('L10_GP', 0) if g_form else 0
     season_gp = g_season.get('GP', 0) if g_season else 0
-    return l10_gp < 4 and season_gp < 35
+    if season_gp == 0: return False
+    games_pct = l10_gp / min(season_gp, 10)  # Part des 10 derniers matchs joués
+    return games_pct < 0.3 and season_gp < 40
 
 def parse_flashscore_file(filepath, known_players):
     matches = []
@@ -205,44 +212,92 @@ def parse_flashscore_file(filepath, known_players):
 # 4. LE CERVEAU DE CALCUL MASTERCLASS
 # ==========================================
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate):
-    qs = 3.5 
-    
-    oish = v5_stats.get('oiSH', 10.0)
-    pdo = v5_stats.get('PDO', 100.0)
-    g_gp = v5_stats.get('G_GP', 0.20) 
-    
-    if g_gp < 0.18: return -99.0 
+    qs = 3.5
+
+    # --- Stats joueur ---
+    oish     = v5_stats.get('oiSH', 10.0)
+    pdo      = v5_stats.get('PDO', 100.0)
+    g_gp     = v5_stats.get('G_GP', 0.20)
+    hdcf     = p_form.get('L10_iHDCF_G', 0.0)
+    scf      = p_form.get('L10_iSCF_G', 0.0)
+    l10_g    = p_form.get('L10_G_G', 0.0)
+    season_g = v5_stats.get('G_GP', 0.0)
+    ixg      = p_form.get('L10_ixG_G', 0.0)
+    atoi     = p_form.get('ATOI', 0.0)
+
+    # --- Stats adversaire : extraites UNE SEULE FOIS avec valeurs par défaut
+    # opp_stats peut être None si l'équipe est absente de team.csv (ex: Utah)
+    _opp   = opp_stats or {}
+    cf_pct = _opp.get('CF_pct', 50.0)
+    pk_pct = _opp.get('PK%',    80.0)
+    ga_g   = _opp.get('GA_G',    2.7)
+    sa_g   = _opp.get('SA_G',   28.0)
+
+    # --- Filtres éliminatoires ---
+    if g_gp < 0.18: return -99.0
     pos = str(v5_stats.get('Position', '')).strip()
-    if pos == 'D' or 'D' in pos: return -99.0 
-    if oish > 14.0: return -99.0 
-    
-    if pdo < 96.0: qs += 2.0  
-    elif pdo < 98.0: qs += 1.0 
-        
+    if pos in ('D', 'LD', 'RD'): return -99.0
+
+    # --- oiSH% : pénalité progressive ---
+    if oish > 16.0: qs -= 2.0
+    elif oish > 14.0: qs -= 1.0
+
+    # --- Qualité des tirs (iHDCF, iSCF) ---
+    if hdcf >= 1.5:  qs += 2.0
+    elif hdcf >= 1.0: qs += 1.0
+    if scf >= 4.0: qs += 1.0
+
+    # --- Matchup défensif (CF% adverse) ---
+    if cf_pct >= 54.0:   qs -= 1.5
+    elif cf_pct >= 52.0: qs -= 0.5
+    elif cf_pct <= 46.0: qs += 1.5
+    elif cf_pct <= 48.0: qs += 0.5
+
+    # --- PDO (chance en cours de saison) ---
+    if pdo < 96.0: qs += 2.0
+    elif pdo < 98.0: qs += 1.0
+
+    # --- Contexte ---
     if is_home: qs += 0.5
     if has_star_linemate: qs += 0.5
 
+    # --- PP1 dynamique ---
     if is_pp1:
-        pk_pct = opp_stats.get('PK%', 80.0) if opp_stats else 80.0
-        if pk_pct < 77.0: qs += 3.0 
-        elif pk_pct > 83.0: qs += 1.0 
-        else: qs += 2.0 
-        
-    atoi = p_form['ATOI']
-    if atoi >= 18.5: qs += 3.0 
+        if pk_pct < 77.0: qs += 3.0
+        elif pk_pct > 83.0: qs += 1.0
+        else: qs += 2.0
+
+    # --- Streak : ratio L10 / saison ---
+    if season_g > 0:
+        ratio = l10_g / season_g
+        if ratio >= 2.0:   qs += 2.5
+        elif ratio >= 1.5: qs += 1.5
+        elif ratio <= 0.3: qs -= 2.0
+        elif ratio <= 0.5: qs -= 1.0
+
+    # --- Ice time ---
+    if atoi >= 18.5: qs += 3.0
     elif atoi >= 17.0: qs += 1.0
-    
-    if p_form['L10_SOG_G'] >= 3.0: qs += 1.5
-    if p_form['L10_G_G'] >= 0.4: qs += 2.0
-    elif p_form['L10_G_G'] <= 0.05: qs -= 1.0 
-            
-    if opp_stats:
-        ga_g = opp_stats['GA_G']
-        if ga_g >= 3.00: qs += 2.5 
-        elif ga_g >= 2.80: qs += 1.0 
-        elif ga_g < 2.50: qs -= 0.5 
-            
-        if opp_stats['SA_G'] >= 30.0 and p_form['L10_SOG_G'] >= 2.5: 
-            qs += 1.0 
+
+    # --- ixG (qualité des chances créées) ---
+    if ixg >= 0.55:   qs += 3.0
+    elif ixg >= 0.40: qs += 2.0
+    elif ixg >= 0.28: qs += 1.0
+    elif ixg <= 0.12: qs -= 1.5
+    ixg_bonus = 3.0 if ixg >= 0.55 else (2.0 if ixg >= 0.40 else (1.0 if ixg >= 0.28 else (-1.5 if ixg <= 0.12 else 0)))
+    goals_bonus = min(1.0, l10_g * 2.5)  # Bonus continu au lieu de paliers brusques
+    qs += max(ixg_bonus, goals_bonus)
+    # --- Volume de tirs & buts récents ---
+    if p_form.get('L10_SOG_G', 0.0) >= 3.0: qs += 1.5
+    if l10_g >= 0.4:   qs += 1.0
+    elif l10_g <= 0.05: qs -= 0.5
+
+    # --- Défense adverse (GA/G, volume de tirs) ---
+    if ga_g >= 3.00:   qs += 2.5
+    elif ga_g >= 2.80: qs += 1.0
+    elif ga_g < 2.50:  qs -= 0.5
+
+    if sa_g >= 30.0 and p_form.get('L10_SOG_G', 0.0) >= 2.5:
+        qs += 1.0
 
     return qs

@@ -8,7 +8,26 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime, timedelta
 from selenium.webdriver.chrome.service import Service
+import logging
+from logging.handlers import RotatingFileHandler
 
+# Configuration du logging
+logger = logging.getLogger("NHL_Bot")
+logger.setLevel(logging.INFO)
+
+# Formateur : Date - Nom - Niveau - Message
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Handler pour le fichier (5 Mo max, 5 fichiers de backup)
+file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5)
+file_handler.setFormatter(formatter)
+
+# Handler pour la console (pour voir les messages en direct)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 # --- CONFIGURATION ---
 BRAVE_PATH = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
 FILE_NAME = "resultats_nhl.txt"
@@ -111,18 +130,18 @@ def get_lineups(match_id):
 # --- EXECUTION ET ECRITURE ---
 if __name__ == "__main__":
     URL_RES = "https://www.flashscore.fr/hockey/usa/nhl/resultats/"
-    print("--- DEBUT DU SCAN NHL ---")
+    logger.info("--- DEBUT DU SCAN NHL ---")
     matches = get_past_matches(URL_RES)
 
     if not matches:
-        print("Aucun match trouvé pour la nuit dernière.")
+        logger.info("Aucun match trouvé pour la nuit dernière.")
     else:
-        print(f"{len(matches)} matchs trouvés. Analyse en cours...")
+        logger.info(f"{len(matches)} matchs trouvés. Analyse en cours...")
         
         # 'w' pour écraser le fichier à chaque lancement, 'encoding' pour les accents
         with open(FILE_NAME, "w", encoding="utf-8") as f:
             for m in matches:
-                print(f"Extraction : {m['home']} vs {m['away']}...")
+                logger.info(f"Extraction : {m['home']} vs {m['away']}...")
                 c = get_lineups(m['id'])
                 
                 if c:
@@ -138,9 +157,9 @@ if __name__ == "__main__":
                         f"{'-'*40}\n"
                     )
                     f.write(output)
-                    print("  ✅ Match ajouté au fichier.")
+                    logger.info("   Match ajouté au fichier.")
                 else:
-                    print(f"  ❌ Compo non disponible pour {m['home']}.")
+                    logger.info(f"   Compo non disponible pour {m['home']}.")
         
-        print(f"\n--- TERMINE ---")
-        print(f"Le fichier '{FILE_NAME}' a été mis à jour dans le dossier du script.")
+        logger.info(f"\n--- TERMINE ---")
+        logger.info(f"Le fichier '{FILE_NAME}' a été mis à jour dans le dossier du script.")

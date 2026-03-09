@@ -8,7 +8,26 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import logging
+from logging.handlers import RotatingFileHandler
 
+# Configuration du logging
+logger = logging.getLogger("NHL_Bot")
+logger.setLevel(logging.INFO)
+
+# Formateur : Date - Nom - Niveau - Message
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Handler pour le fichier (5 Mo max, 5 fichiers de backup)
+file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5)
+file_handler.setFormatter(formatter)
+
+# Handler pour la console (pour voir les messages en direct)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 # Configuration
 BRAVE_PATH = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
 FOLDER_NAME = "stats"
@@ -28,7 +47,6 @@ def get_super_light_driver():
              "profile.managed_default_content_settings.stylesheets": 2}
     options.add_experimental_option("prefs", prefs)
     service = Service(log_output=os.devnull)
-    service.creation_flags = 0x08000000 
     return webdriver.Chrome(options=options, service=service)
 
 def convert_toi(toi_str):
@@ -45,7 +63,7 @@ def process_nst_file(url, filename, is_player_data=True):
     clean_url = url + "&print=csv" if "print=csv" not in url else url
     output_path = os.path.join(FOLDER_NAME, filename)
     
-    print(f"📡 Extraction : {filename}...")
+    logger.info(f" Extraction : {filename}...")
     driver = get_super_light_driver()
     
     try:
@@ -101,10 +119,10 @@ def process_nst_file(url, filename, is_player_data=True):
             with open(output_path, "w", encoding="utf-8-sig") as f:
                 f.write("\n".join(clean_lines))
 
-        print(f"✅ Terminé : {output_path}")
+        logger.info(f" Terminé : {output_path}")
 
     except Exception as e:
-        print(f"❌ Erreur sur {filename} : {e}")
+        logger.info(f" Erreur sur {filename} : {e}")
     finally:
         driver.quit()
 
@@ -121,4 +139,4 @@ if __name__ == "__main__":
     for url, name, is_player in jobs:
         process_nst_file(url, name, is_player)
 
-    print(f"\n🚀 TOUS LES FICHIERS SONT DANS LE DOSSIER : {os.path.abspath(FOLDER_NAME)}")
+    logger.info(f"\n TOUS LES FICHIERS SONT DANS LE DOSSIER : {os.path.abspath(FOLDER_NAME)}")
