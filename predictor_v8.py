@@ -232,9 +232,9 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if atoi >= 18.5: qs += 3.0 
     elif atoi >= 17.0: qs += 1.0
     
-    if p_form['L10_SOG_G'] >= 3.0: qs += 1.5
-    if p_form['L10_G_G'] >= 0.4: qs += 2.0
-    elif p_form['L10_G_G'] <= 0.05: qs -= 1.0 
+    if p_form['L10_SOG_G'] >= 3.0: qs += 2
+    if p_form['L10_G_G'] >= 0.4: qs += 2.5
+    elif p_form['L10_G_G'] <= 0.05: qs -= 1.5
             
     if opp_stats:
         ga_g = opp_stats['GA_G']

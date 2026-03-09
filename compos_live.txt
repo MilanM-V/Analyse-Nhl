@@ -1,8 +1,16 @@
-Match : San Jose Sharks - New York Islanders (08.03. 04:00)
-  goal dom: Askarov Y.
-  goal ext: Sorokin I.
-  f1 dom: Klingberg J., Orlov D., Smith W., Celebrini M., Graf C.
-  f1 ext: Pulock R., Schaefer M., Barzal M., Horvat B., Heineman E.
-  f2 dom: Mukhamadullin S., Ferraro M., Sherwood K., Wennberg A., Kurashev P.
-  f2 ext: DeAngelo A., Pelech A., Palat O., Schenn B., Ritchie C.
+Match : Philadelphia Flyers - New York Rangers (10.03. 00:00)
+  goal dom: Vladar D.
+  goal ext: Shesterkin I.
+  f1 dom: Ristolainen R., Sanheim T., Konecny T., Dvorak C., Bump A.
+  f1 ext: Fox A., Gavrikov V., Lafreniere A., Zibanejad M., Perreault G.
+  f2 dom: Drysdale J., York C., Michkov M., Cates N., Barkey D.
+  f2 ext: Schneider B., Borgen W., Brodzinski J., Trocheck V., Cuylle W.
+----------------------------------------
+Match : Washington Capitals - Calgary Flames (10.03. 00:00)
+  goal dom: Thompson L.
+  goal ext: Cooley D.
+  f1 dom: Chychrun J., Sandin R., Beauvillier A., Strome D., Ovechkin A.
+  f1 ext: Kuznetsov Y., Bahl K., Coleman B., Frost M., Farabee J.
+  f2 dom: Fehervary M., Roy M., Wilson T., Dubois P., Protas A.
+  f2 ext: Pachal B., Maatta O., Gridin M., Strome R., Zary C.
 ----------------------------------------
