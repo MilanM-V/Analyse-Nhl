@@ -47,7 +47,6 @@ def get_super_light_driver():
              "profile.managed_default_content_settings.stylesheets": 2}
     options.add_experimental_option("prefs", prefs)
     service = Service(log_output=os.devnull)
-    service.creation_flags = 0x08000000 
     return webdriver.Chrome(options=options, service=service)
 
 def convert_toi(toi_str):
