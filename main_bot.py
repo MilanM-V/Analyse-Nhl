@@ -30,8 +30,8 @@ if hasattr(time, 'tzset'):
     time.tzset()
 
 #Récupère les variables
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN_TEST")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID_TEST")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 
 def send_telegram_message(message):
@@ -62,7 +62,7 @@ FICHIER_COMPOS_TEMPORAIRE = "compos_live.txt"
 LAST_STATS_UPDATE = None
 
 
-ECART_MAX_VAGUE_MIN = 15      
+ECART_MAX_VAGUE_MIN = 5  
 FORCE_ENVOI_MIN_AVANT = 5     
 
 def parse_match_datetime(time_str):
@@ -193,10 +193,11 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
     TODAY_DATE = datetime.now().strftime("%Y-%m-%d")
     
-    v5_data    = predictor_v8.load_v5_base_stats('./stats/Player Season Totals.csv')
     form_data  = predictor_v8.load_recent_form('./stats/last 10.csv')
     matchups   = predictor_v8.load_matchup_data('./stats/team.csv')
     pp_stats   = predictor_v8.load_powerplay_stats('./stats/power play.csv')
+    oi_data = predictor_v8.load_on_ice_stats('./stats/on_ice.csv')
+    v5_data = predictor_v8.load_v5_base_stats('./stats/Player Season Totals.csv', oi_data)
 
     known_players = list(form_data.keys()) + list(v5_data.keys())
 

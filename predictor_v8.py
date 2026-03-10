@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 from datetime import datetime, timedelta
+import math
 
 TEAM_MAPPING = {
     'Anaheim Ducks': 'ANA', 'Boston Bruins': 'BOS', 'Buffalo Sabres': 'BUF', 'Calgary Flames': 'CGY',
@@ -38,18 +39,30 @@ def clean_team_name(team_str):
 
 def get_b2b_teams(match_filepath, today_str):
     try:
-        df = pd.read_csv(match_filepath)
-        df['Date'] = df['Game'].str.extract(r'(\d{4}-\d{2}-\d{2})')
-        target_date = datetime.strptime(today_str, "%Y-%m-%d")
-        yesterday_str = (target_date - timedelta(days=1)).strftime("%Y-%m-%d")
-        b2b_teams = []
-        for team in df[df['Date'] == yesterday_str]['Team']:
-            team_full = team.strip()
-            if team_full in TEAM_MAPPING: b2b_teams.append(TEAM_MAPPING[team_full])
-        return list(set(b2b_teams))
-    except: return []
+        import re
+        from datetime import datetime, timedelta
+        yesterday = (datetime.strptime(today_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
 
-def load_v5_base_stats(filepath):
+        # Pattern : '2025-10-07 - Score Score TeamName Limited/Full Report'
+        team_names = '|'.join(re.escape(t) for t in TEAM_MAPPING)
+        pattern = re.compile(
+            rf'^(\d{{4}}-\d{{2}}-\d{{2}}) - .+ ({team_names}) (?:Limited|Full) Report'
+        )
+
+        b2b_teams = set()
+        with open(match_filepath, encoding='utf-8-sig') as f:
+            for line in f:
+                m = pattern.match(line.strip())
+                if m and m.group(1) == yesterday:
+                    b2b_teams.add(TEAM_MAPPING[m.group(2)])
+
+        return list(b2b_teams)
+
+    except Exception as e:
+        print(f"[WARN] get_b2b_teams : {e}")
+        return []
+
+def load_v5_base_stats(filepath,oi_stats):
     try:
         v5_dict = {}
         if filepath.endswith('.csv'):
@@ -60,10 +73,9 @@ def load_v5_base_stats(filepath):
                 goals = int(row.get('Goals', 0))
                 g_gp = goals / gp if gp > 0 else 0.0 
                 pos = str(row.get('Position', '')).strip()
-                
                 v5_dict[player] = {
-                    'oiSH': float(row.get('On-Ice SH%', 10.0)),
-                    'PDO': float(row.get('PDO', 100.0)),
+                    'oiSH': oi_stats.get(player, {}).get('On-Ice SH%', 10.0),
+                    'PDO':  oi_stats.get(player, {}).get('PDO',  100.0),
                     'GP': gp,
                     'G_GP': g_gp,
                     'Position': pos
@@ -92,22 +104,70 @@ def load_recent_form(filepath):
     return form_dict
 
 def load_matchup_data(filepath):
-    df = pd.read_csv(filepath)
-    matchup_dict = {}
-    for _, row in df.iterrows():
-        team_full = str(row.get('Team', '')).strip()
-        if team_full in TEAM_MAPPING:
-            team_abbr = TEAM_MAPPING[team_full]
+    try:
+        with open(filepath, encoding='utf-8-sig') as f:
+            content = f.read()
+
+        idx = content.find('Team')
+        if idx == -1:
+            return {}
+        lines = content[idx:].strip().split('\n')
+
+        # Corriger le header : "Point %" splitté en deux tokens -> "Point%"
+        raw_headers = lines[0].split()
+        headers = []
+        i = 0
+        while i < len(raw_headers):
+            if raw_headers[i] == 'Point' and i + 1 < len(raw_headers) and raw_headers[i+1] == '%':
+                headers.append('Point%')
+                i += 2
+            else:
+                headers.append(raw_headers[i])
+                i += 1
+        NB_STATS = len(headers) - 1  # tout sauf Team
+
+        matchup_dict = {}
+        for line in lines[1:]:
+            parts = line.split()
+            if not parts or not parts[0].isdigit():
+                continue
+
+            # Identifier le nom d'équipe en cherchant dans TEAM_MAPPING
+            team_name = None
+            team_word_count = 0
+            for name in TEAM_MAPPING:
+                words = name.split()
+                candidate = ' '.join(parts[1:1 + len(words)])
+                if candidate == name:
+                    team_name = name
+                    team_word_count = len(words)
+                    break
+            if not team_name:
+                continue
+
+            stats_part = parts[1 + team_word_count:]
+            if len(stats_part) < NB_STATS:
+                continue
+
+            row = dict(zip(headers[1:], stats_part[:NB_STATS]))
+            team_abbr = TEAM_MAPPING[team_name]
             gp = max(1, int(row.get('GP', 1)))
-            pk_pct = float(row.get('PK%', 80.0)) 
-            
+
             matchup_dict[team_abbr] = {
-                'GA_G': float(row.get('GA', 0)) / gp,
-                'SA_G': float(row.get('SA', 0)) / gp,
-                'CA_G':  float(row.get('CA', 0)) / gp,   
-                'CF_pct': float(row.get('CF%', 50.0)),
-                'PK%': pk_pct
+                'GA_G':     float(row.get('GA',    0))    / gp,
+                'SA_G':     float(row.get('SA',    0))    / gp,
+                'CA_G':     float(row.get('CA',    0))    / gp,
+                'CF_pct':   float(row.get('CF%',   50.0)),
+                'HDCA_G':   float(row.get('HDCA',  0))    / gp,
+                'HDCF_pct': float(row.get('HDCF%', 50.0)),
+                'PK%':      float(row.get('PK%',   80.0)),
             }
+
+        return matchup_dict
+
+    except Exception as e:
+        print(f"[WARN] load_matchup_data : {e}")
+        return {}
     return matchup_dict
 
 def load_powerplay_stats(filepath):
@@ -121,7 +181,18 @@ def load_powerplay_stats(filepath):
             pp_dict[player] = toi / gp 
         return pp_dict
     except: return {}
-
+def load_on_ice_stats(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        oi_dict = {}
+        for _, row in df.iterrows():
+            player = str(row.get('Player', '')).strip()
+            oi_dict[player] = {
+                'oiSH': float(row.get('On-Ice SH%', 10.0)),
+                'PDO':  float(row.get('PDO', 100.0)),
+            }
+        return oi_dict
+    except: return {}
 def get_auto_pp1_players(form_data, pp_stats, teams_playing):
     pp1_list = []
     for team in teams_playing:
@@ -149,20 +220,31 @@ def parse_flashscore_file(filepath, known_players):
     compos = set()
     goalies = {}
     
-    def get_real_name(scraped_name):
+    def get_real_name(scraped_name, known_players):
         s_name = scraped_name.strip()
         if not s_name: return ""
-        parts = s_name.split(' ')
-        if len(parts) >= 2:
-            last_name = " ".join(parts[:-1]).replace(',', '').strip()
-            first_init = parts[-1][0].lower() 
-            for k_name in known_players:
-                k_parts = k_name.split(' ')
-                k_first = k_parts[0]
-                k_last = " ".join(k_parts[1:])
-                if last_name.lower() in k_last.lower() and k_first.lower().startswith(first_init):
-                    return k_name
-        return s_name
+        
+        s_clean = re.sub(r'\s+(II|III|IV|Jr|Sr)\.?$', '', s_name, flags=re.IGNORECASE).strip()
+        
+        parts = s_clean.split(' ')
+        if len(parts) < 2: return s_name
+        
+        last_name = " ".join(parts[:-1]).replace(',', '').strip().lower()
+        first_init = parts[-1][0].lower()
+        
+        candidates = []
+        for k_name in known_players:
+            k_parts = k_name.split(' ')
+            k_first = k_parts[0].lower()
+            k_last = " ".join(k_parts[1:]).lower()
+            
+            if last_name in k_last and k_first.startswith(first_init):
+                score = 2 if last_name == k_last else 1
+                candidates.append((k_name, score))
+        
+        if not candidates: return s_name
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return candidates[0][0]
 
     current_dom = ""
     current_ext = ""
@@ -179,17 +261,17 @@ def parse_flashscore_file(filepath, known_players):
                         matches.append((current_dom, current_ext))
                 elif line.startswith("goal dom:"):
                     g_name = line.replace("goal dom:", "").strip()
-                    goalies[current_dom] = get_real_name(g_name)
+                    goalies[current_dom] = get_real_name(g_name,known_players)
                 elif line.startswith("goal ext:"):
                     g_name = line.replace("goal ext:", "").strip()
-                    goalies[current_ext] = get_real_name(g_name)
+                    goalies[current_ext] = get_real_name(g_name,known_players)
                 elif line.startswith("f1") or line.startswith("f2"):
                     players_str = line.split(":", 1)[1]
                     for p in players_str.split(','):
-                        real_p = get_real_name(p.strip())
+                        real_p = get_real_name(p.strip(),known_players)
                         if real_p: compos.add(real_p)
-    except:
-        pass
+    except Exception as e:
+        print(f"[WARN] parse_flashscore_file : {e}")
         
     return matches, list(compos), goalies
 
@@ -206,13 +288,15 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     season_g = v5_stats.get('G_GP', 0.0)
     ixg      = p_form.get('L10_ixG_G', 0.0)
     atoi     = p_form.get('ATOI', 0.0)
-
+    
     _opp   = opp_stats or {}
     cf_pct = _opp.get('CF_pct', 50.0)
     pk_pct = _opp.get('PK%',    80.0)
     ga_g   = _opp.get('GA_G',    2.7)
     sa_g   = _opp.get('SA_G',   28.0)
-
+    hdca_g   = _opp.get('HDCA_G', 8.0)
+    hdcf_pct = _opp.get('HDCF_pct', 50.0)
+    
     if g_gp < 0.18: return -99.0
     pos = str(v5_stats.get('Position', '')).strip()
     if pos in ('D', 'LD', 'RD'): return -99.0
@@ -250,22 +334,27 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if atoi >= 18.5: qs += 3.0
     elif atoi >= 17.0: qs += 1.0
 
-    if ixg >= 0.55:   qs += 3.0
-    elif ixg >= 0.40: qs += 2.0
-    elif ixg >= 0.28: qs += 1.0
-    elif ixg <= 0.12: qs -= 1.5
+
     ixg_bonus = 3.0 if ixg >= 0.55 else (2.0 if ixg >= 0.40 else (1.0 if ixg >= 0.28 else (-1.5 if ixg <= 0.12 else 0)))
     goals_bonus = min(1.0, l10_g * 2.5)  
     qs += max(ixg_bonus, goals_bonus)
+    
     if p_form.get('L10_SOG_G', 0.0) >= 3.0: qs += 1.5
     if l10_g >= 0.4:   qs += 1.0
     elif l10_g <= 0.05: qs -= 0.5
-
+    
     if ga_g >= 3.00:   qs += 2.5
     elif ga_g >= 2.80: qs += 1.0
     elif ga_g < 2.50:  qs -= 0.5
+    
+    if hdca_g >= 12.0:   qs += 2.0  
+    elif hdca_g >= 10.0: qs += 1.0
+    elif hdca_g <= 6.0:  qs -= 1.0   
+
+    if hdcf_pct <= 46.0: qs += 1.0 
 
     if sa_g >= 30.0 and p_form.get('L10_SOG_G', 0.0) >= 2.5:
         qs += 1.0
+    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.4 * (qs - 7.5))))
 
-    return qs
+    return qs_normalized
