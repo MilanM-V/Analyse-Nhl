@@ -1,8 +1,8 @@
-Match : San Jose Sharks - New York Islanders (08.03. 04:00)
-  goal dom: Askarov Y.
-  goal ext: Sorokin I.
-  f1 dom: Klingberg J., Orlov D., Smith W., Celebrini M., Graf C.
-  f1 ext: Pulock R., Schaefer M., Barzal M., Horvat B., Heineman E.
-  f2 dom: Mukhamadullin S., Ferraro M., Sherwood K., Wennberg A., Kurashev P.
-  f2 ext: DeAngelo A., Pelech A., Palat O., Schenn B., Ritchie C.
+Match : Vancouver Canucks - Ottawa Senators (10.03. 02:00)
+  goal dom: Lankinen K.
+  goal ext: Reimer J.
+  f1 dom: Hronek F., Pettersson E. II., DeBrusk J., Pettersson E., Hoglander N.
+  f1 ext: Jensen N., Chabot T., Giroux C., Stutzle T., Batherson D.
+  f2 dom: Willander T., Pettersson M., Boeser B., Rossi M., Ohgren L.
+  f2 ext: Zub A., Kleven T., Greig R., Cozens D., Tkachuk B.
 ----------------------------------------
