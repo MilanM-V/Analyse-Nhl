@@ -16,7 +16,9 @@ import scraper
 import predictor_v8
 import logging
 from logging.handlers import RotatingFileHandler
-
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
 # Configuration du logging
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
