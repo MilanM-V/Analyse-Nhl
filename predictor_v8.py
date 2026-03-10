@@ -74,7 +74,7 @@ def load_v5_base_stats(filepath,oi_stats):
                 g_gp = goals / gp if gp > 0 else 0.0 
                 pos = str(row.get('Position', '')).strip()
                 v5_dict[player] = {
-                    'oiSH': oi_stats.get(player, {}).get('On-Ice SH%', 10.0),
+                    'oiSH': oi_stats.get(player, {}).get('oiSH', 10.0),
                     'PDO':  oi_stats.get(player, {}).get('PDO',  100.0),
                     'GP': gp,
                     'G_GP': g_gp,
@@ -168,7 +168,6 @@ def load_matchup_data(filepath):
     except Exception as e:
         print(f"[WARN] load_matchup_data : {e}")
         return {}
-    return matchup_dict
 
 def load_powerplay_stats(filepath):
     try:

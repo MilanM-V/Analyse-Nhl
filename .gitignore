@@ -1,8 +1,4 @@
 .env
 bot.log
 watchdog.log
-stats/*.csv
-stats/last 10.csv
-stats/Player Season Totals.csv
-stats/power play.csv
-stats/team.csv
+stats/
