@@ -10,38 +10,30 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import logging
 from logging.handlers import RotatingFileHandler
+import os
+from dotenv import load_dotenv
 
-# Configuration du logging
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
 
-# Formateur : Date - Nom - Niveau - Message
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Handler pour le fichier (5 Mo max, 5 fichiers de backup)
 file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5)
 file_handler.setFormatter(formatter)
 
-# Handler pour la console (pour voir les messages en direct)
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
-# Configuration
-import os
-from dotenv import load_dotenv
 
-# Charge les variables du fichier .env
 load_dotenv()
 
-# Récupère les variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 FOLDER_NAME = "stats"
 
-# Création du dossier stats s'il n'existe pas
 if not os.path.exists(FOLDER_NAME):
     os.makedirs(FOLDER_NAME)
 
@@ -68,7 +60,6 @@ def convert_toi(toi_str):
         return toi_str
 
 def process_nst_file(url, filename, is_player_data=True):
-    # Ajout du paramètre CSV si manquant
     clean_url = url + "&print=csv" if "print=csv" not in url else url
     output_path = os.path.join(FOLDER_NAME, filename)
     
@@ -84,7 +75,6 @@ def process_nst_file(url, filename, is_player_data=True):
         raw_text = driver.find_element(By.TAG_NAME, "body").text
         lines = raw_text.splitlines()
         
-        # Logique de nettoyage pour les fichiers de JOUEURS
         if is_player_data:
             headers = ["", "Player", "Team", "Position", "GP", "TOI", "Goals", "Total Assists", 
                        "First Assists", "Second Assists", "Total Points", "IPP", "Shots", "SH%", 
@@ -122,7 +112,6 @@ def process_nst_file(url, filename, is_player_data=True):
             df = pd.DataFrame(data, columns=headers)
             df.to_csv(output_path, index=False, quoting=csv.QUOTE_ALL, encoding='utf-8-sig')
         
-        # Logique simplifiée pour TEAM et MATCH (on garde les en-têtes d'origine de NST)
         else:
             clean_lines = [l for l in lines if l.strip() and not l.startswith(("Login", "Games", "Players", "Teams", "Tools", "Trivia"))]
             with open(output_path, "w", encoding="utf-8-sig") as f:
@@ -136,7 +125,6 @@ def process_nst_file(url, filename, is_player_data=True):
         driver.quit()
 
 if __name__ == "__main__":
-    # Liste des tâches [URL, NOM_FICHIER, EST_UN_JOUEUR]
     jobs = [
         ["https://www.naturalstattrick.com/teamtable.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=10&fd=&td=", "team.csv", False],
         ["https://www.naturalstattrick.com/playerteams.php?stdoi=std", "Player Season Totals.csv", True],

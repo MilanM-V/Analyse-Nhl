@@ -9,18 +9,16 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 from selenium.webdriver.chrome.service import Service
-
-# Configuration
 import os
 from dotenv import load_dotenv
 
-# Charge les variables du fichier .env
 load_dotenv()
 
 # Récupère les variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
+
 # Liste des mots pub à bannir absolument
 TRASH_WORDS = ["NHL.TV", "BETCLIC", "CRYPTO.COM", "ARENA", ".FR", ".COM", ".TV", "NATIONWIDE", "CENTRE"]
 
@@ -37,11 +35,9 @@ def get_driver(show_browser=False):
     return webdriver.Chrome(options=options, service=service)
 
 def is_valid_lineup(player_list):
-    # RÈGLE : Il faut 22 joueurs minimum pour remplir toutes les lignes (2 goals + 4 blocs de 5)
     if len(player_list) < 22:
         return False
     
-    # RÈGLE : Si un seul mot "pub" est présent, on rejette tout le match
     for name in player_list:
         n_upper = name.upper()
         if any(trash in n_upper for trash in TRASH_WORDS):
@@ -87,7 +83,6 @@ def get_scheduled_matches(url):
 
 def get_lineups(match_id):
     url = f"https://www.flashscore.fr/match/{match_id}/"
-    # MODIFICATION ICI : show_browser est maintenant à False pour tourner en arrière-plan (mode fantôme)
     driver = get_driver(show_browser=False) 
     
     try:
@@ -127,7 +122,6 @@ def get_lineups(match_id):
     finally:
         driver.quit()
 
-# On peut laisser ce bloc, il ne sera PAS exécuté quand main_bot.py fera un 'import scraper'
 if __name__ == "__main__":
     print("Test local du scraper...")
     print(get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/"))

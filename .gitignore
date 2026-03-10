@@ -1,3 +1,8 @@
 .env
 bot.log
 watchdog.log
+last 10.csv
+match.csv
+Player Season Total.csv
+power play.csv
+team.csv
