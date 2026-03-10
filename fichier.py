@@ -10,8 +10,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 from dotenv import load_dotenv
+import sys
 
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
@@ -29,8 +29,8 @@ logger.addHandler(stream_handler)
 
 load_dotenv()
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN_TEST")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID_TEST")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 FOLDER_NAME = "stats"
 
@@ -47,7 +47,11 @@ def get_super_light_driver():
     prefs = {"profile.managed_default_content_settings.images": 2,
              "profile.managed_default_content_settings.stylesheets": 2}
     options.add_experimental_option("prefs", prefs)
-    service = Service(BRAVE_PATH,log_output=os.devnull)
+    if sys.platform.startswith('linux'):
+        service = Service(BRAVE_PATH, log_output=os.devnull)
+    else:
+        service = Service(log_output=os.devnull)
+        service.creation_flags = 0x08000000 
     return webdriver.Chrome(options=options, service=service)
 
 def convert_toi(toi_str):

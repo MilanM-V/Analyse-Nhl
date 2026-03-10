@@ -25,8 +25,9 @@ logger.addHandler(stream_handler)
 
 load_dotenv()
 
-os.environ['TZ'] = 'Europe/Paris' 
-time.tzset()
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
 
 #Récupère les variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
