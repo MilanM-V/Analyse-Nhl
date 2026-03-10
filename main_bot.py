@@ -10,6 +10,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from dotenv import load_dotenv
+import time
 
 #Configuration du logging
 logger = logging.getLogger("NHL_Bot")
@@ -23,6 +24,9 @@ logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 
 load_dotenv()
+
+os.environ['TZ'] = 'Europe/Paris' 
+time.tzset()
 
 #Récupère les variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")

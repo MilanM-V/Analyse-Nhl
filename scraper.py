@@ -25,13 +25,14 @@ TRASH_WORDS = ["NHL.TV", "BETCLIC", "CRYPTO.COM", "ARENA", ".FR", ".COM", ".TV",
 def get_driver(show_browser=False):
     options = Options()
     options.binary_location = BRAVE_PATH
-    options.add_argument("--log-level=3")
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    options.add_argument("--disable-blink-features=AutomationControlled")
     if not show_browser:
-        options.add_argument("--headless") 
-
-    service = Service(log_output=os.devnull)
+        options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    service = Service(BRAVE_PATH, log_output=os.devnull)
+    
     return webdriver.Chrome(options=options, service=service)
 
 def is_valid_lineup(player_list):

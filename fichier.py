@@ -47,7 +47,7 @@ def get_super_light_driver():
     prefs = {"profile.managed_default_content_settings.images": 2,
              "profile.managed_default_content_settings.stylesheets": 2}
     options.add_experimental_option("prefs", prefs)
-    service = Service(log_output=os.devnull)
+    service = Service(BRAVE_PATH,log_output=os.devnull)
     return webdriver.Chrome(options=options, service=service)
 
 def convert_toi(toi_str):
