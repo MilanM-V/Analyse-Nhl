@@ -75,7 +75,7 @@ LAST_STATS_UPDATE = None
 # LOGIQUE DE VAGUES PAR CLUSTERING (15 MIN)
 # ==========================================
 
-ECART_MAX_VAGUE_MIN = 15      # 2 matchs espacés de moins de 15 min = même vague
+ECART_MAX_VAGUE_MIN = 5      # 2 matchs espacés de moins de 15 min = même vague
 FORCE_ENVOI_MIN_AVANT = 5     # On force l'envoi 5 min avant le 1er match de la vague
 
 def parse_match_datetime(time_str):
