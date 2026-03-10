@@ -1,4 +1,3 @@
-import re
 import time
 import os
 from selenium import webdriver
@@ -9,39 +8,47 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 from selenium.webdriver.chrome.service import Service
-
-# Configuration
-import os
 from dotenv import load_dotenv
+import sys
 
-# Charge les variables du fichier .env
 load_dotenv()
 
 # Récupère les variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
+
 # Liste des mots pub à bannir absolument
 TRASH_WORDS = ["NHL.TV", "BETCLIC", "CRYPTO.COM", "ARENA", ".FR", ".COM", ".TV", "NATIONWIDE", "CENTRE"]
 
 def get_driver(show_browser=False):
     options = Options()
     options.binary_location = BRAVE_PATH
-    options.add_argument("--log-level=3")
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    if not show_browser:
-        options.add_argument("--headless") 
+    if sys.platform.startswith('linux'):
+        if not show_browser:
+            options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        service = Service(BRAVE_PATH, log_output=os.devnull)
+    else:
+        show_browser=False
+        options.add_argument("--log-level=3")
+        options.add_experimental_option('excludeSwitches', ['enable-logging'])
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        if not show_browser:
+            options.add_argument("--headless") 
+        service = Service(log_output=os.devnull)
+        service.creation_flags = 0x08000000 
 
-    service = Service(log_output=os.devnull)
+    
     return webdriver.Chrome(options=options, service=service)
 
 def is_valid_lineup(player_list):
-    # RÈGLE : Il faut 22 joueurs minimum pour remplir toutes les lignes (2 goals + 4 blocs de 5)
     if len(player_list) < 22:
         return False
     
-    # RÈGLE : Si un seul mot "pub" est présent, on rejette tout le match
     for name in player_list:
         n_upper = name.upper()
         if any(trash in n_upper for trash in TRASH_WORDS):
@@ -87,7 +94,6 @@ def get_scheduled_matches(url):
 
 def get_lineups(match_id):
     url = f"https://www.flashscore.fr/match/{match_id}/"
-    # MODIFICATION ICI : show_browser est maintenant à False pour tourner en arrière-plan (mode fantôme)
     driver = get_driver(show_browser=False) 
     
     try:
@@ -127,7 +133,6 @@ def get_lineups(match_id):
     finally:
         driver.quit()
 
-# On peut laisser ce bloc, il ne sera PAS exécuté quand main_bot.py fera un 'import scraper'
 if __name__ == "__main__":
     print("Test local du scraper...")
     print(get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/"))
