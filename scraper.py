@@ -31,7 +31,7 @@ def get_driver(show_browser=False):
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
-        service = Service(BRAVE_PATH, log_output=os.devnull)
+        service = Service( log_output=os.devnull)
     else:
         show_browser=False
         options.add_argument("--log-level=3")
