@@ -80,7 +80,7 @@ def process_nst_file(url, filename, is_player_data=True):
         lines = raw_text.splitlines()
         
         if is_player_data == "on_ice":
-            NB_STATS = 41  
+            NB_STATS = 38
             headers_oi = ["", "Player", "Team", "Position",
                           "GP", "TOI", "CF", "CA", "CF%", "FF", "FA", "FF%",
                           "SF", "SA", "SF%", "GF", "GA", "GF%",
@@ -97,7 +97,7 @@ def process_nst_file(url, filename, is_player_data=True):
                 line = line.strip()
                 if not line or not line[0].isdigit(): continue
                 parts = line.split()
-                if len(parts) < NB_STATS + 3: continue  
+                if len(parts) < NB_STATS + 4: continue  
 
                 stats_part = parts[-NB_STATS:]
                 stats_part[1] = convert_toi(stats_part[1])
