@@ -31,7 +31,7 @@ def get_driver(show_browser=False):
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
-        service = Service( log_output=os.devnull)
+        service = Service(BRAVE_PATH, log_output=os.devnull)
     else:
         show_browser=False
         options.add_argument("--log-level=3")
@@ -86,8 +86,8 @@ def get_scheduled_matches(url):
                     away = row.find_element(By.CLASS_NAME, "event__participant--away").text
                     match_id = row.get_attribute("id").replace("g_4_", "")
                     matches_found.append({"id": match_id, "time": time_str, "home": home, "away": away})
-            except:
-                continue
+            except Exception as e:
+                print(f"[WARN] parse_flashscore_file : {e}")
     finally:
         driver.quit()
     return matches_found
