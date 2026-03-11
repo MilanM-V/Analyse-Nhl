@@ -32,7 +32,6 @@ SUPERSTARS_PLAYMAKERS = [
 ]
 
 def clean_team_name(team_str):
-    """ Nettoie les noms d'équipes bizarres (ex: 'L.A' -> 'LAK') ou les trades ('L.A, CHI' -> 'LAK') """
     t = team_str.split(',')[0].strip()
     return TEAM_CLEANER.get(t, t)
 
@@ -43,7 +42,6 @@ def get_b2b_teams(match_filepath, today_str):
         from datetime import datetime, timedelta
         yesterday = (datetime.strptime(today_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
 
-        # Pattern : '2025-10-07 - Score Score TeamName Limited/Full Report'
         team_names = '|'.join(re.escape(t) for t in TEAM_MAPPING)
         pattern = re.compile(
             rf'^(\d{{4}}-\d{{2}}-\d{{2}}) - .+ ({team_names}) (?:Limited|Full) Report'
@@ -113,7 +111,6 @@ def load_matchup_data(filepath):
             return {}
         lines = content[idx:].strip().split('\n')
 
-        # Corriger le header : "Point %" splitté en deux tokens -> "Point%"
         raw_headers = lines[0].split()
         headers = []
         i = 0
@@ -124,7 +121,7 @@ def load_matchup_data(filepath):
             else:
                 headers.append(raw_headers[i])
                 i += 1
-        NB_STATS = len(headers) - 1  # tout sauf Team
+        NB_STATS = len(headers) - 1  
 
         matchup_dict = {}
         for line in lines[1:]:
@@ -132,7 +129,6 @@ def load_matchup_data(filepath):
             if not parts or not parts[0].isdigit():
                 continue
 
-            # Identifier le nom d'équipe en cherchant dans TEAM_MAPPING
             team_name = None
             team_word_count = 0
             for name in TEAM_MAPPING:
@@ -275,12 +271,16 @@ def parse_flashscore_file(filepath, known_players):
     return matches, list(compos), goalies
 
 
-def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate):
+def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
+    g_gp = v5_stats.get('G_GP', 0.0)
+    pos  = str(v5_stats.get('Position', '')).strip()
+    if g_gp < 0.18: return -99.0
+    if pos in ('D', 'LD', 'RD'): return -99.0
+
     qs = 3.5
 
     oish     = v5_stats.get('oiSH', 10.0)
     pdo      = v5_stats.get('PDO', 100.0)
-    g_gp     = v5_stats.get('G_GP', 0.20)
     hdcf     = p_form.get('L10_iHDCF_G', 0.0)
     scf      = p_form.get('L10_iSCF_G', 0.0)
     l10_g    = p_form.get('L10_G_G', 0.0)
@@ -296,10 +296,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     hdca_g   = _opp.get('HDCA_G', 8.0)
     hdcf_pct = _opp.get('HDCF_pct', 50.0)
     
-    if g_gp < 0.18: return -99.0
-    pos = str(v5_stats.get('Position', '')).strip()
-    if pos in ('D', 'LD', 'RD'): return -99.0
-
     if oish > 16.0: qs -= 2.0
     elif oish > 14.0: qs -= 1.0
 
@@ -354,6 +350,10 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
 
     if sa_g >= 30.0 and p_form.get('L10_SOG_G', 0.0) >= 2.5:
         qs += 1.0
-    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.4 * (qs - 7.5))))
+
+    if is_backup: qs += 2.5
+    if is_b2b:    qs -= 1.5
+
+    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.4 * (qs - 8.5))))
 
     return qs_normalized

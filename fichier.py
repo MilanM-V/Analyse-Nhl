@@ -79,7 +79,49 @@ def process_nst_file(url, filename, is_player_data=True):
         raw_text = driver.find_element(By.TAG_NAME, "body").text
         lines = raw_text.splitlines()
         
-        if is_player_data:
+        if is_player_data == "on_ice":
+            NB_STATS = 41  
+            headers_oi = ["", "Player", "Team", "Position",
+                          "GP", "TOI", "CF", "CA", "CF%", "FF", "FA", "FF%",
+                          "SF", "SA", "SF%", "GF", "GA", "GF%",
+                          "xGF", "xGA", "xGF%", "SCF", "SCA", "SCF%",
+                          "HDCF", "HDCA", "HDCF%", "HDGF", "HDGA", "HDGF%",
+                          "On-Ice SH%", "On-Ice SV%", "PDO",
+                          "Off. Zone Starts", "Neu. Zone Starts", "Def. Zone Starts",
+                          "On The Fly Starts", "Off. Zone Start %",
+                          "Off. Zone Faceoffs", "Neu. Zone Faceoffs",
+                          "Def. Zone Faceoffs", "Off. Zone Faceoff %"]
+
+            data = []
+            for line in lines:
+                line = line.strip()
+                if not line or not line[0].isdigit(): continue
+                parts = line.split()
+                if len(parts) < NB_STATS + 3: continue  
+
+                stats_part = parts[-NB_STATS:]
+                stats_part[1] = convert_toi(stats_part[1])
+                position = parts[-(NB_STATS + 1)]
+                idx = parts[0]
+
+                remaining = parts[1:-(NB_STATS + 1)]
+                team_parts, player_parts = [], []
+                found_team = False
+                for i in range(len(remaining) - 1, -1, -1):
+                    part = remaining[i]
+                    if not found_team and (part.isupper() or ',' in part or '.' in part):
+                        team_parts.insert(0, part)
+                    else:
+                        found_team = True
+                        player_parts.insert(0, part)
+
+                row = [idx, " ".join(player_parts), " ".join(team_parts), position] + stats_part
+                data.append(row)
+
+            df = pd.DataFrame(data, columns=headers_oi)
+            df.to_csv(output_path, index=False, quoting=csv.QUOTE_ALL, encoding='utf-8-sig')
+
+        elif is_player_data:
             headers = ["", "Player", "Team", "Position", "GP", "TOI", "Goals", "Total Assists", 
                        "First Assists", "Second Assists", "Total Points", "IPP", "Shots", "SH%", 
                        "ixG", "iCF", "iFF", "iSCF", "iHDCF", "Rush Attempts", "Rebounds Created", 
@@ -133,7 +175,7 @@ if __name__ == "__main__":
         ["https://www.naturalstattrick.com/teamtable.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=10&fd=&td=", "team.csv", False],
         ["https://www.naturalstattrick.com/playerteams.php?stdoi=std", "Player Season Totals.csv", True],
         ["https://www.naturalstattrick.com/games.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&loc=B&team=All&rate=n", "match.csv", False],
-        ["https://www.naturalstattrick.com/playerteams.php?stdoi=oi","on_ice.csv", True],
+        ["https://www.naturalstattrick.com/playerteams.php?stdoi=oi","on_ice.csv", "on_ice"],
         ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=10&lines=single&draftteam=ALL", "last 10.csv", True],
         ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v4&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "power play.csv", True]
     ]

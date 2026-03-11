@@ -86,8 +86,8 @@ def get_scheduled_matches(url):
                     away = row.find_element(By.CLASS_NAME, "event__participant--away").text
                     match_id = row.get_attribute("id").replace("g_4_", "")
                     matches_found.append({"id": match_id, "time": time_str, "home": home, "away": away})
-            except:
-                continue
+            except Exception as e:
+                print(f"[WARN] parse_flashscore_file : {e}")
     finally:
         driver.quit()
     return matches_found
