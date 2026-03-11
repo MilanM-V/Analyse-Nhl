@@ -48,7 +48,7 @@ def get_super_light_driver():
              "profile.managed_default_content_settings.stylesheets": 2}
     options.add_experimental_option("prefs", prefs)
     if sys.platform.startswith('linux'):
-        service = Service(BRAVE_PATH, log_output=os.devnull)
+        service = Service(log_output=os.devnull)
     else:
         service = Service(log_output=os.devnull)
         service.creation_flags = 0x08000000 
