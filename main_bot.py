@@ -68,8 +68,7 @@ LAST_STATS_UPDATE = None
 
 
 ECART_MAX_VAGUE_MIN = 5  
-FORCE_ENVOI_MIN_AVANT = 5     
-
+FORCE_ENVOI_MIN_AVANT = 17
 def parse_match_datetime(time_str):
     now = datetime.now()
     try:
