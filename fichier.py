@@ -80,7 +80,7 @@ def process_nst_file(url, filename, is_player_data=True):
         lines = raw_text.splitlines()
         
         if is_player_data == "on_ice":
-            NB_STATS = 41  
+            NB_STATS = 38
             headers_oi = ["", "Player", "Team", "Position",
                           "GP", "TOI", "CF", "CA", "CF%", "FF", "FA", "FF%",
                           "SF", "SA", "SF%", "GF", "GA", "GF%",
@@ -97,7 +97,7 @@ def process_nst_file(url, filename, is_player_data=True):
                 line = line.strip()
                 if not line or not line[0].isdigit(): continue
                 parts = line.split()
-                if len(parts) < NB_STATS + 3: continue  
+                if len(parts) < NB_STATS + 4: continue  
 
                 stats_part = parts[-NB_STATS:]
                 stats_part[1] = convert_toi(stats_part[1])
@@ -173,11 +173,13 @@ def process_nst_file(url, filename, is_player_data=True):
 if __name__ == "__main__":
     jobs = [
         ["https://www.naturalstattrick.com/teamtable.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=10&fd=&td=", "team.csv", False],
-        ["https://www.naturalstattrick.com/playerteams.php?stdoi=std", "Player Season Totals.csv", True],
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "Player Season Totals.csv", True],
         ["https://www.naturalstattrick.com/games.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&loc=B&team=All&rate=n", "match.csv", False],
         ["https://www.naturalstattrick.com/playerteams.php?stdoi=oi","on_ice.csv", "on_ice"],
-        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=10&lines=single&draftteam=ALL", "last 10.csv", True],
-        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v4&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "power play.csv", True]
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=10&lines=single&draftteam=ALL", "last 10.csv", True],
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v4&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "power play.csv", True],
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=G&loc=B&toi=0&gpfilt=none&fd=&td=&lines=single", "goalies.csv", True],
+
     ]
 
     for url, name, is_player in jobs:
