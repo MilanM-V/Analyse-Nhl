@@ -16,7 +16,9 @@ import scraper
 import predictor_v8
 import logging
 from logging.handlers import RotatingFileHandler
-
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
 # Configuration du logging
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
@@ -76,7 +78,7 @@ LAST_STATS_UPDATE = None
 # ==========================================
 
 ECART_MAX_VAGUE_MIN = 5      # 2 matchs espacés de moins de 15 min = même vague
-FORCE_ENVOI_MIN_AVANT = 5     # On force l'envoi 5 min avant le 1er match de la vague
+FORCE_ENVOI_MIN_AVANT = 17     # On force l'envoi 5 min avant le 1er match de la vague
 
 def parse_match_datetime(time_str):
     """
