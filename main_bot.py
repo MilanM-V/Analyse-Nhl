@@ -33,8 +33,8 @@ if hasattr(time, 'tzset'):
     os.environ['TZ'] = 'Europe/Paris'
     time.tzset()
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN_TEST")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID_TEST")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 
 def send_telegram_message(message):
