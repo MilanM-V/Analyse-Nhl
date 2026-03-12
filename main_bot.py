@@ -429,17 +429,17 @@ def send_session_report():
     """Envoie le CSV par mail puis l'archive avec la date du jour."""
     logger.info("📧 Préparation de l'envoi du rapport par mail...")
     
-    if not os.path.exists(log_path):
-        logger.warning(f"Fichier {log_path} introuvable, rien à envoyer.")
-        return
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    archive_path = f"./stats/archive_picks_{today_str}.csv"  
 
+    if not os.path.exists(log_path):
+        logger.warning(f"Fichier {log_path} introuvable.")
+        return
     try:
         sender = os.getenv("EMAIL_USER")
         password = os.getenv("EMAIL_PASS")
         receiver = os.getenv("EMAIL_RECEIVER")
-
-        today_str = datetime.now().strftime('%Y-%m-%d')
-
+        
         msg = MIMEMultipart()
         msg['From'] = sender
         msg['To'] = receiver
@@ -455,7 +455,7 @@ def send_session_report():
             part.add_header("Content-Disposition", f"attachment; filename= picks_{today_str}.csv")
             msg.attach(part)
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
         server.starttls()
         server.login(sender, password)
         server.send_message(msg)

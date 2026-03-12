@@ -177,7 +177,9 @@ def load_matchup_data(filepath):
                 'HDCF_pct': float(row.get('HDCF%', 50.0)),
                 'PK%':      float(row.get('PK%',   80.0)),
             }
-
+        teams_without_pk = [t for t, v in matchup_dict.items() if v['PK%'] == 80.0]
+        if len(teams_without_pk) > 20: 
+            print(f"[WARN] load_matchup_data : PK% absent ou non parsé pour {len(teams_without_pk)} équipes — signal PP1 neutralisé")
         return matchup_dict
 
     except Exception as e:
@@ -287,7 +289,7 @@ def parse_flashscore_file(filepath, known_players):
 
 
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
-    g_gp = v5_stats.get('G_GP', 0.0)
+    g_gp = v5_stats.get('G_GP', 0.0) or 0.0
     pos  = str(v5_stats.get('Position', '')).strip()
     if g_gp < 0.18: return -99.0
     if pos in ('D', 'LD', 'RD'): return -99.0
