@@ -1,16 +1,8 @@
-Match : Ottawa Senators - Montreal Canadiens (12.03. 00:30)
-  goal dom: Ullmark L.
-  goal ext: Fowler J.
-  f1 dom: Zub A., Chabot T., Giroux C., Stutzle T., Batherson D.
-  f1 ext: Hutson L., Guhle K., Slafkovsky J., Suzuki N., Caufield C.
-  f2 dom: Spence J., Kleven T., Greig R., Cozens D., Tkachuk B.
-  f2 ext: Dobson N., Matheson M., Demidov I., Kapanen O., Newhook A.
-----------------------------------------
-Match : Philadelphia Flyers - Washington Capitals (12.03. 00:30)
-  goal dom: Ersson S.
-  goal ext: Thompson L.
-  f1 dom: Ristolainen R., Sanheim T., Konecny T., Dvorak C., Bump A.
-  f1 ext: Roy M., Sandin R., Beauvillier A., Sourdif J., Ovechkin A.
-  f2 dom: Drysdale J., York C., Tippett O., Zegras T., Grundstrom C.
-  f2 ext: Van Riemsdyk T., Chychrun J., Leonard R., Dubois P., McMichael C.
+Match : Utah Hockey Club - Chicago Blackhawks (13.03. 02:00)
+  goal dom: Vejmelka K.
+  goal ext: Soderblom A.
+  f1 dom: Weegar M., Sergachyov M., Crouse L., Schmaltz N., Keller C.
+  f1 ext: Crevier L., Vlasic A., Burakovsky A., Bedard C., Greene R.
+  f2 dom: Marino J., Schmidt N., Guenther D., Cooley L., Peterka J.
+  f2 ext: Rinzel S., Kaiser W., Teravainen T., Nazar F., Bertuzzi T.
 ----------------------------------------
