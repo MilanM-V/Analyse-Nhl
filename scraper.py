@@ -87,7 +87,7 @@ def get_scheduled_matches(url):
                     match_id = row.get_attribute("id").replace("g_4_", "")
                     matches_found.append({"id": match_id, "time": time_str, "home": home, "away": away})
             except Exception as e:
-                print(f"[WARN] parse_flashscore_file : {e}")
+                print(f"[WARN] get_scheduled_matches : {e}")
     finally:
         driver.quit()
     return matches_found
@@ -128,7 +128,8 @@ def get_lineups(match_id):
             "f2_ext": ", ".join(full_list[17:22])
         }
 
-    except Exception:
+    except Exception as e:
+        print(f"[ERROR] get_lineups : {e}")
         return "compo pas dispo"
     finally:
         driver.quit()

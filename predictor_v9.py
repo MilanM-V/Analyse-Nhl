@@ -59,7 +59,22 @@ def get_b2b_teams(match_filepath, today_str):
     except Exception as e:
         print(f"[WARN] get_b2b_teams : {e}")
         return []
-
+    
+def load_goalie_stats(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        g_dict = {}
+        for _, row in df.iterrows():
+            player = str(row.get('Player', '')).strip()
+            if not player or player.lower() == 'nan':
+                continue
+            g_dict[player] = {
+                'GP': int(row.get('GP', 0))
+            }
+        return g_dict
+    except:
+        return {}
+    
 def load_v5_base_stats(filepath,oi_stats):
     try:
         v5_dict = {}
@@ -82,24 +97,28 @@ def load_v5_base_stats(filepath,oi_stats):
     except: return {}
 
 def load_recent_form(filepath):
-    df = pd.read_csv(filepath)
-    form_dict = {}
-    for _, row in df.iterrows():
-        player = str(row['Player']).strip()
-        team = clean_team_name(str(row.get('Team', ''))) 
-        gp = max(1, int(row.get('GP', 1)))
-        toi = float(row.get('TOI', 0))
-        form_dict[player] = {
-            'Team': team, 'L10_GP': gp,
-            'L10_G_G': float(row.get('Goals', 0)) / gp,
-            'L10_SOG_G': float(row.get('Shots', 0)) / gp,
-            'L10_TOI': toi,
-            'L10_ixG_G': float(row.get('ixG', 0)) / gp,
-            'L10_iSCF_G':  float(row.get('iSCF', 0)) / gp,
-            'L10_iHDCF_G': float(row.get('iHDCF', 0)) / gp,
-            'ATOI': toi / gp 
-        }
-    return form_dict
+    try:
+        df = pd.read_csv(filepath)
+        form_dict = {}
+        for _, row in df.iterrows():
+            player = str(row['Player']).strip()
+            team = clean_team_name(str(row.get('Team', ''))) 
+            gp = max(1, int(row.get('GP', 1)))
+            toi = float(row.get('TOI', 0))
+            form_dict[player] = {
+                'Team': team, 'L10_GP': gp,
+                'L10_G_G': float(row.get('Goals', 0)) / gp,
+                'L10_SOG_G': float(row.get('Shots', 0)) / gp,
+                'L10_TOI': toi,
+                'L10_ixG_G': float(row.get('ixG', 0)) / gp,
+                'L10_iSCF_G':  float(row.get('iSCF', 0)) / gp,
+                'L10_iHDCF_G': float(row.get('iHDCF', 0)) / gp,
+                'ATOI': toi / gp 
+            }
+        return form_dict
+    except Exception as e:
+        print(f"[WARN] load_recent_form : {e}")
+        return {}
 
 def load_matchup_data(filepath):
     try:
@@ -158,7 +177,9 @@ def load_matchup_data(filepath):
                 'HDCF_pct': float(row.get('HDCF%', 50.0)),
                 'PK%':      float(row.get('PK%',   80.0)),
             }
-
+        teams_without_pk = [t for t, v in matchup_dict.items() if v['PK%'] == 80.0]
+        if len(teams_without_pk) > 20: 
+            print(f"[WARN] load_matchup_data : PK% absent ou non parsé pour {len(teams_without_pk)} équipes — signal PP1 neutralisé")
         return matchup_dict
 
     except Exception as e:
@@ -200,15 +221,11 @@ def get_auto_pp1_players(form_data, pp_stats, teams_playing):
         pp1_list.extend(top_5)
     return pp1_list
 
-def check_if_backup_goalie(goalie_name, v5_stats, form_dict):
-    if not goalie_name: return False
-    g_form, g_season = form_dict.get(goalie_name), v5_stats.get(goalie_name)
-    if not g_form and not g_season: return False
-    l10_gp = g_form.get('L10_GP', 0) if g_form else 0
-    season_gp = g_season.get('GP', 0) if g_season else 0
-    if season_gp == 0: return False
-    games_pct = l10_gp / min(season_gp, 10)  
-    return games_pct < 0.3 and season_gp < 40
+def check_if_backup_goalie(goalie_name, goalie_stats):
+    g = goalie_stats.get(goalie_name)
+    if not g:
+        return False
+    return g['GP'] < 25
 
 def parse_flashscore_file(filepath, known_players):
     matches = []
@@ -272,7 +289,7 @@ def parse_flashscore_file(filepath, known_players):
 
 
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
-    g_gp = v5_stats.get('G_GP', 0.0)
+    g_gp = v5_stats.get('G_GP', 0.0) or 0.0
     pos  = str(v5_stats.get('Position', '')).strip()
     if g_gp < 0.18: return -99.0
     if pos in ('D', 'LD', 'RD'): return -99.0
@@ -321,22 +338,23 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
 
     if season_g > 0:
         ratio = l10_g / season_g
-        if ratio >= 2.0:   qs += 2.5
-        elif ratio >= 1.5: qs += 1.5
+        if ratio >= 2.0:   qs += 1.5
+        elif ratio >= 1.5: qs += 1.0
         elif ratio <= 0.3: qs -= 2.0
         elif ratio <= 0.5: qs -= 1.0
 
-    if atoi >= 18.5: qs += 3.0
-    elif atoi >= 17.0: qs += 1.0
+    if atoi >= 20.0: qs += 2.0
+    elif atoi >= 18.0: qs += 1.0
 
 
     ixg_bonus = 3.0 if ixg >= 0.55 else (2.0 if ixg >= 0.40 else (1.0 if ixg >= 0.28 else (-1.5 if ixg <= 0.12 else 0)))
     goals_bonus = min(1.0, l10_g * 2.5)  
-    qs += max(ixg_bonus, goals_bonus)
+    goal_ixg_total  = max(ixg_bonus, goals_bonus)
+    if l10_g >= 0.4 and ixg_bonus < goals_bonus:  
+        goal_ixg_total += 0.5
+    qs += goal_ixg_total
     
     if p_form.get('L10_SOG_G', 0.0) >= 3.0: qs += 1.5
-    if l10_g >= 0.4:   qs += 1.0
-    elif l10_g <= 0.05: qs -= 0.5
     
     if ga_g >= 3.00:   qs += 2.5
     elif ga_g >= 2.80: qs += 1.0
@@ -354,6 +372,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if is_backup: qs += 2.5
     if is_b2b:    qs -= 1.5
 
-    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.4 * (qs - 8.5))))
+    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.5 * (qs - 7.5))))
 
     return qs_normalized

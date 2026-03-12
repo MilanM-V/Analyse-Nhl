@@ -8,9 +8,7 @@ import scraper
 import predictor_v9
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 from dotenv import load_dotenv
-import time
 import csv as csv_module
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -35,8 +33,8 @@ if hasattr(time, 'tzset'):
     os.environ['TZ'] = 'Europe/Paris'
     time.tzset()
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN_TEST")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID_TEST")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 
 def send_telegram_message(message):
@@ -200,8 +198,10 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     pp_stats   = predictor_v9.load_powerplay_stats('./stats/power play.csv')
     oi_data = predictor_v9.load_on_ice_stats('./stats/on_ice.csv')
     v5_data = predictor_v9.load_v5_base_stats('./stats/Player Season Totals.csv', oi_data)
+    goalie_stats = predictor_v9.load_goalie_stats('./stats/goalies.csv')
 
-    known_players = list(form_data.keys()) + list(v5_data.keys())
+
+    known_players = list(form_data.keys()) + list(v5_data.keys()) + list(goalie_stats.keys())
 
     MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v9.parse_flashscore_file(FICHIER_COMPOS_TEMPORAIRE, known_players)
     COMPOS_DU_SOIR = [p for p in COMPOS_DU_SOIR_BRUTES if p in form_data]
@@ -237,7 +237,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             has_star_linemate = len([s for s in stars_in_team if s != player]) > 0
             is_b2b = team in B2B_TEAMS and adversaire not in B2B_TEAMS
             adv_goalie = STARTING_GOALIES.get(adversaire, "")
-            is_backup  = predictor_v9.check_if_backup_goalie(adv_goalie, v5_data, form_data)
+            is_backup = predictor_v9.check_if_backup_goalie(adv_goalie, goalie_stats)
 
             base_qs = predictor_v9.calculate_base_qs(
                 p_v5_stats, p_form, adv_stats,
@@ -269,8 +269,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     final_top10 = []
     team_counts  = {}
     match_counts = {}
-    SCORE_MINIMUM = 6
-    SCORE_ELITE   = 8.5
+    SCORE_MINIMUM = 7
+    SCORE_ELITE   = 8
     for r in results:
         if r['Score'] < SCORE_MINIMUM:
             continue
@@ -354,7 +354,6 @@ def bot_routine():
     purge_old_matches()
 
     matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/")
-    nouvelles_compos_trouvees = False
 
     for m in matches_du_jour:
         match_id = m['id']
@@ -369,7 +368,6 @@ def bot_routine():
             logger.info(f"    COMPO TROUVÉE ! Mise en mémoire.")
             COMPOS_EN_MEMOIRE[match_id] = {"match_info": m, "compo": compo}
             MATCHS_TRAITES.add(match_id)
-            nouvelles_compos_trouvees = True
         else:
             logger.info(f"   {compo} — On réessaiera au prochain cycle.")
 
@@ -431,17 +429,17 @@ def send_session_report():
     """Envoie le CSV par mail puis l'archive avec la date du jour."""
     logger.info("📧 Préparation de l'envoi du rapport par mail...")
     
-    if not os.path.exists(log_path):
-        logger.warning(f"Fichier {log_path} introuvable, rien à envoyer.")
-        return
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    archive_path = f"./stats/archive_picks_{today_str}.csv"  
 
+    if not os.path.exists(log_path):
+        logger.warning(f"Fichier {log_path} introuvable.")
+        return
     try:
         sender = os.getenv("EMAIL_USER")
         password = os.getenv("EMAIL_PASS")
         receiver = os.getenv("EMAIL_RECEIVER")
-
-        today_str = datetime.now().strftime('%Y-%m-%d')
-
+        
         msg = MIMEMultipart()
         msg['From'] = sender
         msg['To'] = receiver
@@ -457,7 +455,7 @@ def send_session_report():
             part.add_header("Content-Disposition", f"attachment; filename= picks_{today_str}.csv")
             msg.attach(part)
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
         server.starttls()
         server.login(sender, password)
         server.send_message(msg)
@@ -470,6 +468,9 @@ def send_session_report():
 
     except Exception as e:
         logger.error(f"❌ Erreur lors du rapport de session : {e}")
+    finally:
+        if os.path.exists(log_path):
+            os.rename(log_path, archive_path)
 
 
 if __name__ == "__main__":
@@ -477,7 +478,7 @@ if __name__ == "__main__":
     logger.info("  DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  ")
     logger.info(" Scan toutes les 15 min — envoi par vague horaire  ")
     logger.info(" Écart max dans une vague : 5 min                 ")
-    logger.info(" Force envoi si < 5 min avant le 1er match        ")
+    logger.info(" Force envoi si < 17 min avant le 1er match        ")
     logger.info("=====================================================")
 
     while True:
