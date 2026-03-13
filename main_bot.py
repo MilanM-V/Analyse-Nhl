@@ -203,7 +203,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
     known_players = list(form_data.keys()) + list(v5_data.keys()) + list(goalie_stats.keys())
 
-    MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v9.parse_flashscore_file(FICHIER_COMPOS_TEMPORAIRE, known_players)
+    MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v9.parse_flashscore_file(FICHIER_COMPOS_TEMPORAIRE, known_players, form_data)
     COMPOS_DU_SOIR = [p for p in COMPOS_DU_SOIR_BRUTES if p in form_data]
     HOME_TEAMS = [mt[0] for mt in MATCHS_DU_SOIR]
 
@@ -245,7 +245,6 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 is_backup, is_b2b
             )
             if base_qs < 0: continue   
-
             final_qs = base_qs
 
             context_tag = []
@@ -362,7 +361,7 @@ def bot_routine():
             continue
 
         logger.info(f"   Vérification compo : {m['home']} - {m['away']}...")
-        compo = scraper.get_lineups(match_id)
+        compo = scraper.get_lineups(match_id, m['home'], m['away'])
 
         if isinstance(compo, dict):
             logger.info(f"    COMPO TROUVÉE ! Mise en mémoire.")

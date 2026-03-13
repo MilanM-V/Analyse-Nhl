@@ -68,8 +68,10 @@ def load_goalie_stats(filepath):
             player = str(row.get('Player', '')).strip()
             if not player or player.lower() == 'nan':
                 continue
+            team = clean_team_name(str(row.get('Team', '')).strip())
             g_dict[player] = {
-                'GP': int(row.get('GP', 0))
+                'GP':   int(row.get('GP', 0)),
+                'Team': team,
             }
         return g_dict
     except:
@@ -222,22 +224,42 @@ def get_auto_pp1_players(form_data, pp_stats, teams_playing):
     return pp1_list
 
 def check_if_backup_goalie(goalie_name, goalie_stats):
+    """
+    Backup si GP du gardien < 25% des GP du titulaire de son équipe.
+    Ex: Woll 29 GP, Murray 37 GP → Woll = 78% → titulaire
+    Ex: backup 8 GP, Woll 29 GP  → backup = 28% → backup
+    """
     g = goalie_stats.get(goalie_name)
-    if not g:
+    if not g or g['GP'] == 0:
         return False
-    return g['GP'] < 25
+    team = g.get('Team', '')
+    if not team:
+        return False
+    team_gps = [v['GP'] for v in goalie_stats.values()
+                if v.get('Team') == team and v['GP'] > 0]
+    if not team_gps:
+        return False
+    ratio = g['GP'] / max(team_gps)
+    return ratio < 0.25
 
-def parse_flashscore_file(filepath, known_players):
+def parse_flashscore_file(filepath, known_players, form_data=None):
+    """
+    form_data optionnel : si fourni, filtre les joueurs dont l'équipe NST
+    ne correspond à aucune équipe du match (évite les faux positifs de matching).
+    """
     matches = []
-    compos = set()
+    compos_by_team = {}  
     goalies = {}
     
-    def get_real_name(scraped_name, known_players):
+    def get_real_name(scraped_name, team_context=None):
+        """
+        Résout un nom Flashscore ('Kreider C.') vers le nom complet NST ('Chris Kreider').
+        team_context : abbr de l'équipe du match (DOM ou EXT) pour filtrer les candidats.
+        """
         s_name = scraped_name.strip()
         if not s_name: return ""
         
         s_clean = re.sub(r'\s+(II|III|IV|Jr|Sr)\.?$', '', s_name, flags=re.IGNORECASE).strip()
-        
         parts = s_clean.split(' ')
         if len(parts) < 2: return s_name
         
@@ -251,12 +273,26 @@ def parse_flashscore_file(filepath, known_players):
             k_last = " ".join(k_parts[1:]).lower()
             
             if last_name in k_last and k_first.startswith(first_init):
-                score = 2 if last_name == k_last else 1
+                exact = (last_name == k_last)
+                
+                team_match = 0
+                if team_context and form_data:
+                    p_team = form_data.get(k_name, {}).get('Team', '')
+                    team_match = 2 if p_team == team_context else 0
+                
+                score = (2 if exact else 1) + team_match
                 candidates.append((k_name, score))
         
         if not candidates: return s_name
         candidates.sort(key=lambda x: x[1], reverse=True)
-        return candidates[0][0]
+
+        best_name, best_score = candidates[0]
+        if len(candidates) > 1:
+            k_last_best = " ".join(best_name.split()[1:]).lower()
+            if last_name != k_last_best:
+                return s_name  
+        
+        return best_name
 
     current_dom = ""
     current_ext = ""
@@ -271,21 +307,38 @@ def parse_flashscore_file(filepath, known_players):
                         current_dom = TEAM_MAPPING.get(m.group(1).strip(), m.group(1).strip())
                         current_ext = TEAM_MAPPING.get(m.group(2).strip(), m.group(2).strip())
                         matches.append((current_dom, current_ext))
+                        compos_by_team.setdefault(current_dom, set())
+                        compos_by_team.setdefault(current_ext, set())
                 elif line.startswith("goal dom:"):
                     g_name = line.replace("goal dom:", "").strip()
-                    goalies[current_dom] = get_real_name(g_name,known_players)
+                    goalies[current_dom] = get_real_name(g_name, current_dom)
                 elif line.startswith("goal ext:"):
                     g_name = line.replace("goal ext:", "").strip()
-                    goalies[current_ext] = get_real_name(g_name,known_players)
+                    goalies[current_ext] = get_real_name(g_name, current_ext)
+                elif line.startswith("f1 dom") or line.startswith("f2 dom"):
+                    players_str = line.split(":", 1)[1]
+                    for p in players_str.split(','):
+                        real_p = get_real_name(p.strip(), current_dom)
+                        if real_p: compos_by_team[current_dom].add(real_p)
+                elif line.startswith("f1 ext") or line.startswith("f2 ext"):
+                    players_str = line.split(":", 1)[1]
+                    for p in players_str.split(','):
+                        real_p = get_real_name(p.strip(), current_ext)
+                        if real_p: compos_by_team[current_ext].add(real_p)
                 elif line.startswith("f1") or line.startswith("f2"):
                     players_str = line.split(":", 1)[1]
                     for p in players_str.split(','):
-                        real_p = get_real_name(p.strip(),known_players)
-                        if real_p: compos.add(real_p)
+                        real_p = get_real_name(p.strip())
+                        if real_p:
+                            compos_by_team.setdefault(current_dom, set()).add(real_p)
     except Exception as e:
         print(f"[WARN] parse_flashscore_file : {e}")
+
+    all_compos = set()
+    for players in compos_by_team.values():
+        all_compos.update(players)
         
-    return matches, list(compos), goalies
+    return matches, list(all_compos), goalies
 
 
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
@@ -313,65 +366,63 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     hdca_g   = _opp.get('HDCA_G', 8.0)
     hdcf_pct = _opp.get('HDCF_pct', 50.0)
     
+    sog = p_form.get('L10_SOG_G', 0.0)
+
     if oish > 16.0: qs -= 2.0
     elif oish > 14.0: qs -= 1.0
+    if is_b2b: qs -= 1.5
 
-    if hdcf >= 1.5:  qs += 2.0
-    elif hdcf >= 1.0: qs += 1.0
-    if scf >= 4.0: qs += 1.0
+    g1 = 0.0
+    ixg_bonus = (3.0 if ixg >= 0.55 else
+                 2.0 if ixg >= 0.40 else
+                 1.0 if ixg >= 0.28 else
+                -1.5 if ixg <= 0.12 else 0.0)
+    goals_bonus = min(1.0, l10_g * 2.5)
+    g1 += max(ixg_bonus, goals_bonus)
+    if sog >= 3.0: g1 += 1.0
+    if hdcf >= 1.5: g1 += 1.5
+    elif hdcf >= 1.0: g1 += 0.75
+    if scf >= 4.0: g1 += 0.5
+    qs += min(g1, 4.0)
 
-    if cf_pct >= 54.0:   qs -= 1.5
-    elif cf_pct >= 52.0: qs -= 0.5
-    elif cf_pct <= 46.0: qs += 1.5
-    elif cf_pct <= 48.0: qs += 0.5
+    g2 = 0.0
+    if ga_g >= 3.00:   g2 += 2.0
+    elif ga_g >= 2.80: g2 += 1.0
+    elif ga_g < 2.50:  g2 -= 0.5
+    if cf_pct >= 54.0:   g2 -= 1.5
+    elif cf_pct >= 52.0: g2 -= 0.5
+    elif cf_pct <= 46.0: g2 += 1.5
+    elif cf_pct <= 48.0: g2 += 0.5
+    if hdca_g >= 12.0:   g2 += 1.5
+    elif hdca_g >= 10.0: g2 += 0.75
+    elif hdca_g <= 6.0:  g2 -= 0.75
+    if hdcf_pct <= 46.0: g2 += 0.5
+    if sa_g >= 30.0 and sog >= 2.5: g2 += 0.75
+    qs += min(g2, 4.0)
 
-    if pdo < 96.0: qs += 2.0
-    elif pdo < 98.0: qs += 1.0
-
-    if is_home: qs += 0.5
-    if has_star_linemate: qs += 0.5
-
-    if is_pp1:
-        if pk_pct < 77.0: qs += 3.0
-        elif pk_pct > 83.0: qs += 1.0
-        else: qs += 2.0
-
+    g3 = 0.0
+    if atoi >= 20.0: g3 += 2.0
+    elif atoi >= 18.0: g3 += 1.0
+    if pdo < 96.0: g3 += 1.5
+    elif pdo < 98.0: g3 += 0.75
     if season_g > 0:
         ratio = l10_g / season_g
-        if ratio >= 2.0:   qs += 1.5
-        elif ratio >= 1.5: qs += 1.0
-        elif ratio <= 0.3: qs -= 2.0
-        elif ratio <= 0.5: qs -= 1.0
+        if ratio >= 2.0:   g3 += 1.5
+        elif ratio >= 1.5: g3 += 1.0
+        elif ratio <= 0.3: g3 -= 2.0
+        elif ratio <= 0.5: g3 -= 1.0
+    if is_home: g3 += 0.5
+    if has_star_linemate: g3 += 0.5
+    qs += min(g3, 4.0)
 
-    if atoi >= 20.0: qs += 2.0
-    elif atoi >= 18.0: qs += 1.0
+    if is_pp1:
+        if pk_pct < 77.0: qs += 2.5
+        elif pk_pct > 83.0: qs += 1.0
+        else: qs += 1.75
+
+    if is_backup: qs += 2.0
 
 
-    ixg_bonus = 3.0 if ixg >= 0.55 else (2.0 if ixg >= 0.40 else (1.0 if ixg >= 0.28 else (-1.5 if ixg <= 0.12 else 0)))
-    goals_bonus = min(1.0, l10_g * 2.5)  
-    goal_ixg_total  = max(ixg_bonus, goals_bonus)
-    if l10_g >= 0.4 and ixg_bonus < goals_bonus:  
-        goal_ixg_total += 0.5
-    qs += goal_ixg_total
-    
-    if p_form.get('L10_SOG_G', 0.0) >= 3.0: qs += 1.5
-    
-    if ga_g >= 3.00:   qs += 2.5
-    elif ga_g >= 2.80: qs += 1.0
-    elif ga_g < 2.50:  qs -= 0.5
-    
-    if hdca_g >= 12.0:   qs += 2.0  
-    elif hdca_g >= 10.0: qs += 1.0
-    elif hdca_g <= 6.0:  qs -= 1.0   
-
-    if hdcf_pct <= 46.0: qs += 1.0 
-
-    if sa_g >= 30.0 and p_form.get('L10_SOG_G', 0.0) >= 2.5:
-        qs += 1.0
-
-    if is_backup: qs += 2.5
-    if is_b2b:    qs -= 1.5
-
-    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.5 * (qs - 7.5))))
+    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 9.5))))
 
     return qs_normalized
