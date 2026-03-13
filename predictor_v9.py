@@ -68,8 +68,10 @@ def load_goalie_stats(filepath):
             player = str(row.get('Player', '')).strip()
             if not player or player.lower() == 'nan':
                 continue
+            team = clean_team_name(str(row.get('Team', '')).strip())
             g_dict[player] = {
-                'GP': int(row.get('GP', 0))
+                'GP':   int(row.get('GP', 0)),
+                'Team': team,
             }
         return g_dict
     except:
@@ -222,10 +224,23 @@ def get_auto_pp1_players(form_data, pp_stats, teams_playing):
     return pp1_list
 
 def check_if_backup_goalie(goalie_name, goalie_stats):
+    """
+    Backup si GP du gardien < 25% des GP du titulaire de son équipe.
+    Ex: Woll 29 GP, Murray 37 GP → Woll = 78% → titulaire
+    Ex: backup 8 GP, Woll 29 GP  → backup = 28% → backup
+    """
     g = goalie_stats.get(goalie_name)
-    if not g:
+    if not g or g['GP'] == 0:
         return False
-    return g['GP'] < 25
+    team = g.get('Team', '')
+    if not team:
+        return False
+    team_gps = [v['GP'] for v in goalie_stats.values()
+                if v.get('Team') == team and v['GP'] > 0]
+    if not team_gps:
+        return False
+    ratio = g['GP'] / max(team_gps)
+    return ratio < 0.25
 
 def parse_flashscore_file(filepath, known_players, form_data=None):
     """
@@ -233,7 +248,7 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
     ne correspond à aucune équipe du match (évite les faux positifs de matching).
     """
     matches = []
-    compos_by_team = {}   # team_abbr → set de noms
+    compos_by_team = {}  
     goalies = {}
     
     def get_real_name(scraped_name, team_context=None):
@@ -260,7 +275,6 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
             if last_name in k_last and k_first.startswith(first_init):
                 exact = (last_name == k_last)
                 
-                # Bonus fort si l'équipe NST correspond à l'équipe du match
                 team_match = 0
                 if team_context and form_data:
                     p_team = form_data.get(k_name, {}).get('Team', '')
@@ -271,15 +285,12 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
         
         if not candidates: return s_name
         candidates.sort(key=lambda x: x[1], reverse=True)
-        
-        # Si le meilleur candidat a un team_match=0 ET il y a ambiguïté → méfiance
-        # On ne retourne le candidat que si son nom de famille correspond exactement
+
         best_name, best_score = candidates[0]
         if len(candidates) > 1:
-            # Plusieurs candidats → exiger le matching exact du nom de famille
             k_last_best = " ".join(best_name.split()[1:]).lower()
             if last_name != k_last_best:
-                return s_name  # pas assez confiant → retourner le nom brut (sera filtré ensuite)
+                return s_name  
         
         return best_name
 
@@ -315,7 +326,6 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
                         real_p = get_real_name(p.strip(), current_ext)
                         if real_p: compos_by_team[current_ext].add(real_p)
                 elif line.startswith("f1") or line.startswith("f2"):
-                    # fallback si pas de suffixe dom/ext
                     players_str = line.split(":", 1)[1]
                     for p in players_str.split(','):
                         real_p = get_real_name(p.strip())
@@ -324,7 +334,6 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
     except Exception as e:
         print(f"[WARN] parse_flashscore_file : {e}")
 
-    # Aplatir toutes les compos en une seule liste
     all_compos = set()
     for players in compos_by_team.values():
         all_compos.update(players)
@@ -359,12 +368,10 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     
     sog = p_form.get('L10_SOG_G', 0.0)
 
-    # ── Signaux négatifs (non plafonnés) ──────────────────────────
     if oish > 16.0: qs -= 2.0
     elif oish > 14.0: qs -= 1.0
     if is_b2b: qs -= 1.5
 
-    # ── Groupe 1 : forme individuelle (cap +4.0) ──────────────────
     g1 = 0.0
     ixg_bonus = (3.0 if ixg >= 0.55 else
                  2.0 if ixg >= 0.40 else
@@ -378,7 +385,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if scf >= 4.0: g1 += 0.5
     qs += min(g1, 4.0)
 
-    # ── Groupe 2 : contexte adversaire (cap +4.0) ─────────────────
     g2 = 0.0
     if ga_g >= 3.00:   g2 += 2.0
     elif ga_g >= 2.80: g2 += 1.0
@@ -394,7 +400,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if sa_g >= 30.0 and sog >= 2.5: g2 += 0.75
     qs += min(g2, 4.0)
 
-    # ── Groupe 3 : contexte joueur (cap +4.0) ─────────────────────
     g3 = 0.0
     if atoi >= 20.0: g3 += 2.0
     elif atoi >= 18.0: g3 += 1.0
@@ -410,20 +415,14 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if has_star_linemate: g3 += 0.5
     qs += min(g3, 4.0)
 
-    # ── Bonus PP1 (signal fort, non plafonné) ─────────────────────
     if is_pp1:
         if pk_pct < 77.0: qs += 2.5
         elif pk_pct > 83.0: qs += 1.0
         else: qs += 1.75
 
-    # ── Bonus backup (signal fort, non plafonné) ──────────────────
     if is_backup: qs += 2.0
 
-    # ── Sigmoïde : inflexion=9.5, pente=0.45 ─────────────────────
-    # QS brut ~7  → ~5.5 (RISQUÉ)
-    # QS brut ~9  → ~7.0 (JOUABLE)
-    # QS brut ~11 → ~8.4 (BON)
-    # QS brut ~13 → ~9.5 (ELITE — vraiment rare)
+
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 9.5))))
 
     return qs_normalized
