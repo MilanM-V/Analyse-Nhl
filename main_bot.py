@@ -260,7 +260,19 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 "Score": round(final_qs, 1),
                 "Base": round(base_qs, 1),
                 "PP1": "⭐" if is_pp1 else "",
-                "Tag": " ".join(context_tag)
+                "Tag": " ".join(context_tag),
+                # Stats brutes pour calibration empirique
+                "ixg":        round(p_form.get('L10_ixG_G', 0.0), 3),
+                "hdcf":       round(p_form.get('L10_iHDCF_G', 0.0), 2),
+                "sog":        round(p_form.get('L10_SOG_G', 0.0), 2),
+                "atoi":       round(p_form.get('ATOI', 0.0), 1),
+                "l10_g":      round(p_form.get('L10_G_G', 0.0), 3),
+                "season_g":   round(p_v5_stats.get('G_GP', 0.0), 3),
+                "pdo":        round(p_v5_stats.get('PDO', 100.0), 1),
+                "ga_g":       round(adv_stats.get('GA_G', 0.0) if adv_stats else 0.0, 2),
+                "cf_pct":     round(adv_stats.get('CF_pct', 50.0) if adv_stats else 50.0, 1),
+                "hdca_g":     round(adv_stats.get('HDCA_G', 0.0) if adv_stats else 0.0, 2),
+                "pk_pct":     round(adv_stats.get('PK%', 80.0) if adv_stats else 80.0, 1),
             })
 
     results = sorted(results, key=lambda x: x["Score"], reverse=True)
@@ -316,7 +328,10 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         with open(log_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv_module.DictWriter(f, fieldnames=[
                 'date', 'vague', 'joueur', 'equipe', 'adversaire',
-                'score', 'verdict', 'pp1', 'backup', 'b2b', 'but'
+                'score', 'verdict', 'pp1', 'backup', 'b2b',
+                'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
+                'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
+                'but'
             ])
             if not file_exists:
                 writer.writeheader()
@@ -337,6 +352,17 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                     'pp1':        '⭐' in r['PP1'],
                     'backup':     '🥅' in r['Tag'],
                     'b2b':        '😴' in r['Tag'],
+                    'ixg':        r['ixg'],
+                    'hdcf':       r['hdcf'],
+                    'sog':        r['sog'],
+                    'atoi':       r['atoi'],
+                    'l10_g':      r['l10_g'],
+                    'season_g':   r['season_g'],
+                    'pdo':        r['pdo'],
+                    'ga_g':       r['ga_g'],
+                    'cf_pct':     r['cf_pct'],
+                    'hdca_g':     r['hdca_g'],
+                    'pk_pct':     r['pk_pct'],
                     'but':        ''
                 })
     except Exception as e:

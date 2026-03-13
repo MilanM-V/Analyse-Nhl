@@ -1,8 +1,8 @@
-Match : Utah Hockey Club - Chicago Blackhawks (13.03. 02:00)
-  goal dom: Vejmelka K.
-  goal ext: Soderblom A.
-  f1 dom: Weegar M., Sergachyov M., Crouse L., Schmaltz N., Keller C.
-  f1 ext: Crevier L., Vlasic A., Burakovsky A., Bedard C., Greene R.
-  f2 dom: Marino J., Schmidt N., Guenther D., Cooley L., Peterka J.
-  f2 ext: Rinzel S., Kaiser W., Teravainen T., Nazar F., Bertuzzi T.
+Match : New York Islanders - Los Angeles Kings (14.03. 00:00)
+  goal dom: Sorokin I.
+  goal ext: Kuemper D.
+  f1 dom: Pulock R., Schaefer M., Ritchie C., Horvat B., Heineman E.
+  f1 ext: Doughty D., Anderson M., Kempe A., Kopitar A., Panarin A.
+  f2 dom: DeAngelo A., Pelech A., Barzal M., Schenn B., Palat O.
+  f2 ext: Clarke B., Edmundson J., Laferriere A., Byfield Q., Moore T.
 ----------------------------------------
