@@ -179,6 +179,7 @@ if __name__ == "__main__":
         ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=10&lines=single&draftteam=ALL", "last 10.csv", True],
         ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v4&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "power play.csv", True],
         ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=G&loc=B&toi=0&gpfilt=none&fd=&td=&lines=single", "goalies.csv", True],
+        ["https://www.naturalstattrick.com/teamtable.php?fromseason=20252026&thruseason=20252026&stype=2&sit=4v5&score=all&rate=n&team=all&loc=B&gpf=10&fd=&td=", "pk.csv", False],
 
     ]
 

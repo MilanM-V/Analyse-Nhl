@@ -179,9 +179,7 @@ def load_matchup_data(filepath):
                 'HDCF_pct': float(row.get('HDCF%', 50.0)),
                 'PK%':      float(row.get('PK%',   80.0)),
             }
-        teams_without_pk = [t for t, v in matchup_dict.items() if v['PK%'] == 80.0]
-        if len(teams_without_pk) > 20: 
-            print(f"[WARN] load_matchup_data : PK% absent ou non parsé pour {len(teams_without_pk)} équipes — signal PP1 neutralisé")
+        # PK% est injecté depuis pk.csv dans main_bot.py — valeur 80.0 ici est normale
         return matchup_dict
 
     except Exception as e:
@@ -205,12 +203,87 @@ def load_on_ice_stats(filepath):
         oi_dict = {}
         for _, row in df.iterrows():
             player = str(row.get('Player', '')).strip()
+            if not player or player.lower() == 'nan':
+                continue
+            def safe_float(val, default):
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return default
+
+            pdo_raw = safe_float(row.get('PDO', 1.0), 1.0)
+            pdo = pdo_raw * 100 if pdo_raw < 2.0 else pdo_raw
+            oish_raw = safe_float(row.get('On-Ice SH%', 10.0), 10.0)
+            oish = oish_raw * 100 if oish_raw < 1.0 else oish_raw
             oi_dict[player] = {
-                'oiSH': float(row.get('On-Ice SH%', 10.0)),
-                'PDO':  float(row.get('PDO', 100.0)),
+                'oiSH': oish,
+                'PDO':  pdo,
             }
         return oi_dict
-    except: return {}
+    except Exception as e:
+        print(f"[WARN] load_on_ice_stats : {e}")
+        return {}
+def load_pk_stats(filepath):
+    """
+    Charge le PK% depuis le tableau 4v5 NST (sit=4v5).
+    La colonne utile est SV% (= taux d'arrêt en infériorité = PK%).
+    """
+    try:
+        with open(filepath, encoding='utf-8-sig') as f:
+            content = f.read()
+        idx = content.find('Team')
+        if idx == -1:
+            print("[WARN] load_pk_stats : header 'Team' introuvable")
+            return {}
+        lines = content[idx:].strip().split('\n')
+        headers = lines[0].split()
+        # SV% global = avant-dernière valeur, PDO = dernière
+        # On ignore les headers (décalés par "Point %" = 2 mots pour 1 colonne)
+        # et on lit directement depuis la fin des données
+        sv_from_end  = -2   # SV% = avant-dernier
+        pdo_from_end = -1   # PDO = dernier
+        sv_idx = None  # non utilisé, on lira par position depuis la fin
+
+        pk_dict = {}
+        for line in lines[1:]:
+            parts = line.split()
+            if not parts or not parts[0].isdigit():
+                continue
+            team_name = None
+            team_word_count = 0
+            for name in TEAM_MAPPING:
+                words = name.split()
+                candidate = ' '.join(parts[1:1 + len(words)])
+                if candidate == name:
+                    team_name = name
+                    team_word_count = len(words)
+                    break
+            if not team_name:
+                continue
+            stats_part = parts[1 + team_word_count:]
+            # sv_idx - 1 car on a retiré le header "Team" de headers
+            if len(stats_part) < 2:
+                continue
+            try:
+                sv_pct = float(stats_part[-2])   # SV% = avant-dernière colonne
+                # NST peut exporter en décimal (0.823) ou pourcentage (82.3)
+                if sv_pct < 2.0:
+                    sv_pct *= 100
+                pk_dict[TEAM_MAPPING[team_name]] = round(sv_pct, 1)
+            except ValueError:
+                continue
+
+        if pk_dict:
+            print(f"[OK] load_pk_stats : {len(pk_dict)} équipes chargées")
+        else:
+            print("[WARN] load_pk_stats : aucune équipe parsée")
+        return pk_dict
+
+    except Exception as e:
+        print(f"[WARN] load_pk_stats : {e}")
+        return {}
+
+
 def get_auto_pp1_players(form_data, pp_stats, teams_playing):
     pp1_list = []
     for team in teams_playing:
