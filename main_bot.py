@@ -33,8 +33,8 @@ if hasattr(time, 'tzset'):
     os.environ['TZ'] = 'Europe/Paris'
     time.tzset()
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN_TEST")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID_TEST")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 
 def send_telegram_message(message):
@@ -201,8 +201,6 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     goalie_stats = predictor_v9.load_goalie_stats('./stats/goalies.csv')
     pk_stats   = predictor_v9.load_pk_stats('./stats/pk.csv')
 
-
-    # Injecter le vrai PK% dans matchups (remplace la valeur par défaut 80.0)
     for team_abbr, pk_pct in pk_stats.items():
         if team_abbr in matchups:
             matchups[team_abbr]['PK%'] = pk_pct
@@ -267,7 +265,6 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 "Base": round(base_qs, 1),
                 "PP1": "⭐" if is_pp1 else "",
                 "Tag": " ".join(context_tag),
-                # Stats brutes pour calibration empirique
                 "ixg":        round(p_form.get('L10_ixG_G', 0.0), 3),
                 "hdcf":       round(p_form.get('L10_iHDCF_G', 0.0), 2),
                 "sog":        round(p_form.get('L10_SOG_G', 0.0), 2),

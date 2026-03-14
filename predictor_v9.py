@@ -179,7 +179,6 @@ def load_matchup_data(filepath):
                 'HDCF_pct': float(row.get('HDCF%', 50.0)),
                 'PK%':      float(row.get('PK%',   80.0)),
             }
-        # PK% est injecté depuis pk.csv dans main_bot.py — valeur 80.0 ici est normale
         return matchup_dict
 
     except Exception as e:
@@ -237,12 +236,9 @@ def load_pk_stats(filepath):
             return {}
         lines = content[idx:].strip().split('\n')
         headers = lines[0].split()
-        # SV% global = avant-dernière valeur, PDO = dernière
-        # On ignore les headers (décalés par "Point %" = 2 mots pour 1 colonne)
-        # et on lit directement depuis la fin des données
-        sv_from_end  = -2   # SV% = avant-dernier
-        pdo_from_end = -1   # PDO = dernier
-        sv_idx = None  # non utilisé, on lira par position depuis la fin
+        sv_from_end  = -2   
+        pdo_from_end = -1   
+        sv_idx = None  
 
         pk_dict = {}
         for line in lines[1:]:
@@ -261,12 +257,10 @@ def load_pk_stats(filepath):
             if not team_name:
                 continue
             stats_part = parts[1 + team_word_count:]
-            # sv_idx - 1 car on a retiré le header "Team" de headers
             if len(stats_part) < 2:
                 continue
             try:
-                sv_pct = float(stats_part[-2])   # SV% = avant-dernière colonne
-                # NST peut exporter en décimal (0.823) ou pourcentage (82.3)
+                sv_pct = float(stats_part[-2])   
                 if sv_pct < 2.0:
                     sv_pct *= 100
                 pk_dict[TEAM_MAPPING[team_name]] = round(sv_pct, 1)

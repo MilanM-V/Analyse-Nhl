@@ -89,10 +89,6 @@ def is_valid_lineup(player_list):
             return False
     return True
 
-
-# ─────────────────────────────────────────────────────────────────────
-# SCHEDULE — API NHL officielle (sans Selenium)
-# ─────────────────────────────────────────────────────────────────────
 def get_scheduled_matches(url=""):
     """
     Retourne les matchs NHL du soir via l'API officielle NHL.
@@ -120,7 +116,7 @@ def get_scheduled_matches(url=""):
         if day.get("date") != date_str:
             continue
         for g in day.get("games", []):
-            if g.get("gameType", 2) not in (2, 3):  # saison régulière + playoffs uniquement
+            if g.get("gameType", 2) not in (2, 3):  
                 continue
             game_id    = str(g.get("id", ""))
             start_utc  = g.get("startTimeUTC", "")
@@ -141,7 +137,7 @@ def get_scheduled_matches(url=""):
                 continue
 
             matches_found.append({
-                "id":   game_id,   # NHL game ID numérique — get_lineups le résout en ID Flashscore
+                "id":   game_id,  
                 "time": time_local,
                 "home": home_full,
                 "away": away_full,
@@ -181,14 +177,7 @@ def _get_scheduled_matches_flashscore(url):
         driver.quit()
     return matches_found
 
-
-# ─────────────────────────────────────────────────────────────────────
-# LINEUPS — Flashscore via Selenium
-# L'API NHL ne publie jamais les lineups tant que gameState='FUT'
-# (confirmé 2026-03-12 : 14/14 matchs, clés forwards/goalies absentes).
-# ─────────────────────────────────────────────────────────────────────
-
-_FS_ID_CACHE: dict = {}  # cache session : NHL game ID → Flashscore match ID
+_FS_ID_CACHE: dict = {}  
 
 
 def _resolve_flashscore_id(nhl_game_id, home, away):
@@ -202,9 +191,7 @@ def _resolve_flashscore_id(nhl_game_id, home, away):
 
     def get_team_keyword(team_name):
         if not team_name: return ""
-        # Exception pour Utah car Flashscore utilise "Utah HC" ou "Utah" (pas "Club")
         if "Utah" in team_name: return "utah"
-        # Comportement par défaut (dernier mot)
         return team_name.split()[-1].lower()
 
     home_kw = get_team_keyword(home)
