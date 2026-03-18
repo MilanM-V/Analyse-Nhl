@@ -25,7 +25,8 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
-log_path = './stats/picks_log.csv'
+log_path         = './stats/picks_log.csv'
+players_log_path = './stats/players_log.csv'
 
 load_dotenv()
 
@@ -144,18 +145,62 @@ def is_active_hours():
     hour = now.hour
     return hour >= 17 or hour <= 4
 
+REQUIRED_CSV = {
+    "last 10.csv":              50,
+    "Player Season Totals.csv": 200,
+    "team.csv":                 10,
+    "power play.csv":           50,
+    "goalies.csv":              30,
+    "on_ice.csv":               50,
+    "pk.csv":                   10,
+}
+
+def check_csv_integrity():
+    """
+    Vérifie que chaque CSV requis existe et contient assez de lignes.
+    Retourne (True, []) si tout est ok, (False, [liste fichiers KO]) sinon.
+    """
+    ko = []
+    for filename, min_lines in REQUIRED_CSV.items():
+        path = f"./stats/{filename}"
+        if not os.path.exists(path):
+            ko.append(f"{filename} (manquant)")
+            continue
+        try:
+            with open(path, encoding="utf-8-sig") as f:
+                nb = sum(1 for _ in f)
+            if nb < min_lines:
+                ko.append(f"{filename} ({nb} lignes < {min_lines} attendues)")
+        except Exception as e:
+            ko.append(f"{filename} (erreur lecture: {e})")
+    return (len(ko) == 0, ko)
+
 def update_daily_stats():
     global LAST_STATS_UPDATE
     now = datetime.now()
     nhl_date = (now - timedelta(hours=12)).strftime("%Y-%m-%d")
-    if LAST_STATS_UPDATE != nhl_date:
-        logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR AUTOMATIQUE NST EN COURS...")
+
+    ok, ko_files = check_csv_integrity()
+
+    if LAST_STATS_UPDATE != nhl_date or not ok:
+        if not ok and LAST_STATS_UPDATE == nhl_date:
+            logger.warning(f"[{now.strftime('%H:%M:%S')}] CSV corrompus/vides : {', '.join(ko_files)} — Re-extraction forcée...")
+        else:
+            logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR AUTOMATIQUE NST EN COURS...")
         try:
             subprocess.run([sys.executable, "fichier.py"], check=True)
-            LAST_STATS_UPDATE = nhl_date
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Fichiers NST mis à jour avec succès !")
+            ok2, ko2 = check_csv_integrity()
+            if ok2:
+                LAST_STATS_UPDATE = nhl_date
+                logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Fichiers NST mis à jour avec succès !")
+            else:
+                logger.warning(f"[{datetime.now().strftime('%H:%M:%S')}] CSV toujours KO après extraction : {', '.join(ko2)} — Analyse bloquée, retry au prochain cycle.")
+                return False
         except Exception as e:
-            logger.info(f"Erreur critique sur fichier.py : {e}")
+            logger.warning(f"Erreur fichier.py : {e} — Analyse bloquée, retry au prochain cycle.")
+            return False
+
+    return True
 
 def purge_old_matches():
     global COMPOS_EN_MEMOIRE
@@ -371,6 +416,54 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture picks_log.csv : {e}")
 
+    # --- players_log.csv : tous les joueurs analysés (picks + non-picks) ---
+    picked_names = {r['Joueur'] for r in final_top10}
+    pl_exists = os.path.exists(players_log_path)
+    try:
+        with open(players_log_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv_module.DictWriter(f, fieldnames=[
+                'date', 'vague', 'joueur', 'equipe', 'adversaire',
+                'score', 'picked', 'pp1', 'backup', 'b2b',
+                'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
+                'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
+                'but'
+            ])
+            if not pl_exists:
+                writer.writeheader()
+            for r in results:
+                if   r["Score"] >= 9.0: verdict = "ELITE"
+                elif r["Score"] >= 7.0: verdict = "JOUABLE"
+                elif r["Score"] >  5.5: verdict = "RISQUE_JOUABLE"
+                elif r["Score"] >= 5.0: verdict = "RISQUE"
+                else:                   verdict = "EVITER"
+                writer.writerow({
+                    'date':       TODAY_DATE,
+                    'vague':      wave_label,
+                    'joueur':     r['Joueur'],
+                    'equipe':     r['Equipe'],
+                    'adversaire': r['Adversaire'],
+                    'score':      r['Score'],
+                    'picked':     r['Joueur'] in picked_names,
+                    'pp1':        '⭐' in r['PP1'],
+                    'backup':     '🥅' in r['Tag'],
+                    'b2b':        '😴' in r['Tag'],
+                    'ixg':        r['ixg'],
+                    'hdcf':       r['hdcf'],
+                    'sog':        r['sog'],
+                    'atoi':       r['atoi'],
+                    'l10_g':      r['l10_g'],
+                    'season_g':   r['season_g'],
+                    'pdo':        r['pdo'],
+                    'ga_g':       r['ga_g'],
+                    'cf_pct':     r['cf_pct'],
+                    'hdca_g':     r['hdca_g'],
+                    'pk_pct':     r['pk_pct'],
+                    'but':        ''
+                })
+        logger.info(f"[OK] players_log.csv : {len(results)} joueurs loggués ({len(picked_names)} picks, {len(results)-len(picked_names)} non-picks)")
+    except Exception as e:
+        logger.info(f"[WARN] Erreur écriture players_log.csv : {e}")
+
     send_telegram_message(tg_message)
 
 
@@ -454,51 +547,70 @@ def bot_routine():
                 f"premier match dans ~{mins_left} min. On attend..."
             )
 def send_session_report():
-    """Envoie le CSV par mail puis l'archive avec la date du jour."""
+    """Envoie picks_log.csv + players_log.csv par mail puis les archive."""
     logger.info("📧 Préparation de l'envoi du rapport par mail...")
-    
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    archive_path = f"./stats/archive_picks_{today_str}.csv"  
+
+    today_str    = datetime.now().strftime('%Y-%m-%d')
+    archive_picks   = f"./stats/archive_picks_{today_str}.csv"
+    archive_players = f"./stats/archive_players_{today_str}.csv"
 
     if not os.path.exists(log_path):
-        logger.warning(f"Fichier {log_path} introuvable.")
+        logger.warning(f"Fichier {log_path} introuvable — rapport annulé.")
         return
     try:
-        sender = os.getenv("EMAIL_USER")
+        sender   = os.getenv("EMAIL_USER")
         password = os.getenv("EMAIL_PASS")
         receiver = os.getenv("EMAIL_RECEIVER")
-        
+
         msg = MIMEMultipart()
-        msg['From'] = sender
-        msg['To'] = receiver
+        msg['From']    = sender
+        msg['To']      = receiver
         msg['Subject'] = f"🏒 Rapport NHL Session - {today_str}"
-        
-        body = f"Bonjour,\n\nVoici les pronostics générés durant la session du {today_str}.\nLe fichier a été archivé sur le serveur."
+
+        body = (
+            f"Bonjour,\n\n"
+            f"Voici les fichiers de la session du {today_str} :\n"
+            f"  • picks_{today_str}.csv   — joueurs sélectionnés (à compléter avec colonne 'but')\n"
+            f"  • players_{today_str}.csv — tous les joueurs analysés (picks + non-picks)\n\n"
+            f"Bonne analyse !"
+        )
         msg.attach(MIMEText(body, 'plain'))
 
-        with open(log_path, "rb") as attachment:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(attachment.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f"attachment; filename= picks_{today_str}.csv")
-            msg.attach(part)
+        # Pièce jointe 1 — picks_log.csv
+        def attach_file(filepath, filename):
+            with open(filepath, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={filename}")
+                msg.attach(part)
+
+        attach_file(log_path, f"picks_{today_str}.csv")
+
+        # Pièce jointe 2 — players_log.csv (si présent)
+        if os.path.exists(players_log_path):
+            attach_file(players_log_path, f"players_{today_str}.csv")
+        else:
+            logger.warning("players_log.csv introuvable — envoyé sans ce fichier.")
 
         server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
         server.starttls()
         server.login(sender, password)
         server.send_message(msg)
         server.quit()
-        logger.info("✅ Mail envoyé avec succès.")
-
-        archive_path = f"./stats/archive_picks_{today_str}.csv"
-        os.rename(log_path, archive_path)
-        logger.info(f"📁 Fichier archivé sous : {archive_path}")
+        logger.info("✅ Mail envoyé avec succès (picks + players).")
 
     except Exception as e:
         logger.error(f"❌ Erreur lors du rapport de session : {e}")
     finally:
+        # Archive picks_log
         if os.path.exists(log_path):
-            os.rename(log_path, archive_path)
+            os.rename(log_path, archive_picks)
+            logger.info(f"📁 picks archivé : {archive_picks}")
+        # Archive players_log
+        if os.path.exists(players_log_path):
+            os.rename(players_log_path, archive_players)
+            logger.info(f"📁 players archivé : {archive_players}")
 
 
 if __name__ == "__main__":
@@ -512,8 +624,11 @@ if __name__ == "__main__":
     while True:
         try:
             if is_active_hours():
-                update_daily_stats()
-                bot_routine()
+                stats_ok = update_daily_stats()
+                if not stats_ok:
+                    logger.warning("   Analyse suspendue — CSV invalides. Retry dans 15 min...")
+                else:
+                    bot_routine()
             else:
                 if MATCHS_TRAITES:
                     send_session_report()
