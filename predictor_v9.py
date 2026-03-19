@@ -455,9 +455,9 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     g2 = 0.0
     if ga_g >= 3.00:   g2 += 2.0
     elif ga_g >= 2.80: g2 += 1.0
-    elif ga_g < 2.50:  g2 -= 0.5
-    if cf_pct >= 54.0:   g2 -= 1.5
-    elif cf_pct >= 52.0: g2 -= 0.5
+    elif ga_g < 2.50:  g2 -= 0.25  
+    if cf_pct >= 54.0:   g2 -= 0.75  
+    elif cf_pct >= 52.0: g2 -= 0.25  
     elif cf_pct <= 46.0: g2 += 1.5
     elif cf_pct <= 48.0: g2 += 0.5
     if hdca_g >= 12.0:   g2 += 1.5
@@ -469,7 +469,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
 
     g3 = 0.0
     if atoi >= 20.0: g3 += 2.0
-    elif atoi >= 18.0: g3 += 1.0
+    elif atoi >= 17.0: g3 += 1.0  
     if pdo < 96.0: g3 += 1.5
     elif pdo < 98.0: g3 += 0.75
     if season_g > 0:
