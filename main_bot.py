@@ -330,8 +330,13 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     match_counts = {}
     SCORE_MINIMUM = 7
     SCORE_ELITE   = 8
+    # Filtre empirique : ixG≥0.40 ET iHDCF≥1.5 → +8% WR sur données réelles
+    IXG_MIN  = 0.40
+    HDCF_MIN = 1.5
     for r in results:
         if r['Score'] < SCORE_MINIMUM:
+            continue
+        if r['ixg'] < IXG_MIN or r['hdcf'] < HDCF_MIN:
             continue
         equipe = r['Equipe']
         match_key = frozenset([r['Equipe'], r['Adversaire']])
@@ -416,51 +421,76 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture picks_log.csv : {e}")
 
-    # --- players_log.csv : tous les joueurs analysés (picks + non-picks) ---
+    # --- players_log.csv : TOUS les joueurs de la compo (sans filtre ATOI) ---
     picked_names = {r['Joueur'] for r in final_top10}
     pl_exists = os.path.exists(players_log_path)
+
+    all_players_tonight = []
+    for player in COMPOS_DU_SOIR_BRUTES:
+        p_form = form_data.get(player)
+        if not p_form: continue
+        team = predictor_v9.clean_team_name(p_form['Team'])
+        if team not in opponents_tonight: continue
+        p_v5_stats = v5_data.get(player, {})
+        pos = str(p_v5_stats.get('Position', '')).strip()
+        if pos in ('D', 'LD', 'RD', 'G'): continue
+        adversaire  = opponents_tonight[team]
+        adv_stats   = matchups.get(adversaire)
+        is_pp1      = player in PP1_PLAYERS
+        is_home     = team in HOME_TEAMS
+        stars_in_team = active_superstars_by_team.get(team, [])
+        has_star_linemate = len([s for s in stars_in_team if s != player]) > 0
+        is_b2b      = team in B2B_TEAMS and adversaire not in B2B_TEAMS
+        adv_goalie  = STARTING_GOALIES.get(adversaire, "")
+        is_backup   = predictor_v9.check_if_backup_goalie(adv_goalie, goalie_stats)
+        qs = predictor_v9.calculate_base_qs(
+            p_v5_stats, p_form, adv_stats,
+            is_pp1, is_home, has_star_linemate, is_backup, is_b2b)
+        if qs < 0: qs = 0.0
+        context_tag = []
+        if is_home: context_tag.append("🏠")
+        if has_star_linemate: context_tag.append("🤝")
+        if is_b2b: context_tag.append("😴")
+        if is_backup: context_tag.append("🥅")
+        all_players_tonight.append({
+            "Joueur": player, "Equipe": team, "Adversaire": adversaire,
+            "Score": round(qs, 1), "PP1": "⭐" if is_pp1 else "",
+            "Tag": " ".join(context_tag),
+            "ixg":      round(p_form.get('L10_ixG_G', 0.0), 3),
+            "hdcf":     round(p_form.get('L10_iHDCF_G', 0.0), 2),
+            "sog":      round(p_form.get('L10_SOG_G', 0.0), 2),
+            "atoi":     round(p_form.get('ATOI', 0.0), 1),
+            "l10_g":    round(p_form.get('L10_G_G', 0.0), 3),
+            "season_g": round(p_v5_stats.get('G_GP', 0.0), 3),
+            "pdo":      round(p_v5_stats.get('PDO', 100.0), 1),
+            "ga_g":     round(adv_stats.get('GA_G', 0.0) if adv_stats else 0.0, 2),
+            "cf_pct":   round(adv_stats.get('CF_pct', 50.0) if adv_stats else 50.0, 1),
+            "hdca_g":   round(adv_stats.get('HDCA_G', 0.0) if adv_stats else 0.0, 2),
+            "pk_pct":   round(adv_stats.get('PK%', 80.0) if adv_stats else 80.0, 1),
+        })
+
     try:
         with open(players_log_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv_module.DictWriter(f, fieldnames=[
                 'date', 'vague', 'joueur', 'equipe', 'adversaire',
                 'score', 'picked', 'pp1', 'backup', 'b2b',
                 'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
-                'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
-                'but'
+                'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct', 'but'
             ])
             if not pl_exists:
                 writer.writeheader()
-            for r in results:
-                if   r["Score"] >= 9.0: verdict = "ELITE"
-                elif r["Score"] >= 7.0: verdict = "JOUABLE"
-                elif r["Score"] >  5.5: verdict = "RISQUE_JOUABLE"
-                elif r["Score"] >= 5.0: verdict = "RISQUE"
-                else:                   verdict = "EVITER"
+            for r in all_players_tonight:
                 writer.writerow({
-                    'date':       TODAY_DATE,
-                    'vague':      wave_label,
-                    'joueur':     r['Joueur'],
-                    'equipe':     r['Equipe'],
-                    'adversaire': r['Adversaire'],
-                    'score':      r['Score'],
-                    'picked':     r['Joueur'] in picked_names,
-                    'pp1':        '⭐' in r['PP1'],
-                    'backup':     '🥅' in r['Tag'],
-                    'b2b':        '😴' in r['Tag'],
-                    'ixg':        r['ixg'],
-                    'hdcf':       r['hdcf'],
-                    'sog':        r['sog'],
-                    'atoi':       r['atoi'],
-                    'l10_g':      r['l10_g'],
-                    'season_g':   r['season_g'],
-                    'pdo':        r['pdo'],
-                    'ga_g':       r['ga_g'],
-                    'cf_pct':     r['cf_pct'],
-                    'hdca_g':     r['hdca_g'],
-                    'pk_pct':     r['pk_pct'],
-                    'but':        ''
+                    'date': TODAY_DATE, 'vague': wave_label,
+                    'joueur': r['Joueur'], 'equipe': r['Equipe'], 'adversaire': r['Adversaire'],
+                    'score': r['Score'], 'picked': r['Joueur'] in picked_names,
+                    'pp1': '⭐' in r['PP1'], 'backup': '🥅' in r['Tag'], 'b2b': '😴' in r['Tag'],
+                    'ixg': r['ixg'], 'hdcf': r['hdcf'], 'sog': r['sog'], 'atoi': r['atoi'],
+                    'l10_g': r['l10_g'], 'season_g': r['season_g'], 'pdo': r['pdo'],
+                    'ga_g': r['ga_g'], 'cf_pct': r['cf_pct'], 'hdca_g': r['hdca_g'],
+                    'pk_pct': r['pk_pct'], 'but': ''
                 })
-        logger.info(f"[OK] players_log.csv : {len(results)} joueurs loggués ({len(picked_names)} picks, {len(results)-len(picked_names)} non-picks)")
+        logger.info(f"[OK] players_log.csv : {len(all_players_tonight)} joueurs loggués ({len(picked_names)} picks, {len(all_players_tonight)-len(picked_names)} non-picks)")
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture players_log.csv : {e}")
 
