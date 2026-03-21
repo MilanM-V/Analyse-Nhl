@@ -3,3 +3,4 @@ selenium
 python-dotenv
 requests
 undetected-chromedriver
+scikit-learn

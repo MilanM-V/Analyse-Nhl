@@ -188,7 +188,7 @@ def update_daily_stats():
         else:
             logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR AUTOMATIQUE NST EN COURS...")
         try:
-            subprocess.run([sys.executable, "fichier.py"], check=True)
+            subprocess.run([sys.executable, "fichier_mp.py"], check=True)
             ok2, ko2 = check_csv_integrity()
             if ok2:
                 LAST_STATS_UPDATE = nhl_date
@@ -321,6 +321,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 "cf_pct":     round(adv_stats.get('CF_pct', 50.0) if adv_stats else 50.0, 1),
                 "hdca_g":     round(adv_stats.get('HDCA_G', 0.0) if adv_stats else 0.0, 2),
                 "pk_pct":     round(adv_stats.get('PK%', 80.0) if adv_stats else 80.0, 1),
+                "rebounds":   round(p_form.get('L10_Rebounds_G', 0.0), 2),
+                "rush":       round(p_form.get('L10_Rush_G', 0.0), 2),
             })
 
     results = sorted(results, key=lambda x: x["Score"], reverse=True)
@@ -384,6 +386,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 'score', 'verdict', 'pp1', 'backup', 'b2b',
                 'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
                 'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
+                'rebounds', 'rush',
                 'but'
             ])
             if not file_exists:
@@ -416,6 +419,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                     'cf_pct':     r['cf_pct'],
                     'hdca_g':     r['hdca_g'],
                     'pk_pct':     r['pk_pct'],
+                    'rebounds':   r.get('rebounds', 0),
+                    'rush':       r.get('rush', 0),
                     'but':        ''
                 })
     except Exception as e:
@@ -430,6 +435,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 'score', 'picked', 'pp1', 'backup', 'b2b',
                 'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
                 'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
+                'rebounds', 'rush',
                 'but'
             ])
             if not pl_exists:
@@ -462,6 +468,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                     'cf_pct':     r['cf_pct'],
                     'hdca_g':     r['hdca_g'],
                     'pk_pct':     r['pk_pct'],
+                    'rebounds':   r.get('rebounds', 0),
+                    'rush':       r.get('rush', 0),
                     'but':        ''
                 })
         logger.info(f"[OK] players_log.csv : {len(results)} joueurs loggués ({len(picked_names)} picks, {len(results)-len(picked_names)} non-picks)")

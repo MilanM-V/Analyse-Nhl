@@ -98,7 +98,7 @@ SHOT_TYPE_ENCODE = {
     'tip-in': 1.2, 'deflected': 1.15, 'slap': 0.65,
     'wrap-around': 0.70, 'bat': 0.60,
 }
-XG_MODEL_PATH = "xg_model.pkl"  
+XG_MODEL_PATH = "xg_model.pkl" 
 
 def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True):
     """Features pour le modèle xG — identiques à train_xg.py."""
@@ -178,7 +178,6 @@ def is_high_danger(x, y, zone_code, home_defending_side, event_owner_team_id, ho
     if zone_code != 'O':
         return False
     ax = abs(x)
-
     dist = math.sqrt((89 - ax)**2 + y**2)
     in_slot = ax >= 54 and abs(y) <= 9
     return in_slot or dist < 20
@@ -263,7 +262,9 @@ def compute_last10_stats(all_teams):
         'gp': 0, 'toi_sec': 0,
         'goals': 0, 'shots': 0,
         'ixg': 0.0, 'ihdcf': 0,
-        'iscf': 0,  
+        'iscf': 0,
+        'rebounds': 0,   
+        'rush': 0,      
         'games_seen': set(),
     })
 
@@ -297,6 +298,15 @@ def compute_last10_stats(all_teams):
 
             home_team_id = pbp.get('homeTeam', {}).get('id')
 
+            def time_to_sec(t):
+                try:
+                    m, s = map(int, t.split(':'))
+                    return m * 60 + s
+                except:
+                    return 0
+
+            plays_list = pbp.get('plays', [])
+
             toi_map = get_toi_from_boxscore(gid)
             for pid_toi, toi_sec in toi_map.items():
                 if pid_toi in roster:
@@ -307,10 +317,11 @@ def compute_last10_stats(all_teams):
                     ps['games_seen'].add(gid)
                     ps['toi_sec'] += toi_sec
 
-            for play in pbp.get('plays', []):
+            for i, play in enumerate(plays_list):
                 t    = play.get('typeDescKey', '')
                 det  = play.get('details', {})
                 sit  = play.get('situationCode', '')
+                per  = play.get('periodDescriptor', {}).get('number', 1)
 
                 if t in ('shot-on-goal', 'goal', 'missed-shot'):
                     pid  = det.get('shootingPlayerId') or det.get('scoringPlayerId')
@@ -343,6 +354,24 @@ def compute_last10_stats(all_teams):
                     if t == 'goal':
                         ps['goals'] += 1
 
+                    tsec = time_to_sec(play.get('timeInPeriod', '0:00')) + (per-1)*1200
+                    is_rebound = False
+                    is_rush    = False
+                    for j in range(max(0, i-5), i):
+                        pj  = plays_list[j]
+                        if pj.get('periodDescriptor', {}).get('number', 1) != per:
+                            continue
+                        tj    = pj.get('typeDescKey', '')
+                        tsecj = time_to_sec(pj.get('timeInPeriod','0:00')) + (per-1)*1200
+                        delta = tsec - tsecj
+                        if tj == 'shot-on-goal' and 0 < delta <= 3:
+                            is_rebound = True
+                        if tj == 'takeaway' and 0 < delta <= 4:
+                            is_rush = True
+
+                    ps['rebounds'] += int(is_rebound)
+                    ps['rush']     += int(is_rush)
+
     rows = []
     for pid, s in player_stats.items():
         gp = len(s['games_seen'])
@@ -360,6 +389,8 @@ def compute_last10_stats(all_teams):
             'ixG':      round(s['ixg'], 3),
             'iSCF':     s['iscf'],
             'iHDCF':    s['ihdcf'],
+            'Rebounds': s['rebounds'], 
+            'RushShots':s['rush'],      
         })
 
     return pd.DataFrame(rows)
@@ -432,6 +463,7 @@ def build_on_ice():
 def build_power_play():
     """Équivalent power play.csv — TOI PP par joueur"""
     logger.info("  power play.csv...")
+
     summary = fetch_all("skater/summary")
     rows = []
     for r in summary:
@@ -444,6 +476,7 @@ def build_power_play():
             'Player': r.get('skaterFullName', ''),
             'Team':   r.get('teamAbbrevs', ''),
             'GP':     gp,
+
             'TOI':    float(pp_pts) * 2.0,
         })
     df = pd.DataFrame(rows)
@@ -704,7 +737,7 @@ if __name__ == "__main__":
     build_goalies()
     build_match_history()
     build_last10(ALL_TEAMS)       
-    build_team_stats(ALL_TEAMS)   
+    build_team_stats(ALL_TEAMS)  
     build_pk()
 
     logger.info("\nVérification des fichiers...")
