@@ -188,7 +188,7 @@ def update_daily_stats():
         else:
             logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR AUTOMATIQUE NST EN COURS...")
         try:
-            subprocess.run([sys.executable, "fichier_mp.py"], check=True)
+            subprocess.run([sys.executable, "fichier.py"], check=True)
             ok2, ko2 = check_csv_integrity()
             if ok2:
                 LAST_STATS_UPDATE = nhl_date
