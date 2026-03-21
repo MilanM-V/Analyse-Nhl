@@ -1,3 +1,6 @@
 .env
 bot.log
 watchdog.log
+stats/
+compos_live.txt
+analyse/

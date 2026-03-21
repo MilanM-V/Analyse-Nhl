@@ -1,25 +1,21 @@
-"""
-NHL BETTING BOT V10 - Serveur Autonome par "Vagues Horaires"
-- Met à jour NST automatiquement (1x/jour)
-- Garde en mémoire TOUTES les compos des matchs qui n'ont pas encore commencé
-- Envoie UN message Telegram PAR VAGUE (matchs espacés de moins de 15 min = même vague)
-- Force l'envoi 5 min avant le 1er match si des compos manquent encore
-"""
 import time
 from datetime import datetime, timedelta
 import os
 import sys
 import subprocess
 import requests
-
 import scraper
-import predictor_v8
+import predictor_v9
 import logging
 from logging.handlers import RotatingFileHandler
-if hasattr(time, 'tzset'):
-    os.environ['TZ'] = 'Europe/Paris'
-    time.tzset()
-# Configuration du logging
+from dotenv import load_dotenv
+import csv as csv_module
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -29,17 +25,15 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
+log_path         = './stats/picks_log.csv'
+players_log_path = './stats/players_log.csv'
 
-# ==========================================
-# CONFIGURATION TELEGRAM
-# ==========================================
-import os
-from dotenv import load_dotenv
-
-# Charge les variables du fichier .env
 load_dotenv()
 
-# Récupère les variables
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
@@ -64,31 +58,20 @@ def send_telegram_message(message):
     except Exception as e:
         logger.info(f"Exception lors de l'envoi Telegram : {e}")
 
-# ==========================================
-# MÉMOIRE GLOBALE
-# ==========================================
-MATCHS_TRAITES = set()       # IDs déjà scrappés (compo trouvée ou pas)
-COMPOS_EN_MEMOIRE = {}       # { match_id: {"match_info": {...}, "compo": {...}} }
-VAGUES_ENVOYEES = set()      # Clés de vagues déjà envoyées sur Telegram
+
+MATCHS_TRAITES = set()       
+COMPOS_EN_MEMOIRE = {}      
+VAGUES_ENVOYEES = set()      
 FICHIER_COMPOS_TEMPORAIRE = "compos_live.txt"
 LAST_STATS_UPDATE = None
 
-# ==========================================
-# LOGIQUE DE VAGUES PAR CLUSTERING (15 MIN)
-# ==========================================
 
-ECART_MAX_VAGUE_MIN = 5      # 2 matchs espacés de moins de 15 min = même vague
-FORCE_ENVOI_MIN_AVANT = 17     # On force l'envoi 5 min avant le 1er match de la vague
-
+ECART_MAX_VAGUE_MIN = 5  
+FORCE_ENVOI_MIN_AVANT = 17
 def parse_match_datetime(time_str):
-    """
-    Convertit "07.03. 01:00" en objet datetime (année courante).
-    Gère le passage minuit (ex: match à 01:00 le lendemain).
-    """
     now = datetime.now()
     try:
         dt = datetime.strptime(f"{time_str} {now.year}", "%d.%m. %H:%M %Y")
-        # Si le match semble dans le passé lointain (>12h), c'est qu'il est le lendemain
         if dt < now - timedelta(hours=12):
             dt += timedelta(days=1)
         return dt
@@ -96,19 +79,9 @@ def parse_match_datetime(time_str):
         return None
 
 def build_waves(match_ids_in_memory):
-    """
-    Regroupe les match_ids par vague :
-    - On trie par heure de match
-    - Si l'écart entre deux matchs consécutifs est < 15 min   même vague
-    - Sinon   nouvelle vague
-    
-    Retourne une liste de listes : [ [id1, id2], [id3], [id4, id5, id6] ]
-    Chaque sous-liste = une vague.
-    """
     if not match_ids_in_memory:
         return []
 
-    # Trier les matchs par heure
     sorted_matches = sorted(
         match_ids_in_memory,
         key=lambda mid: parse_match_datetime(COMPOS_EN_MEMOIRE[mid]["match_info"]["time"]) or datetime.max
@@ -124,7 +97,7 @@ def build_waves(match_ids_in_memory):
         if prev_dt and curr_dt:
             ecart = (curr_dt - prev_dt).total_seconds() / 60
         else:
-            ecart = 999  # Sécurité : si on ne peut pas parser, on sépare
+            ecart = 999 
 
         if ecart <= ECART_MAX_VAGUE_MIN:
             current_wave.append(sorted_matches[i])
@@ -136,24 +109,15 @@ def build_waves(match_ids_in_memory):
     return waves
 
 def get_wave_key(wave_match_ids):
-    """
-    Clé unique pour identifier une vague = heure du 1er match de la vague.
-    Ex: "01:00_07.03."
-    """
     first_time = COMPOS_EN_MEMOIRE[wave_match_ids[0]]["match_info"]["time"]
     return first_time
 
 def is_wave_complete(wave_match_ids, all_scheduled_matches):
-    """
-    Vérifie si TOUS les matchs schedulés appartenant à cette vague ont leur compo en mémoire.
-    On détermine l'appartenance à la vague en regardant si l'heure du match schedulé
-    est dans la fenêtre temporelle de la vague (entre premier et dernier match ± 15 min).
-    """
     first_dt = parse_match_datetime(COMPOS_EN_MEMOIRE[wave_match_ids[0]]["match_info"]["time"])
     last_dt  = parse_match_datetime(COMPOS_EN_MEMOIRE[wave_match_ids[-1]]["match_info"]["time"])
 
     if not first_dt or not last_dt:
-        return True  # Sécurité
+        return True  
 
     window_start = first_dt - timedelta(minutes=1)
     window_end   = last_dt  + timedelta(minutes=ECART_MAX_VAGUE_MIN)
@@ -162,19 +126,12 @@ def is_wave_complete(wave_match_ids, all_scheduled_matches):
         m_dt = parse_match_datetime(m["time"])
         if not m_dt:
             continue
-        # Ce match schedulé fait-il partie de la fenêtre de la vague ?
         if window_start <= m_dt <= window_end:
-            # A-t-il sa compo en mémoire ?
             if m["id"] not in COMPOS_EN_MEMOIRE:
-                return False  # Compo manquante   vague incomplète
-
-    return True  # Toutes les compos sont là !
+                return False  
+    return True 
 
 def should_force_send(wave_match_ids):
-    """
-    Retourne True si on est à moins de FORCE_ENVOI_MIN_AVANT minutes
-    du 1er match de la vague   on envoie même si des compos manquent.
-    """
     first_dt = parse_match_datetime(COMPOS_EN_MEMOIRE[wave_match_ids[0]]["match_info"]["time"])
     if not first_dt:
         return False
@@ -182,30 +139,70 @@ def should_force_send(wave_match_ids):
     minutes_before_match = (first_dt - now).total_seconds() / 60
     return minutes_before_match <= FORCE_ENVOI_MIN_AVANT
 
-# ==========================================
-# FONCTIONS UTILITAIRES EXISTANTES
-# ==========================================
 
 def is_active_hours():
     now = datetime.now()
     hour = now.hour
     return hour >= 17 or hour <= 4
 
+REQUIRED_CSV = {
+    "last 10.csv":              50,
+    "Player Season Totals.csv": 200,
+    "team.csv":                 10,
+    "power play.csv":           50,
+    "goalies.csv":              30,
+    "on_ice.csv":               50,
+    "pk.csv":                   10,
+}
+
+def check_csv_integrity():
+    """
+    Vérifie que chaque CSV requis existe et contient assez de lignes.
+    Retourne (True, []) si tout est ok, (False, [liste fichiers KO]) sinon.
+    """
+    ko = []
+    for filename, min_lines in REQUIRED_CSV.items():
+        path = f"./stats/{filename}"
+        if not os.path.exists(path):
+            ko.append(f"{filename} (manquant)")
+            continue
+        try:
+            with open(path, encoding="utf-8-sig") as f:
+                nb = sum(1 for _ in f)
+            if nb < min_lines:
+                ko.append(f"{filename} ({nb} lignes < {min_lines} attendues)")
+        except Exception as e:
+            ko.append(f"{filename} (erreur lecture: {e})")
+    return (len(ko) == 0, ko)
+
 def update_daily_stats():
     global LAST_STATS_UPDATE
     now = datetime.now()
     nhl_date = (now - timedelta(hours=12)).strftime("%Y-%m-%d")
-    if LAST_STATS_UPDATE != nhl_date:
-        logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR AUTOMATIQUE NST EN COURS...")
+
+    ok, ko_files = check_csv_integrity()
+
+    if LAST_STATS_UPDATE != nhl_date or not ok:
+        if not ok and LAST_STATS_UPDATE == nhl_date:
+            logger.warning(f"[{now.strftime('%H:%M:%S')}] CSV corrompus/vides : {', '.join(ko_files)} — Re-extraction forcée...")
+        else:
+            logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR AUTOMATIQUE NST EN COURS...")
         try:
             subprocess.run([sys.executable, "fichier.py"], check=True)
-            LAST_STATS_UPDATE = nhl_date
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Fichiers NST mis à jour avec succès !")
+            ok2, ko2 = check_csv_integrity()
+            if ok2:
+                LAST_STATS_UPDATE = nhl_date
+                logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Fichiers NST mis à jour avec succès !")
+            else:
+                logger.warning(f"[{datetime.now().strftime('%H:%M:%S')}] CSV toujours KO après extraction : {', '.join(ko2)} — Analyse bloquée, retry au prochain cycle.")
+                return False
         except Exception as e:
-            logger.info(f"Erreur critique sur fichier.py : {e}")
+            logger.warning(f"Erreur fichier.py : {e} — Analyse bloquée, retry au prochain cycle.")
+            return False
+
+    return True
 
 def purge_old_matches():
-    """Supprime de la mémoire les matchs qui ont déjà commencé."""
     global COMPOS_EN_MEMOIRE
     now = datetime.now()
     matchs_a_supprimer = []
@@ -217,21 +214,11 @@ def purge_old_matches():
         del COMPOS_EN_MEMOIRE[m_id]
         logger.info(f"   Match {m_id} purgé de la mémoire (match commencé).")
 
-# ==========================================
-# MOTEUR DE CALCUL (inchangé)
-# ==========================================
 
 def run_analysis_and_send(match_ids_for_wave, wave_label):
-    """
-    Lance l'analyse predictor_v8 sur un ensemble de matchs et envoie le Telegram.
-    Paramètres :
-      - match_ids_for_wave : liste des match_ids de la vague
-      - wave_label         : label lisible pour les logs (ex: "01:00   01:10 (3 matchs)")
-    """
     nb_matchs = len(match_ids_for_wave)
     logger.info(f"\n---  ANALYSE VAGUE {wave_label} ({nb_matchs} matchs) ---")
 
-    # Écriture du fichier temporaire uniquement avec les matchs de cette vague
     with open(FICHIER_COMPOS_TEMPORAIRE, "w", encoding="utf-8") as f:
         for mid in match_ids_for_wave:
             data = COMPOS_EN_MEMOIRE[mid]
@@ -250,93 +237,121 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             f.write(txt_block)
 
     TODAY_DATE = datetime.now().strftime("%Y-%m-%d")
+    
+    form_data  = predictor_v9.load_recent_form('./stats/last 10.csv')
+    matchups   = predictor_v9.load_matchup_data('./stats/team.csv')
+    pp_stats   = predictor_v9.load_powerplay_stats('./stats/power play.csv')
+    oi_data = predictor_v9.load_on_ice_stats('./stats/on_ice.csv')
+    v5_data = predictor_v9.load_v5_base_stats('./stats/Player Season Totals.csv', oi_data)
+    goalie_stats = predictor_v9.load_goalie_stats('./stats/goalies.csv')
+    pk_stats   = predictor_v9.load_pk_stats('./stats/pk.csv')
 
-    v5_data    = predictor_v8.load_v5_base_stats('./stats/Player Season Totals.csv')
-    form_data  = predictor_v8.load_recent_form('./stats/last 10.csv')
-    matchups   = predictor_v8.load_matchup_data('./stats/team.csv')
-    pp_stats   = predictor_v8.load_powerplay_stats('./stats/power play.csv')
+    for team_abbr, pk_pct in pk_stats.items():
+        if team_abbr in matchups:
+            matchups[team_abbr]['PK%'] = pk_pct
 
-    known_players = list(form_data.keys()) + list(v5_data.keys())
+    known_players = list(form_data.keys()) + list(v5_data.keys()) + list(goalie_stats.keys())
 
-    MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v8.parse_flashscore_file(
-        FICHIER_COMPOS_TEMPORAIRE, known_players
-    )
+    MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v9.parse_flashscore_file(FICHIER_COMPOS_TEMPORAIRE, known_players, form_data)
     COMPOS_DU_SOIR = [p for p in COMPOS_DU_SOIR_BRUTES if p in form_data]
     HOME_TEAMS = [mt[0] for mt in MATCHS_DU_SOIR]
 
     opponents_tonight = {t1: t2 for t1, t2 in MATCHS_DU_SOIR}
     opponents_tonight.update({t2: t1 for t1, t2 in MATCHS_DU_SOIR})
 
-    B2B_TEAMS  = [t for t in predictor_v8.get_b2b_teams('./stats/match.csv', TODAY_DATE) if t in opponents_tonight]
-    PP1_PLAYERS = predictor_v8.get_auto_pp1_players(form_data, pp_stats, opponents_tonight.keys())
+    B2B_TEAMS  = [t for t in predictor_v9.get_b2b_teams('./stats/match.csv', TODAY_DATE) if t in opponents_tonight]
+    PP1_PLAYERS = predictor_v9.get_auto_pp1_players(form_data, pp_stats, opponents_tonight.keys())
 
-    active_superstars_by_team = {t: [] for t in predictor_v8.TEAM_MAPPING.values()}
+    active_superstars_by_team = {t: [] for t in predictor_v9.TEAM_MAPPING.values()}
     for p in COMPOS_DU_SOIR:
-        if p in predictor_v8.SUPERSTARS_PLAYMAKERS and p in form_data:
-            team_clean = predictor_v8.clean_team_name(form_data[p]['Team'])
+        if p in predictor_v9.SUPERSTARS_PLAYMAKERS and p in form_data:
+            team_clean = predictor_v9.clean_team_name(form_data[p]['Team'])
             if team_clean in active_superstars_by_team:
                 active_superstars_by_team[team_clean].append(p)
 
     results = []
     for player, p_form in form_data.items():
         if player not in COMPOS_DU_SOIR: continue
-        team = predictor_v8.clean_team_name(p_form['Team'])
+        team = predictor_v9.clean_team_name(p_form['Team'])
         if p_form['ATOI'] < 13.0: continue
 
         if team in opponents_tonight:
-            adversaire   = opponents_tonight[team]
-            adv_stats    = matchups.get(adversaire)
-            p_v5_stats   = v5_data.get(player, {})
+            adversaire= opponents_tonight[team]
+            adv_stats= matchups.get(adversaire)
+            p_v5_stats= v5_data.get(player, {})
 
-            is_pp1            = player in PP1_PLAYERS
-            is_home           = team in HOME_TEAMS
-            stars_in_team     = active_superstars_by_team.get(team, [])
+            is_pp1= player in PP1_PLAYERS
+            is_home= team in HOME_TEAMS
+            stars_in_team = active_superstars_by_team.get(team, [])
             has_star_linemate = len([s for s in stars_in_team if s != player]) > 0
-            is_b2b            = team in B2B_TEAMS and adversaire not in B2B_TEAMS
-            adv_goalie        = STARTING_GOALIES.get(adversaire, "")
-            is_backup         = predictor_v8.check_if_backup_goalie(adv_goalie, v5_data, form_data)
+            is_b2b = team in B2B_TEAMS and adversaire not in B2B_TEAMS
+            adv_goalie = STARTING_GOALIES.get(adversaire, "")
+            is_backup = predictor_v9.check_if_backup_goalie(adv_goalie, goalie_stats)
 
-            base_qs = predictor_v8.calculate_base_qs(p_v5_stats, p_form, adv_stats, is_pp1, is_home, has_star_linemate)
-            if base_qs <= -90: continue
-
+            base_qs = predictor_v9.calculate_base_qs(
+                p_v5_stats, p_form, adv_stats,
+                is_pp1, is_home, has_star_linemate,
+                is_backup, is_b2b
+            )
+            if base_qs < 0: continue   
             final_qs = base_qs
-            if is_backup: final_qs += 2.5
-            if is_b2b:    final_qs -= 1.5
 
             context_tag = []
-            if is_home:           context_tag.append("🏠")
+            if is_home:  context_tag.append("🏠")
             if has_star_linemate: context_tag.append("🤝")
-            if is_b2b:            context_tag.append("😴")
-            if is_backup:         context_tag.append("🥅")
+            if is_b2b: context_tag.append("😴")
+            if is_backup: context_tag.append("🥅")
 
             results.append({
-                "Joueur":    player,
-                "Equipe":    team,
+                "Joueur": player,
+                "Equipe": team,
                 "Adversaire": adversaire,
-                "Score":     round(final_qs, 1),
-                "Base":      round(base_qs, 1),
-                "PP1":       "⭐" if is_pp1 else "",
-                "Tag":       " ".join(context_tag)
+                "Score": round(final_qs, 1),
+                "Base": round(base_qs, 1),
+                "PP1": "⭐" if is_pp1 else "",
+                "Tag": " ".join(context_tag),
+                "ixg":        round(p_form.get('L10_ixG_G', 0.0), 3),
+                "hdcf":       round(p_form.get('L10_iHDCF_G', 0.0), 2),
+                "sog":        round(p_form.get('L10_SOG_G', 0.0), 2),
+                "atoi":       round(p_form.get('ATOI', 0.0), 1),
+                "l10_g":      round(p_form.get('L10_G_G', 0.0), 3),
+                "season_g":   round(p_v5_stats.get('G_GP', 0.0), 3),
+                "pdo":        round(p_v5_stats.get('PDO', 100.0), 1),
+                "ga_g":       round(adv_stats.get('GA_G', 0.0) if adv_stats else 0.0, 2),
+                "cf_pct":     round(adv_stats.get('CF_pct', 50.0) if adv_stats else 50.0, 1),
+                "hdca_g":     round(adv_stats.get('HDCA_G', 0.0) if adv_stats else 0.0, 2),
+                "pk_pct":     round(adv_stats.get('PK%', 80.0) if adv_stats else 80.0, 1),
             })
 
     results = sorted(results, key=lambda x: x["Score"], reverse=True)
 
-    # Filtre Diversité
     final_top10 = []
     team_counts  = {}
     match_counts = {}
+    SCORE_MINIMUM = 7
+    SCORE_ELITE   = 8
     for r in results:
-        equipe   = r['Equipe']
+        if r['Score'] < SCORE_MINIMUM:
+            continue
+        equipe = r['Equipe']
         match_key = frozenset([r['Equipe'], r['Adversaire']])
-        if team_counts.get(equipe, 0) < 1 and match_counts.get(match_key, 0) < 2:
+        count_team = team_counts.get(equipe, 0)
+        count_match = match_counts.get(match_key, 0)
+        can_add_player = False
+        if count_team == 0:
+            can_add_player = True
+        elif count_team == 1 and r['Score'] >= SCORE_ELITE:
+            can_add_player = True
+
+        if can_add_player and count_match < 3:
             final_top10.append(r)
-            team_counts[equipe] = 1
-            match_counts[match_key] = match_counts.get(match_key, 0) + 1
-        if len(final_top10) >= 10: break
+            team_counts[equipe] = count_team + 1
+            match_counts[match_key] = count_match + 1
+    if len(final_top10) < 2 and len(results) >= 2:
+        logger.info(f" Moins de 2 joueurs trouvés via les filtres. Application du fallback (Top 2).")
+        final_top10 = results[:2]
 
-    # Formatage et envoi Telegram
     logger.info(f"\n=== RÉSULTATS VAGUE {wave_label} ===")
-
     if not final_top10:
         logger.info("Aucun joueur n'a passé les filtres sur cette vague.")
         return
@@ -349,32 +364,117 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         elif r["Score"] > 5.5: reco = "☑️ <i> JOUABLE MAIS AVEC RISQUE</i>"
         elif r["Score"] >= 5.0: reco = "⚠️ <i>RISQUÉ</i>"
         else:                   reco = "❌ À ÉVITER"
-
-        team_full = predictor_v8.REVERSE_TEAM_MAPPING.get(r['Equipe'], r['Equipe'])
-        adv_full  = predictor_v8.REVERSE_TEAM_MAPPING.get(r['Adversaire'], r['Adversaire'])
-
+        team_full = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Equipe'], r['Equipe'])
+        adv_full  = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Adversaire'], r['Adversaire'])
 
         tg_message += f"<b>{i+1}. {r['Joueur']}</b> {r['PP1']} {r['Tag']}\n"
         tg_message += f"🏒 <i>{team_full} vs {adv_full}</i>\n"
         tg_message += f"📊 Score: <b>{r['Score']}</b> | {reco}\n\n"
 
+    file_exists = os.path.exists(log_path)
+    try:
+        with open(log_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv_module.DictWriter(f, fieldnames=[
+                'date', 'vague', 'joueur', 'equipe', 'adversaire',
+                'score', 'verdict', 'pp1', 'backup', 'b2b',
+                'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
+                'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
+                'but'
+            ])
+            if not file_exists:
+                writer.writeheader()
+            for r in final_top10:
+                if   r["Score"] >= 9.0: verdict = "ELITE"
+                elif r["Score"] >= 7.0: verdict = "JOUABLE"
+                elif r["Score"] >  5.5: verdict = "RISQUE_JOUABLE"
+                elif r["Score"] >= 5.0: verdict = "RISQUE"
+                else:                   verdict = "EVITER"
+                writer.writerow({
+                    'date':       TODAY_DATE,
+                    'vague':      wave_label,
+                    'joueur':     r['Joueur'],
+                    'equipe':     r['Equipe'],
+                    'adversaire': r['Adversaire'],
+                    'score':      r['Score'],
+                    'verdict':    verdict,
+                    'pp1':        '⭐' in r['PP1'],
+                    'backup':     '🥅' in r['Tag'],
+                    'b2b':        '😴' in r['Tag'],
+                    'ixg':        r['ixg'],
+                    'hdcf':       r['hdcf'],
+                    'sog':        r['sog'],
+                    'atoi':       r['atoi'],
+                    'l10_g':      r['l10_g'],
+                    'season_g':   r['season_g'],
+                    'pdo':        r['pdo'],
+                    'ga_g':       r['ga_g'],
+                    'cf_pct':     r['cf_pct'],
+                    'hdca_g':     r['hdca_g'],
+                    'pk_pct':     r['pk_pct'],
+                    'but':        ''
+                })
+    except Exception as e:
+        logger.info(f"[WARN] Erreur écriture picks_log.csv : {e}")
+
+    # --- players_log.csv : tous les joueurs analysés (picks + non-picks) ---
+    picked_names = {r['Joueur'] for r in final_top10}
+    pl_exists = os.path.exists(players_log_path)
+    try:
+        with open(players_log_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv_module.DictWriter(f, fieldnames=[
+                'date', 'vague', 'joueur', 'equipe', 'adversaire',
+                'score', 'picked', 'pp1', 'backup', 'b2b',
+                'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
+                'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
+                'but'
+            ])
+            if not pl_exists:
+                writer.writeheader()
+            for r in results:
+                if   r["Score"] >= 9.0: verdict = "ELITE"
+                elif r["Score"] >= 7.0: verdict = "JOUABLE"
+                elif r["Score"] >  5.5: verdict = "RISQUE_JOUABLE"
+                elif r["Score"] >= 5.0: verdict = "RISQUE"
+                else:                   verdict = "EVITER"
+                writer.writerow({
+                    'date':       TODAY_DATE,
+                    'vague':      wave_label,
+                    'joueur':     r['Joueur'],
+                    'equipe':     r['Equipe'],
+                    'adversaire': r['Adversaire'],
+                    'score':      r['Score'],
+                    'picked':     r['Joueur'] in picked_names,
+                    'pp1':        '⭐' in r['PP1'],
+                    'backup':     '🥅' in r['Tag'],
+                    'b2b':        '😴' in r['Tag'],
+                    'ixg':        r['ixg'],
+                    'hdcf':       r['hdcf'],
+                    'sog':        r['sog'],
+                    'atoi':       r['atoi'],
+                    'l10_g':      r['l10_g'],
+                    'season_g':   r['season_g'],
+                    'pdo':        r['pdo'],
+                    'ga_g':       r['ga_g'],
+                    'cf_pct':     r['cf_pct'],
+                    'hdca_g':     r['hdca_g'],
+                    'pk_pct':     r['pk_pct'],
+                    'but':        ''
+                })
+        logger.info(f"[OK] players_log.csv : {len(results)} joueurs loggués ({len(picked_names)} picks, {len(results)-len(picked_names)} non-picks)")
+    except Exception as e:
+        logger.info(f"[WARN] Erreur écriture players_log.csv : {e}")
+
     send_telegram_message(tg_message)
 
-# ==========================================
-# ROUTINE PRINCIPALE
-# ==========================================
 
 def bot_routine():
     global MATCHS_TRAITES, COMPOS_EN_MEMOIRE, VAGUES_ENVOYEES
 
     logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}]  Lancement de la routine de scan Flashscore...")
 
-    # 1. Nettoyage des matchs passés
     purge_old_matches()
 
-    # 2. Récupération des matchs du soir
     matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/")
-    nouvelles_compos_trouvees = False
 
     for m in matches_du_jour:
         match_id = m['id']
@@ -383,22 +483,19 @@ def bot_routine():
             continue
 
         logger.info(f"   Vérification compo : {m['home']} - {m['away']}...")
-        compo = scraper.get_lineups(match_id)
+        compo = scraper.get_lineups(match_id, m['home'], m['away'])
 
         if isinstance(compo, dict):
             logger.info(f"    COMPO TROUVÉE ! Mise en mémoire.")
             COMPOS_EN_MEMOIRE[match_id] = {"match_info": m, "compo": compo}
             MATCHS_TRAITES.add(match_id)
-            nouvelles_compos_trouvees = True
         else:
             logger.info(f"   {compo} — On réessaiera au prochain cycle.")
 
-    # 3. Pas de compos en mémoire   rien à faire
     if not COMPOS_EN_MEMOIRE:
         logger.info("   Aucune compo en mémoire. En attente...")
         return
 
-    # 4. Construction des vagues par clustering
     waves = build_waves(list(COMPOS_EN_MEMOIRE.keys()))
 
     logger.info(f"   {len(waves)} vague(s) détectée(s) pour ce soir.")
@@ -406,11 +503,9 @@ def bot_routine():
     for wave in waves:
         wave_key = get_wave_key(wave)
 
-        # Déjà envoyée   on skip
         if wave_key in VAGUES_ENVOYEES:
             continue
 
-        # Infos lisibles pour les logs
         heures = [COMPOS_EN_MEMOIRE[mid]["match_info"]["time"].split(" ")[1] for mid in wave]
         wave_label = f"{heures[0]}" if len(heures) == 1 else f"{heures[0]}   {heures[-1]} ({len(wave)} matchs)"
 
@@ -423,11 +518,10 @@ def bot_routine():
             VAGUES_ENVOYEES.add(wave_key)
 
         elif force_now:
-            # Combien de matchs manquent ?
             matchs_manquants = [
                 m for m in matches_du_jour
                 if m["id"] not in COMPOS_EN_MEMOIRE
-                and is_wave_complete(wave, [m]) is False  # approximation
+                and is_wave_complete(wave, [m]) is False 
             ]
             logger.info(
                 f"   Vague {wave_label} : compo(s) manquante(s) mais "
@@ -437,7 +531,6 @@ def bot_routine():
             VAGUES_ENVOYEES.add(wave_key)
 
         else:
-            # On compte combien il manque pour le log
             nb_ok      = len(wave)
             nb_total   = sum(
                 1 for m in matches_du_jour
@@ -445,7 +538,7 @@ def bot_routine():
                 and abs(
                     (parse_match_datetime(m["time"]) -
                      parse_match_datetime(COMPOS_EN_MEMOIRE[wave[0]]["match_info"]["time"])).total_seconds()
-                ) <= ECART_MAX_VAGUE_MIN * 60 * 2
+                ) <= ECART_MAX_VAGUE_MIN * 60
             )
             first_dt   = parse_match_datetime(COMPOS_EN_MEMOIRE[wave[0]]["match_info"]["time"])
             mins_left  = int((first_dt - datetime.now()).total_seconds() / 60) if first_dt else "?"
@@ -453,26 +546,92 @@ def bot_routine():
                 f"   Vague {wave_label} : {nb_ok}/{nb_total} compo(s) — "
                 f"premier match dans ~{mins_left} min. On attend..."
             )
+def send_session_report():
+    """Envoie picks_log.csv + players_log.csv par mail puis les archive."""
+    logger.info("📧 Préparation de l'envoi du rapport par mail...")
 
-# ==========================================
-# POINT D'ENTRÉE
-# ==========================================
+    today_str    = datetime.now().strftime('%Y-%m-%d')
+    archive_picks   = f"./stats/archive_picks_{today_str}.csv"
+    archive_players = f"./stats/archive_players_{today_str}.csv"
+
+    if not os.path.exists(log_path):
+        logger.warning(f"Fichier {log_path} introuvable — rapport annulé.")
+        return
+    try:
+        sender   = os.getenv("EMAIL_USER")
+        password = os.getenv("EMAIL_PASS")
+        receiver = os.getenv("EMAIL_RECEIVER")
+
+        msg = MIMEMultipart()
+        msg['From']    = sender
+        msg['To']      = receiver
+        msg['Subject'] = f"🏒 Rapport NHL Session - {today_str}"
+
+        body = (
+            f"Bonjour,\n\n"
+            f"Voici les fichiers de la session du {today_str} :\n"
+            f"  • picks_{today_str}.csv   — joueurs sélectionnés (à compléter avec colonne 'but')\n"
+            f"  • players_{today_str}.csv — tous les joueurs analysés (picks + non-picks)\n\n"
+            f"Bonne analyse !"
+        )
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Pièce jointe 1 — picks_log.csv
+        def attach_file(filepath, filename):
+            with open(filepath, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={filename}")
+                msg.attach(part)
+
+        attach_file(log_path, f"picks_{today_str}.csv")
+
+        # Pièce jointe 2 — players_log.csv (si présent)
+        if os.path.exists(players_log_path):
+            attach_file(players_log_path, f"players_{today_str}.csv")
+        else:
+            logger.warning("players_log.csv introuvable — envoyé sans ce fichier.")
+
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
+        server.starttls()
+        server.login(sender, password)
+        server.send_message(msg)
+        server.quit()
+        logger.info("✅ Mail envoyé avec succès (picks + players).")
+
+    except Exception as e:
+        logger.error(f"❌ Erreur lors du rapport de session : {e}")
+    finally:
+        # Archive picks_log
+        if os.path.exists(log_path):
+            os.rename(log_path, archive_picks)
+            logger.info(f"📁 picks archivé : {archive_picks}")
+        # Archive players_log
+        if os.path.exists(players_log_path):
+            os.rename(players_log_path, archive_players)
+            logger.info(f"📁 players archivé : {archive_players}")
+
 
 if __name__ == "__main__":
     logger.info("=====================================================")
     logger.info("  DÉMARRAGE DU ROBOT NHL VALUE BETS V10 (VAGUES)  ")
     logger.info(" Scan toutes les 15 min — envoi par vague horaire  ")
-    logger.info(" Écart max dans une vague : 15 min                 ")
-    logger.info(" Force envoi si < 5 min avant le 1er match        ")
+    logger.info(" Écart max dans une vague : 5 min                 ")
+    logger.info(" Force envoi si < 17 min avant le 1er match        ")
     logger.info("=====================================================")
 
     while True:
         try:
             if is_active_hours():
-                update_daily_stats()
-                bot_routine()
+                stats_ok = update_daily_stats()
+                if not stats_ok:
+                    logger.warning("   Analyse suspendue — CSV invalides. Retry dans 15 min...")
+                else:
+                    bot_routine()
             else:
                 if MATCHS_TRAITES:
+                    send_session_report()
                     logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Fin de journée — nettoyage global.")
                     MATCHS_TRAITES.clear()
                     COMPOS_EN_MEMOIRE.clear()
@@ -480,7 +639,7 @@ if __name__ == "__main__":
                 else:
                     logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Hors horaires (05h-17h). En veille...")
 
-            time.sleep(900)  # 15 minutes
+            time.sleep(900)  
 
         except Exception as e:
             logger.info(f"ERREUR CRITIQUE : {e}")

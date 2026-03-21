@@ -10,38 +10,30 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import logging
 from logging.handlers import RotatingFileHandler
+from dotenv import load_dotenv
+import sys
 
-# Configuration du logging
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
 
-# Formateur : Date - Nom - Niveau - Message
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Handler pour le fichier (5 Mo max, 5 fichiers de backup)
 file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5)
 file_handler.setFormatter(formatter)
 
-# Handler pour la console (pour voir les messages en direct)
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
-# Configuration
-import os
-from dotenv import load_dotenv
 
-# Charge les variables du fichier .env
 load_dotenv()
 
-# Récupère les variables
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN_TEST")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID_TEST")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 FOLDER_NAME = "stats"
 
-# Création du dossier stats s'il n'existe pas
 if not os.path.exists(FOLDER_NAME):
     os.makedirs(FOLDER_NAME)
 
@@ -55,7 +47,11 @@ def get_super_light_driver():
     prefs = {"profile.managed_default_content_settings.images": 2,
              "profile.managed_default_content_settings.stylesheets": 2}
     options.add_experimental_option("prefs", prefs)
-    service = Service(log_output=os.devnull)
+    if sys.platform.startswith('linux'):
+        service = Service(log_output=os.devnull)
+    else:
+        service = Service(log_output=os.devnull)
+        service.creation_flags = 0x08000000 
     return webdriver.Chrome(options=options, service=service)
 
 def convert_toi(toi_str):
@@ -68,7 +64,6 @@ def convert_toi(toi_str):
         return toi_str
 
 def process_nst_file(url, filename, is_player_data=True):
-    # Ajout du paramètre CSV si manquant
     clean_url = url + "&print=csv" if "print=csv" not in url else url
     output_path = os.path.join(FOLDER_NAME, filename)
     
@@ -84,8 +79,49 @@ def process_nst_file(url, filename, is_player_data=True):
         raw_text = driver.find_element(By.TAG_NAME, "body").text
         lines = raw_text.splitlines()
         
-        # Logique de nettoyage pour les fichiers de JOUEURS
-        if is_player_data:
+        if is_player_data == "on_ice":
+            NB_STATS = 38
+            headers_oi = ["", "Player", "Team", "Position",
+                          "GP", "TOI", "CF", "CA", "CF%", "FF", "FA", "FF%",
+                          "SF", "SA", "SF%", "GF", "GA", "GF%",
+                          "xGF", "xGA", "xGF%", "SCF", "SCA", "SCF%",
+                          "HDCF", "HDCA", "HDCF%", "HDGF", "HDGA", "HDGF%",
+                          "On-Ice SH%", "On-Ice SV%", "PDO",
+                          "Off. Zone Starts", "Neu. Zone Starts", "Def. Zone Starts",
+                          "On The Fly Starts", "Off. Zone Start %",
+                          "Off. Zone Faceoffs", "Neu. Zone Faceoffs",
+                          "Def. Zone Faceoffs", "Off. Zone Faceoff %"]
+
+            data = []
+            for line in lines:
+                line = line.strip()
+                if not line or not line[0].isdigit(): continue
+                parts = line.split()
+                if len(parts) < NB_STATS + 4: continue  
+
+                stats_part = parts[-NB_STATS:]
+                stats_part[1] = convert_toi(stats_part[1])
+                position = parts[-(NB_STATS + 1)]
+                idx = parts[0]
+
+                remaining = parts[1:-(NB_STATS + 1)]
+                team_parts, player_parts = [], []
+                found_team = False
+                for i in range(len(remaining) - 1, -1, -1):
+                    part = remaining[i]
+                    if not found_team and (part.isupper() or ',' in part or '.' in part):
+                        team_parts.insert(0, part)
+                    else:
+                        found_team = True
+                        player_parts.insert(0, part)
+
+                row = [idx, " ".join(player_parts), " ".join(team_parts), position] + stats_part
+                data.append(row)
+
+            df = pd.DataFrame(data, columns=headers_oi)
+            df.to_csv(output_path, index=False, quoting=csv.QUOTE_ALL, encoding='utf-8-sig')
+
+        elif is_player_data:
             headers = ["", "Player", "Team", "Position", "GP", "TOI", "Goals", "Total Assists", 
                        "First Assists", "Second Assists", "Total Points", "IPP", "Shots", "SH%", 
                        "ixG", "iCF", "iFF", "iSCF", "iHDCF", "Rush Attempts", "Rebounds Created", 
@@ -122,7 +158,6 @@ def process_nst_file(url, filename, is_player_data=True):
             df = pd.DataFrame(data, columns=headers)
             df.to_csv(output_path, index=False, quoting=csv.QUOTE_ALL, encoding='utf-8-sig')
         
-        # Logique simplifiée pour TEAM et MATCH (on garde les en-têtes d'origine de NST)
         else:
             clean_lines = [l for l in lines if l.strip() and not l.startswith(("Login", "Games", "Players", "Teams", "Tools", "Trivia"))]
             with open(output_path, "w", encoding="utf-8-sig") as f:
@@ -136,13 +171,16 @@ def process_nst_file(url, filename, is_player_data=True):
         driver.quit()
 
 if __name__ == "__main__":
-    # Liste des tâches [URL, NOM_FICHIER, EST_UN_JOUEUR]
     jobs = [
         ["https://www.naturalstattrick.com/teamtable.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=10&fd=&td=", "team.csv", False],
-        ["https://www.naturalstattrick.com/playerteams.php?stdoi=std", "Player Season Totals.csv", True],
-        ["https://www.naturalstattrick.com/games.php", "match.csv", False],
-        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=10&lines=single&draftteam=ALL", "last 10.csv", True],
-        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v4&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "power play.csv", True]
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "Player Season Totals.csv", True],
+        ["https://www.naturalstattrick.com/games.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v5&loc=B&team=All&rate=n", "match.csv", False],
+        ["https://www.naturalstattrick.com/playerteams.php?stdoi=oi","on_ice.csv", "on_ice"],
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=gpteam&fd=&td=&tgp=10&lines=single&draftteam=ALL", "last 10.csv", True],
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=5v4&score=all&stdoi=std&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL", "power play.csv", True],
+        ["https://www.naturalstattrick.com/playerteams.php?fromseason=20252026&thruseason=20252026&stype=2&sit=all&score=all&stdoi=std&rate=n&team=ALL&pos=G&loc=B&toi=0&gpfilt=none&fd=&td=&lines=single", "goalies.csv", True],
+        ["https://www.naturalstattrick.com/teamtable.php?fromseason=20252026&thruseason=20252026&stype=2&sit=4v5&score=all&rate=n&team=all&loc=B&gpf=10&fd=&td=", "pk.csv", False],
+
     ]
 
     for url, name, is_player in jobs:
