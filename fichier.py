@@ -98,7 +98,7 @@ SHOT_TYPE_ENCODE = {
     'tip-in': 1.2, 'deflected': 1.15, 'slap': 0.65,
     'wrap-around': 0.70, 'bat': 0.60,
 }
-XG_MODEL_PATH = "xg_model.pkl" 
+XG_MODEL_PATH = "xg_model.pkl"  
 
 def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True):
     """Features pour le modèle xG — identiques à train_xg.py."""
@@ -264,7 +264,7 @@ def compute_last10_stats(all_teams):
         'ixg': 0.0, 'ihdcf': 0,
         'iscf': 0,
         'rebounds': 0,   
-        'rush': 0,      
+        'rush': 0,     
         'games_seen': set(),
     })
 
@@ -323,8 +323,11 @@ def compute_last10_stats(all_teams):
                 sit  = play.get('situationCode', '')
                 per  = play.get('periodDescriptor', {}).get('number', 1)
 
-                if t in ('shot-on-goal', 'goal', 'missed-shot'):
-                    pid  = det.get('shootingPlayerId') or det.get('scoringPlayerId')
+                if t in ('shot-on-goal', 'goal', 'missed-shot', 'blocked-shot'):
+                    if t == 'blocked-shot':
+                        pid = det.get('shootingPlayerId')
+                    else:
+                        pid = det.get('shootingPlayerId') or det.get('scoringPlayerId')
                     if not pid or pid not in roster:
                         continue
 
@@ -350,7 +353,7 @@ def compute_last10_stats(all_teams):
                     ps['iscf']  += int(sc)
 
                     if t in ('shot-on-goal', 'goal'):
-                        ps['shots'] += 1
+                        ps['shots'] += 1  
                     if t == 'goal':
                         ps['goals'] += 1
 
@@ -389,7 +392,7 @@ def compute_last10_stats(all_teams):
             'ixG':      round(s['ixg'], 3),
             'iSCF':     s['iscf'],
             'iHDCF':    s['ihdcf'],
-            'Rebounds': s['rebounds'], 
+            'Rebounds': s['rebounds'],  
             'RushShots':s['rush'],      
         })
 
@@ -463,7 +466,6 @@ def build_on_ice():
 def build_power_play():
     """Équivalent power play.csv — TOI PP par joueur"""
     logger.info("  power play.csv...")
-
     summary = fetch_all("skater/summary")
     rows = []
     for r in summary:
@@ -476,7 +478,6 @@ def build_power_play():
             'Player': r.get('skaterFullName', ''),
             'Team':   r.get('teamAbbrevs', ''),
             'GP':     gp,
-
             'TOI':    float(pp_pts) * 2.0,
         })
     df = pd.DataFrame(rows)
@@ -513,7 +514,7 @@ def compute_hdca_from_cache(all_teams):
             for play in pbp.get('plays', []):
                 t   = play.get('typeDescKey', '')
                 det = play.get('details', {})
-                if t not in ('shot-on-goal', 'goal', 'missed-shot'):
+                if t not in ('shot-on-goal', 'goal', 'missed-shot', 'blocked-shot'):
                     continue
                 x    = det.get('xCoord', 0)
                 y    = det.get('yCoord', 0)

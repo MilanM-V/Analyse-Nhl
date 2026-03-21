@@ -114,7 +114,9 @@ def load_recent_form(filepath):
                 'L10_TOI': toi,
                 'L10_ixG_G': float(row.get('ixG', 0)) / gp,
                 'L10_iSCF_G':  float(row.get('iSCF', 0)) / gp,
-                'L10_iHDCF_G': float(row.get('iHDCF', 0)) / gp,
+                'L10_iHDCF_G':    float(row.get('iHDCF', 0)) / gp,
+                'L10_Rebounds_G': float(row.get('Rebounds', 0)) / gp,
+                'L10_Rush_G':     float(row.get('RushShots', 0)) / gp,
                 'ATOI': toi / gp 
             }
         return form_dict
@@ -486,7 +488,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     g2 = 0.0
     if ga_g >= 3.00:   g2 += 2.0
     elif ga_g >= 2.80: g2 += 1.0
-    elif ga_g < 2.50:  g2 -= 0.25 
+    elif ga_g < 2.50:  g2 -= 0.25  
     if cf_pct >= 54.0:   g2 -= 0.75  
     elif cf_pct >= 52.0: g2 -= 0.25  
     elif cf_pct <= 46.0: g2 += 1.5
@@ -500,16 +502,16 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
 
     g3 = 0.0
     if atoi >= 20.0: g3 += 2.0
-    elif atoi >= 17.0: g3 += 1.0  
+    elif atoi >= 17.0: g3 += 1.0 
     if pdo < 96.0: g3 += 1.5
     elif pdo < 98.0: g3 += 0.75
     if season_g > 0:
         ratio = l10_g / season_g
         if ratio >= 2.0:   g3 -= 0.5   
-        elif ratio >= 1.5: g3 += 1.0   
+        elif ratio >= 1.5: g3 += 1.0  
         elif ratio >= 1.0: g3 += 0.5   
         elif ratio <= 0.3: g3 -= 2.0   
-        elif ratio <= 0.5: g3 -= 1.5  
+        elif ratio <= 0.5: g3 -= 1.5   
     if is_home: g3 += 0.5
     if has_star_linemate: g3 += 0.5
     qs += min(g3, 4.0)

@@ -326,57 +326,71 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             })
 
     results = sorted(results, key=lambda x: x["Score"], reverse=True)
+    SAFE_SCORE    = 8.5;  SAFE_HDCF    = 2.0
+    JOUABLE_SCORE = 8.0;  JOUABLE_HDCF = 1.5
+    VALEUR_SCORE  = 7.5;  VALEUR_HDCF  = 1.2
+    RISQUE_SCORE  = 7.0;  RISQUE_HDCF  = 1.0
 
-    final_top10 = []
+    def get_categorie(score, hdcf):
+        if score >= SAFE_SCORE    and hdcf >= SAFE_HDCF:    return "SAFE"
+        if score >= JOUABLE_SCORE and hdcf >= JOUABLE_HDCF: return "JOUABLE"
+        if score >= VALEUR_SCORE  and hdcf >= VALEUR_HDCF:  return "VALEUR"
+        if score >= RISQUE_SCORE  and hdcf >= RISQUE_HDCF:  return "RISQUE"
+        return None
+
     team_counts  = {}
     match_counts = {}
-    SCORE_MINIMUM = 7
-    SCORE_ELITE   = 8
+    final_top10  = []
 
-    IXG_MIN  = 0.28
-    HDCF_MIN = 0.40
     for r in results:
-        if r['Score'] < SCORE_MINIMUM:
+        cat = get_categorie(r['Score'], r['hdcf'])
+        if cat is None:
             continue
-        if r['ixg'] < IXG_MIN or r['hdcf'] < HDCF_MIN:
-            continue
-        equipe = r['Equipe']
+        r['Categorie'] = cat
+        equipe    = r['Equipe']
         match_key = frozenset([r['Equipe'], r['Adversaire']])
-        count_team = team_counts.get(equipe, 0)
-        count_match = match_counts.get(match_key, 0)
-        can_add_player = False
-        if count_team == 0:
-            can_add_player = True
-        elif count_team == 1 and r['Score'] >= SCORE_ELITE:
-            can_add_player = True
-
-        if can_add_player and count_match < 3:
-            final_top10.append(r)
-            team_counts[equipe] = count_team + 1
-            match_counts[match_key] = count_match + 1
-    if len(final_top10) < 2 and len(results) >= 2:
-        logger.info(f" Moins de 2 joueurs trouvés via les filtres. Application du fallback (Top 2).")
-        final_top10 = results[:2]
+        team_counts[equipe]   = team_counts.get(equipe, 0) + 1
+        match_counts[match_key] = match_counts.get(match_key, 0) + 1
+        final_top10.append(r)
+        if len(final_top10) >= 20: break 
 
     logger.info(f"\n=== RÉSULTATS VAGUE {wave_label} ===")
     if not final_top10:
         logger.info("Aucun joueur n'a passé les filtres sur cette vague.")
         return
 
-    tg_message = f"🎯 <b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b> 🎯\n\n"
-
-    for i, r in enumerate(final_top10):
-        if   r["Score"] >= 9.0: reco = "🔥 <b>ELITE</b>"
-        elif r["Score"] >= 7.0: reco = "✅ <b>JOUABLE</b>"
-        elif r["Score"] > 5.5: reco = "☑️ <i> JOUABLE MAIS AVEC RISQUE</i>"
-        elif r["Score"] >= 5.0: reco = "⚠️ <i>RISQUÉ</i>"
-        else:                   reco = "❌ À ÉVITER"
+    picks_by_match = {}
+    for r in final_top10:
         team_full = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Equipe'], r['Equipe'])
         adv_full  = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Adversaire'], r['Adversaire'])
+        match_key = frozenset([r['Equipe'], r['Adversaire']])
+        match_label = f"{team_full} vs {adv_full}"
+        if match_key not in picks_by_match:
+            picks_by_match[match_key] = {'label': match_label, 'picks': []}
+        picks_by_match[match_key]['picks'].append(r)
 
-        tg_message += f"<b>{i+1}. {r['Joueur']}</b> {r['PP1']} {r['Tag']}\n"
-        tg_message += f"🏒 <i>{team_full} vs {adv_full}</i>\n"
-        tg_message += f"📊 Score: <b>{r['Score']}</b> | {reco}\n\n"
+    CAT_ICONS = {
+        "SAFE":    "🔒 SAFE",
+        "JOUABLE": "✅ JOUABLE",
+        "VALEUR":  "⚡ VALEUR",
+        "RISQUE":  "⚠️ RISQUE",
+    }
+
+    tg_message = f"🎯 <b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b> 🎯\n\n"
+
+    for match_key, match_data in picks_by_match.items():
+        tg_message += f"<b>Match {match_data['label']} :</b>\n"
+        picks_match = match_data['picks']
+        n_match = len(picks_match)
+        for j, r in enumerate(picks_match):
+            cat    = r.get('Categorie', 'RISQUE')
+            cat_lbl = CAT_ICONS.get(cat, cat)
+            pp_tag = r['PP1'] if r['PP1'] else ""
+            ctx_tag = r['Tag'] if r['Tag'] else ""
+            num_label = f" ({j+1}/{n_match})" if n_match > 1 else ""
+            tg_message += f"  • <b>{r['Joueur']}</b>{num_label} {pp_tag} {ctx_tag}\n"
+            tg_message += f"    Score: <b>{r['Score']}</b> | {cat_lbl}\n"
+        tg_message += "\n"
 
     file_exists = os.path.exists(log_path)
     try:
@@ -392,11 +406,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             if not file_exists:
                 writer.writeheader()
             for r in final_top10:
-                if   r["Score"] >= 9.0: verdict = "ELITE"
-                elif r["Score"] >= 7.0: verdict = "JOUABLE"
-                elif r["Score"] >  5.5: verdict = "RISQUE_JOUABLE"
-                elif r["Score"] >= 5.0: verdict = "RISQUE"
-                else:                   verdict = "EVITER"
+                verdict = r.get('Categorie', 'RISQUE')
                 writer.writerow({
                     'date':       TODAY_DATE,
                     'vague':      wave_label,
@@ -441,11 +451,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             if not pl_exists:
                 writer.writeheader()
             for r in results:
-                if   r["Score"] >= 9.0: verdict = "ELITE"
-                elif r["Score"] >= 7.0: verdict = "JOUABLE"
-                elif r["Score"] >  5.5: verdict = "RISQUE_JOUABLE"
-                elif r["Score"] >= 5.0: verdict = "RISQUE"
-                else:                   verdict = "EVITER"
+                verdict = r.get('Categorie', 'RISQUE')
                 writer.writerow({
                     'date':       TODAY_DATE,
                     'vague':      wave_label,
