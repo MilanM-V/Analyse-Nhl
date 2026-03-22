@@ -100,16 +100,19 @@ SHOT_TYPE_ENCODE = {
 }
 XG_MODEL_PATH = "xg_model.pkl"  
 
-def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True):
-    """Features pour le modèle xG — identiques à train_xg.py."""
+def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True,
+                  is_slot=False, is_rebound=False, is_rush=False, period=1):
+    """Features pour le modèle xG — identiques à train_xg.py v2 (13 features)."""
     bx   = 89.0
     ax   = abs(x)
     dist = math.sqrt((bx - ax)**2 + y**2)
     angle = math.degrees(math.atan2(abs(y), bx - ax)) if (bx - ax) > 0 else 90.0
     shot_val = SHOT_TYPE_ENCODE.get(shot_type, 0.8)
+    slot = int(ax >= 69 and abs(y) <= 15)
     return [
         dist, angle, dist**2, math.sin(math.radians(angle)),
-        ax, abs(y), shot_val, int(is_pp), int(is_5v5), 1/(dist+1)
+        ax, shot_val, int(is_pp), int(is_5v5), 1/(dist+1),
+        slot, int(is_rebound), int(is_rush), min(period, 4),
     ]
 
 class XGModel:
@@ -151,10 +154,10 @@ class XGModel:
         self.model.fit(X_sc, labels)
         logger.info("[xG model] Modèle synthétique (lance train_xg.py pour ameliorer)")
 
-    def predict(self, x, y, shot_type='wrist', sit='1551'):
+    def predict(self, x, y, shot_type='wrist', sit='1551', is_rebound=False, is_rush=False, period=1):
         is_pp  = len(sit) >= 3 and sit[1] > sit[2]
         is_5v5 = sit == '1551'
-        feats  = np.array([_xg_features(x, y, shot_type, is_pp, is_5v5)])
+        feats  = np.array([_xg_features(x, y, shot_type, is_pp, is_5v5, False, is_rebound, is_rush, period)])
         if self.scaler:
             feats = self.scaler.transform(feats)
         return float(self.model.predict_proba(feats)[0][1])
@@ -351,7 +354,7 @@ def compute_last10_stats(all_teams):
                     owner = det.get('eventOwnerTeamId')
 
                     shot_type = det.get('shotType', 'wrist')
-                    xg_val = xg_model.predict(x, y, shot_type, sit) if zone == 'O' else 0.0
+                    xg_val = xg_model.predict(x, y, shot_type, sit, is_rebound=is_rebound, is_rush=is_rush, period=per) if zone == 'O' else 0.0
                     hd     = is_high_danger(x, y, zone, home_side, owner, home_team_id)
                     dist   = math.sqrt((89 - abs(x))**2 + y**2) if zone == 'O' else 999
                     sc     = dist < 35
