@@ -297,10 +297,6 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             final_qs = base_qs
 
             context_tag = []
-            if is_home:  context_tag.append("🏠")
-            if has_star_linemate: context_tag.append("🤝")
-            if is_b2b: context_tag.append("😴")
-            if is_backup: context_tag.append("🥅")
 
             results.append({
                 "Joueur": player,
@@ -308,7 +304,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 "Adversaire": adversaire,
                 "Score": round(final_qs, 1),
                 "Base": round(base_qs, 1),
-                "PP1": "⭐" if is_pp1 else "",
+                "PP1": "PP1" if is_pp1 else "",
                 "Tag": " ".join(context_tag),
                 "ixg":        round(p_form.get('L10_ixG_G', 0.0), 3),
                 "hdcf":       round(p_form.get('L10_iHDCF_G', 0.0), 2),
@@ -326,6 +322,11 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             })
 
     results = sorted(results, key=lambda x: x["Score"], reverse=True)
+
+
+
+    # Seuils 4 catégories calibrés sur simulation 2000 soirs
+    # WR simulé : SAFE~56%, JOUABLE~40%, VALEUR~37%, RISQUE~27%
     SAFE_SCORE    = 8.5;  SAFE_HDCF    = 2.0
     JOUABLE_SCORE = 8.0;  JOUABLE_HDCF = 1.5
     VALEUR_SCORE  = 7.5;  VALEUR_HDCF  = 1.2
@@ -352,13 +353,14 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         team_counts[equipe]   = team_counts.get(equipe, 0) + 1
         match_counts[match_key] = match_counts.get(match_key, 0) + 1
         final_top10.append(r)
-        if len(final_top10) >= 20: break 
+        if len(final_top10) >= 20: break  # sécurité max 20 picks/vague
 
     logger.info(f"\n=== RÉSULTATS VAGUE {wave_label} ===")
     if not final_top10:
         logger.info("Aucun joueur n'a passé les filtres sur cette vague.")
         return
 
+    # Regrouper les picks par match
     picks_by_match = {}
     for r in final_top10:
         team_full = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Equipe'], r['Equipe'])
@@ -369,14 +371,15 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             picks_by_match[match_key] = {'label': match_label, 'picks': []}
         picks_by_match[match_key]['picks'].append(r)
 
+    # Icônes catégories
     CAT_ICONS = {
-        "SAFE":    "🔒 SAFE",
-        "JOUABLE": "✅ JOUABLE",
-        "VALEUR":  "⚡ VALEUR",
-        "RISQUE":  "⚠️ RISQUE",
+        "SAFE":    "SAFE",
+        "JOUABLE": "JOUABLE",
+        "VALEUR":  "VALEUR",
+        "RISQUE":  "RISQUE",
     }
 
-    tg_message = f"🎯 <b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b> 🎯\n\n"
+    tg_message = f"<b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b>\n\n"
 
     for match_key, match_data in picks_by_match.items():
         tg_message += f"<b>Match {match_data['label']} :</b>\n"
@@ -385,11 +388,9 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         for j, r in enumerate(picks_match):
             cat    = r.get('Categorie', 'RISQUE')
             cat_lbl = CAT_ICONS.get(cat, cat)
-            pp_tag = r['PP1'] if r['PP1'] else ""
-            ctx_tag = r['Tag'] if r['Tag'] else ""
+            # Notation X/N si plusieurs joueurs du même match
             num_label = f" ({j+1}/{n_match})" if n_match > 1 else ""
-            tg_message += f"  • <b>{r['Joueur']}</b>{num_label} {pp_tag} {ctx_tag}\n"
-            tg_message += f"    Score: <b>{r['Score']}</b> | {cat_lbl}\n"
+            tg_message += f"  • <b>{r['Joueur']}</b>{num_label} {cat_lbl} ({r['Score']}/{r['hdcf']:.1f})\n"
         tg_message += "\n"
 
     file_exists = os.path.exists(log_path)
@@ -436,6 +437,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture picks_log.csv : {e}")
 
+    # --- players_log.csv : tous les joueurs analysés (picks + non-picks) ---
     picked_names = {r['Joueur'] for r in final_top10}
     pl_exists = os.path.exists(players_log_path)
     try:
@@ -594,6 +596,7 @@ def send_session_report():
         )
         msg.attach(MIMEText(body, 'plain'))
 
+        # Pièce jointe 1 — picks_log.csv
         def attach_file(filepath, filename):
             with open(filepath, "rb") as f:
                 part = MIMEBase("application", "octet-stream")
@@ -604,6 +607,7 @@ def send_session_report():
 
         attach_file(log_path, f"picks_{today_str}.csv")
 
+        # Pièce jointe 2 — players_log.csv (si présent)
         if os.path.exists(players_log_path):
             attach_file(players_log_path, f"players_{today_str}.csv")
         else:
@@ -619,9 +623,11 @@ def send_session_report():
     except Exception as e:
         logger.error(f"❌ Erreur lors du rapport de session : {e}")
     finally:
+        # Archive picks_log
         if os.path.exists(log_path):
             os.rename(log_path, archive_picks)
             logger.info(f"📁 picks archivé : {archive_picks}")
+        # Archive players_log
         if os.path.exists(players_log_path):
             os.rename(players_log_path, archive_players)
             logger.info(f"📁 players archivé : {archive_players}")
