@@ -302,6 +302,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 "Joueur": player,
                 "Equipe": team,
                 "Adversaire": adversaire,
+                "IsHome": is_home,
                 "Score": round(final_qs, 1),
                 "Base": round(base_qs, 1),
                 "PP1": "PP1" if is_pp1 else "",
@@ -360,15 +361,27 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         logger.info("Aucun joueur n'a passé les filtres sur cette vague.")
         return
 
-    # Regrouper les picks par match
+    # Regrouper les picks par match — label fixé home vs away depuis MATCHS_DU_SOIR
+    # MATCHS_DU_SOIR = [(home_abbr, away_abbr), ...]
+    home_away_map = {frozenset([h, a]): (h, a) for h, a in MATCHS_DU_SOIR}
+
     picks_by_match = {}
     for r in final_top10:
-        team_full = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Equipe'], r['Equipe'])
-        adv_full  = predictor_v9.REVERSE_TEAM_MAPPING.get(r['Adversaire'], r['Adversaire'])
         match_key = frozenset([r['Equipe'], r['Adversaire']])
-        match_label = f"{team_full} vs {adv_full}"
         if match_key not in picks_by_match:
-            picks_by_match[match_key] = {'label': match_label, 'picks': []}
+            # Récupère home/away dans le bon ordre
+            if match_key in home_away_map:
+                home_abbr, away_abbr = home_away_map[match_key]
+            else:
+                # fallback : is_home du premier pick
+                home_abbr = r['Equipe'] if r['IsHome'] else r['Adversaire']
+                away_abbr = r['Adversaire'] if r['IsHome'] else r['Equipe']
+            home_full = predictor_v9.REVERSE_TEAM_MAPPING.get(home_abbr, home_abbr)
+            away_full = predictor_v9.REVERSE_TEAM_MAPPING.get(away_abbr, away_abbr)
+            picks_by_match[match_key] = {
+                'label': f"{home_full} - {away_full}",
+                'picks': []
+            }
         picks_by_match[match_key]['picks'].append(r)
 
     # Icônes catégories
@@ -390,11 +403,11 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         )
         n_match = len(picks_match)
         for j, r in enumerate(picks_match):
-            cat    = r.get('Categorie', 'RISQUE')
+            cat     = r.get('Categorie', 'RISQUE')
             cat_lbl = CAT_ICONS.get(cat, cat)
-            # Notation X/N si plusieurs joueurs du même match
+            side    = "🏠" if r['IsHome'] else "✈️"
             num_label = f" ({j+1}/{n_match})" if n_match > 1 else ""
-            tg_message += f"  • <b>{r['Joueur']}</b>{num_label} {cat_lbl} ({r['Score']}/{r['hdcf']:.1f})\n"
+            tg_message += f"  • {side} <b>{r['Joueur']}</b>{num_label} {cat_lbl} ({r['Score']}/{r['hdcf']:.1f})\n"
         tg_message += "\n"
 
     file_exists = os.path.exists(log_path)
@@ -410,7 +423,13 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             ])
             if not file_exists:
                 writer.writeheader()
+            seen_picks = set()  # dédoublon joueur+equipe dans la même vague
             for r in final_top10:
+                pick_key = (r['Joueur'], r['Equipe'])
+                if pick_key in seen_picks:
+                    logger.warning(f"[WARN] Doublon ignoré dans picks_log : {r['Joueur']} ({r['Equipe']})")
+                    continue
+                seen_picks.add(pick_key)
                 verdict = r.get('Categorie', 'RISQUE')
                 writer.writerow({
                     'date':       TODAY_DATE,
@@ -456,7 +475,13 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             ])
             if not pl_exists:
                 writer.writeheader()
+            seen_players = set()  # dédoublon joueur+equipe dans la même vague
             for r in results:
+                player_key = (r['Joueur'], r['Equipe'])
+                if player_key in seen_players:
+                    logger.warning(f"[WARN] Doublon ignoré dans players_log : {r['Joueur']} ({r['Equipe']})")
+                    continue
+                seen_players.add(player_key)
                 verdict = r.get('Categorie', 'RISQUE')
                 writer.writerow({
                     'date':       TODAY_DATE,

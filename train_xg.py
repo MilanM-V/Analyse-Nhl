@@ -66,7 +66,7 @@ def extract_features(play):
 
 FEATURE_NAMES = [
     'distance', 'angle', 'distance_sq', 'sin_angle',
-    'x_abs', 'y_abs', 'shot_type_val',
+    'x_abs', 'shot_type_val',
     'is_pp', 'is_5v5', 'inv_distance'
 ]
 
