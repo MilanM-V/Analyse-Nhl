@@ -373,17 +373,21 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
     # Icônes catégories
     CAT_ICONS = {
-        "SAFE":    "SAFE",
-        "JOUABLE": "JOUABLE",
-        "VALEUR":  "VALEUR",
-        "RISQUE":  "RISQUE",
+        "SAFE":    "🔒 SAFE",
+        "JOUABLE": "✅ JOUABLE",
+        "VALEUR":  "⚡️ VALEUR",
+        "RISQUE":  "⚠️ RISQUE",
     }
+    CAT_ORDER = {"SAFE": 0, "JOUABLE": 1, "VALEUR": 2, "RISQUE": 3}
 
     tg_message = f"<b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b>\n\n"
 
     for match_key, match_data in picks_by_match.items():
         tg_message += f"<b>Match {match_data['label']} :</b>\n"
-        picks_match = match_data['picks']
+        picks_match = sorted(
+            match_data['picks'],
+            key=lambda x: (CAT_ORDER.get(x.get('Categorie', 'RISQUE'), 9), -x['Score'])
+        )
         n_match = len(picks_match)
         for j, r in enumerate(picks_match):
             cat    = r.get('Categorie', 'RISQUE')
