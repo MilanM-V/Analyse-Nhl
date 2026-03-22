@@ -447,7 +447,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if g_gp < 0.18: return -99.0
     if pos in ('D', 'LD', 'RD'): return -99.0
 
-    qs = 3.0
+    qs = 3.5
 
     oish     = v5_stats.get('oiSH', 10.0)
     pdo      = v5_stats.get('PDO', 100.0)
@@ -488,7 +488,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if hdcf >= 1.5: g1 += 1.5
     elif hdcf >= 1.0: g1 += 0.75
     if scf >= 4.0: g1 += 0.5
-    qs += min(g1, 3.5)
+    qs += min(g1, 4.0)
 
     g2 = 0.0
     if ga_g >= 3.00:   g2 += 2.0
@@ -503,7 +503,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     elif hdca_g <= 6.0:  g2 -= 0.75
     if hdcf_pct <= 46.0: g2 += 0.5
     if sa_g >= 30.0 and sog >= 2.5: g2 += 0.75
-    qs += min(g2, 3.5)
+    qs += min(g2, 4.0)
 
     g3 = 0.0
     if atoi >= 20.0: g3 += 2.0
@@ -519,18 +519,17 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
         elif ratio <= 0.5: g3 -= 1.5
     if is_home: g3 += 0.5
     if has_star_linemate: g3 += 0.5
-    qs += min(g3, 3.5)
+    qs += min(g3, 4.0)
 
     if is_pp1:
-        pp1_bonus = (2.0 if pk_pct < 77.0 else
-                     0.5 if pk_pct > 83.0 else
-                     1.75)
-        qs += min(pp1_bonus, 2.0)
+        if pk_pct < 77.0:   qs += 2.5
+        elif pk_pct > 83.0: qs += 0.5   
+        else:               qs += 1.75
 
     if is_backup and ga_g >= 2.8:
-        qs += 1.0
+        qs += 2.0
     elif is_backup:
-        qs += 0.5
+        qs += 0.75 
 
 
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 9.5))))
