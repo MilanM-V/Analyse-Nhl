@@ -60,7 +60,6 @@ TEAM_FULL_TO_ABBR = {
     'Winnipeg Jets': 'WPG', 'Utah Hockey Club': 'UTA',
 }
 
-# ── Helpers API ───────────────────────────────────────────────────────
 
 def api_get(url, retries=3):
     for i in range(retries):
@@ -93,14 +92,13 @@ def fetch_all(endpoint, exp=None, limit=100):
         time.sleep(0.2)
     return all_data
 
-# ── Modèle xG maison ─────────────────────────────────────────────────
 
 SHOT_TYPE_ENCODE = {
     'wrist': 1.0, 'snap': 0.85, 'backhand': 0.75,
     'tip-in': 1.2, 'deflected': 1.15, 'slap': 0.65,
     'wrap-around': 0.70, 'bat': 0.60,
 }
-XG_MODEL_PATH = "xg_model.pkl"  # A la racine du projet, versionné dans Git
+XG_MODEL_PATH = "xg_model.pkl"  
 
 def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True):
     """Features pour le modèle xG — identiques à train_xg.py."""
@@ -138,7 +136,6 @@ class XGModel:
             except Exception as e:
                 logger.warning(f"[xG model] Erreur chargement pkl: {e} — fallback synthétique")
 
-        # Fallback — modèle logistique synthétique
         self.use_pkl = False
         self.scaler  = StandardScaler()
         np.random.seed(42)
@@ -170,7 +167,6 @@ def get_xg_model():
         _xg_model = XGModel()
     return _xg_model
 
-# ── Détection haute danger ────────────────────────────────────────────
 
 def is_high_danger(x, y, zone_code, home_defending_side, event_owner_team_id, home_team_id):
     """
@@ -181,15 +177,11 @@ def is_high_danger(x, y, zone_code, home_defending_side, event_owner_team_id, ho
     """
     if zone_code != 'O':
         return False
-    # Normaliser x en valeur absolue (zone offensive = x positif)
     ax = abs(x)
-    # Slot = approximation NST : x >= 54 ET |y| <= 9
-    # Ou distance < 20 pieds du but
     dist = math.sqrt((89 - ax)**2 + y**2)
     in_slot = ax >= 54 and abs(y) <= 9
     return in_slot or dist < 20
 
-# ── Récupération des matchs récents par équipe ────────────────────────
 
 def get_last_n_game_ids(team_abbr, n=10):
     """Retourne les IDs des n derniers matchs terminés d'une équipe."""
@@ -248,7 +240,6 @@ def get_toi_from_boxscore(game_id):
             return 0
 
     for side in ('homeTeam', 'awayTeam'):
-        # Récupérer l'abréviation de l'équipe depuis le boxscore
         team_abbr = data.get(side, {}).get('abbrev', '')
         team_data = data.get('playerByGameStats', {}).get(side, {})
         for group in ('forwards', 'defense', 'goalies'):
@@ -267,15 +258,14 @@ def compute_last10_stats(all_teams):
     logger.info("  Calcul last 10 — agrégation play-by-play...")
     xg_model = get_xg_model()
 
-    # Structure : player_id → stats cumulées
     player_stats = defaultdict(lambda: {
         'name': '', 'team': '', 'pos': '',
         'gp': 0, 'toi_sec': 0,
         'goals': 0, 'shots': 0,
         'ixg': 0.0, 'ihdcf': 0,
         'iscf': 0,
-        'rebounds': 0,   # tirs dans les 3s après un arrêt gardien
-        'rush': 0,       # tirs dans les 4s après un takeaway
+        'rebounds': 0,   
+        'rush': 0,       
         'games_seen': set(),
     })
 
@@ -294,7 +284,6 @@ def compute_last10_stats(all_teams):
             if not pbp:
                 continue
 
-            # Roster
             roster = {}
             for p in pbp.get('rosterSpots', []):
                 pid = p['playerId']
@@ -310,7 +299,6 @@ def compute_last10_stats(all_teams):
 
             home_team_id = pbp.get('homeTeam', {}).get('id')
 
-            # Helper conversion temps
             def time_to_sec(t):
                 try:
                     m, s = map(int, t.split(':'))
@@ -318,21 +306,16 @@ def compute_last10_stats(all_teams):
                 except:
                     return 0
 
-            # Index plays par position pour détection séquences
             plays_list = pbp.get('plays', [])
 
-            # Récupérer le TOI par joueur depuis le boxscore
             toi_map = get_toi_from_boxscore(gid)
-            # Ajouter le TOI à chaque joueur vu dans ce match
             for pid_toi, toi_data in toi_map.items():
                 toi_sec  = toi_data['toi']
-                box_team = toi_data['team']   # team depuis boxscore = fiable
+                box_team = toi_data['team']   
                 ps = player_stats[pid_toi]
-                # Enrichir le nom/pos depuis le roster PBP si dispo
                 if pid_toi in roster:
                     ps['name'] = roster[pid_toi]['name']
                     ps['pos']  = roster[pid_toi]['pos']
-                # Ne pas écraser si déjà assigné — évite conflits multi-équipes
                 if not ps['team']:
                     ps['team'] = box_team
                 ps['games_seen'].add(gid)
@@ -343,7 +326,6 @@ def compute_last10_stats(all_teams):
                 det  = play.get('details', {})
                 sit  = play.get('situationCode', '')
                 per  = play.get('periodDescriptor', {}).get('number', 1)
-                # Tous strengths (pas seulement 5v5 pour last 10)
 
                 if t in ('shot-on-goal', 'goal', 'missed-shot', 'blocked-shot'):
                     if t == 'blocked-shot':
@@ -353,12 +335,10 @@ def compute_last10_stats(all_teams):
                     if not pid or pid not in roster:
                         continue
 
-                    # Assigner team/name/pos depuis toi_map (priorité) ou roster
                     ps_check = player_stats[pid]
                     if not ps_check['team']:
                         ps_check['name'] = roster[pid]['name']
                         ps_check['pos']  = roster[pid]['pos']
-                        # Priorité à toi_map qui a le team depuis boxscore
                         if pid in toi_map:
                             ps_check['team'] = toi_map[pid]['team']
                         else:
@@ -373,7 +353,6 @@ def compute_last10_stats(all_teams):
                     shot_type = det.get('shotType', 'wrist')
                     xg_val = xg_model.predict(x, y, shot_type, sit) if zone == 'O' else 0.0
                     hd     = is_high_danger(x, y, zone, home_side, owner, home_team_id)
-                    # Score chance = medium + high danger (distance < 35 pieds)
                     dist   = math.sqrt((89 - abs(x))**2 + y**2) if zone == 'O' else 999
                     sc     = dist < 35
 
@@ -387,12 +366,10 @@ def compute_last10_stats(all_teams):
                     ps['iscf']  += int(sc)
 
                     if t in ('shot-on-goal', 'goal'):
-                        ps['shots'] += 1  # SOG = tirs cadrés uniquement (comme NST)
+                        ps['shots'] += 1 
                     if t == 'goal':
                         ps['goals'] += 1
-                    # iHDCF et iSCF incluent missed + blocked (comme NST)
 
-                    # Détection rebound et rush shots
                     tsec = time_to_sec(play.get('timeInPeriod', '0:00')) + (per-1)*1200
                     is_rebound = False
                     is_rush    = False
@@ -411,9 +388,8 @@ def compute_last10_stats(all_teams):
                     ps['rebounds'] += int(is_rebound)
                     ps['rush']     += int(is_rush)
 
-    # Récupérer les teams manquants depuis les caches boxscore
     cache_dir = os.path.join(FOLDER_NAME, "cache")
-    pid_to_team = {}  # index global pid → team
+    pid_to_team = {} 
     for f in os.listdir(cache_dir):
         if not f.startswith('box_cache_'): continue
         try:
@@ -429,7 +405,6 @@ def compute_last10_stats(all_teams):
                             pid_to_team[pid_box] = abbr
         except: pass
 
-    # Appliquer aux joueurs sans team
     fixed = 0
     for pid, s in player_stats.items():
         if not s['team'] and pid in pid_to_team:
@@ -437,7 +412,6 @@ def compute_last10_stats(all_teams):
             fixed += 1
     logger.info(f"  Teams récupérés depuis index boxscore: {fixed} joueurs corrigés")
 
-    # Convertir en DataFrame
     rows = []
     for pid, s in player_stats.items():
         gp = len(s['games_seen'])
@@ -455,13 +429,12 @@ def compute_last10_stats(all_teams):
             'ixG':      round(s['ixg'], 3),
             'iSCF':     s['iscf'],
             'iHDCF':    s['ihdcf'],
-            'Rebounds': s['rebounds'],   # tirs rebond (3s après arrêt)
-            'RushShots':s['rush'],       # tirs en transition (4s après takeaway)
+            'Rebounds': s['rebounds'],   
+            'RushShots':s['rush'],      
         })
 
     return pd.DataFrame(rows)
 
-# ── Fichiers stats ────────────────────────────────────────────────────
 
 def build_player_season_totals():
     """Équivalent Player Season Totals.csv — stats saison + oiSH% + PDO + CF%"""
@@ -470,7 +443,6 @@ def build_player_season_totals():
     summary = fetch_all("skater/summary")
     pct     = fetch_all("skater/percentages")
 
-    # Index par playerId
     pct_idx = {r['playerId']: r for r in pct}
 
     rows = []
@@ -480,12 +452,9 @@ def build_player_season_totals():
         if gp == 0:
             continue
         p     = pct_idx.get(pid, {})
-        # oiSH% en % (API donne décimal ex: 0.104)
         oish  = round(float(p.get('shootingPct5v5') or 0.10) * 100, 2)
-        # PDO = shootingPct5v5 + savePct5v5 en base 100
         pdo_raw = float(p.get('skaterShootingPlusSavePct5v5') or 1.0)
         pdo   = round(pdo_raw * 100, 1)
-        # CF% en %
         cf    = round(float(p.get('satPercentage') or 0.5) * 100, 2)
         pos   = r.get('positionCode', 'F')
 
@@ -534,25 +503,18 @@ def build_on_ice():
 def build_power_play():
     """Équivalent power play.csv — TOI PP par joueur"""
     logger.info("  power play.csv...")
-    # timeOnIcePerGame depuis summary, filtré PP
-    # L'API n'expose pas directement le TOI PP par joueur facilement
-    # On utilise les shots en PP comme proxy pour ranking PP1
-    # Alternative : toi endpoint (500) → on utilise ppPoints comme proxy
     summary = fetch_all("skater/summary")
     rows = []
     for r in summary:
         gp = r.get('gamesPlayed', 0)
         if gp == 0:
             continue
-        # ppPoints comme proxy PP TOI — les joueurs avec plus de ppPoints jouent plus en PP
         pp_pts = r.get('ppPoints', 0) or 0
         pp_goals = r.get('ppGoals', 0) or 0
         rows.append({
             'Player': r.get('skaterFullName', ''),
             'Team':   r.get('teamAbbrevs', ''),
             'GP':     gp,
-            # TOI PP non disponible directement — on utilise ppPoints * 2 comme proxy
-            # suffisant pour le ranking PP1 (get_auto_pp1_players trie par TOI/GP)
             'TOI':    float(pp_pts) * 2.0,
         })
     df = pd.DataFrame(rows)
@@ -589,7 +551,6 @@ def compute_hdca_from_cache(all_teams):
             for play in pbp.get('plays', []):
                 t   = play.get('typeDescKey', '')
                 det = play.get('details', {})
-                # Inclure missed-shot ET blocked-shot comme NST
                 if t not in ('shot-on-goal', 'goal', 'missed-shot', 'blocked-shot'):
                     continue
                 x    = det.get('xCoord', 0)
@@ -602,7 +563,6 @@ def compute_hdca_from_cache(all_teams):
                 if not hd:
                     continue
 
-                # Déterminer l'équipe attaquante et défensive
                 if owner_id == home_id:
                     att_abbr = home_abbr
                     def_abbr = away_abbr
@@ -630,13 +590,11 @@ def build_team_stats(all_teams=None):
     rt_idx  = {r['teamId']: r for r in realtime}
     pk_idx  = {r['teamId']: r for r in pk_data}
 
-    # HDCA depuis PBP en cache
     hdca_data = {}
     if all_teams:
         logger.info("    Calcul HDCA depuis cache PBP...")
         hdca_data = compute_hdca_from_cache(all_teams)
 
-    # Index teamFullName → abbr pour le matching
     full_to_abbr = {v: k for k, v in {
         v2: k2 for k2, v2 in TEAM_FULL_TO_ABBR.items()
     }.items()}
@@ -659,7 +617,6 @@ def build_team_stats(all_teams=None):
         pk_pct = round(float(pk.get('penaltyKillPct') or 0.80) * 100, 1)
         ca_total = float(rt.get('totalShotAttempts') or 0)
 
-        # HDCA depuis PBP — chercher par abbr
         abbr = TEAM_FULL_TO_ABBR.get(name, '')
         hd   = hdca_data.get(abbr, {})
         gp_pbp = max(1, len(hd.get('gp', {1})))
@@ -761,8 +718,6 @@ def build_last10(all_teams):
     """Équivalent last 10.csv avec ixG et iHDCF calculés depuis PBP"""
     logger.info("  last 10.csv (via play-by-play — peut prendre 2-3 min)...")
     df = compute_last10_stats(all_teams)
-    # Remplacer les teams vides par NaN puis supprimer ces lignes
-    # (joueurs sans équipe identifiée = données inutilisables)
     df['Team'] = df['Team'].replace('', pd.NA)
     before = len(df)
     df = df.dropna(subset=['Team'])
@@ -809,7 +764,6 @@ def verify_outputs():
                 logger.info(f"  OK: {f} ({len(df)} lignes)")
     return all_ok
 
-# ── Main ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     logger.info("=" * 55)
@@ -825,8 +779,8 @@ if __name__ == "__main__":
     build_power_play()
     build_goalies()
     build_match_history()
-    build_last10(ALL_TEAMS)       # Le plus long — ~2-3 min (génère le cache PBP)
-    build_team_stats(ALL_TEAMS)   # Utilise le cache PBP pour HDCA
+    build_last10(ALL_TEAMS)       
+    build_team_stats(ALL_TEAMS)   
     build_pk()
 
     logger.info("\nVérification des fichiers...")

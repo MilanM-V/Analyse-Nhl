@@ -143,7 +143,7 @@ def should_force_send(wave_match_ids):
 def is_active_hours():
     now = datetime.now()
     hour = now.hour
-    return hour >= 17 or hour <= 4
+    return (hour > 16 or (hour == 16 and datetime.now().minute >= 30)) or hour <= 4
 
 REQUIRED_CSV = {
     "last 10.csv":              50,
@@ -326,8 +326,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
 
 
-    # Seuils 4 catégories calibrés sur simulation 2000 soirs
-    # WR simulé : SAFE~56%, JOUABLE~40%, VALEUR~37%, RISQUE~27%
+
     SAFE_SCORE    = 8.5;  SAFE_HDCF    = 2.0
     JOUABLE_SCORE = 8.0;  JOUABLE_HDCF = 1.5
     VALEUR_SCORE  = 7.5;  VALEUR_HDCF  = 1.2
@@ -354,26 +353,22 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         team_counts[equipe]   = team_counts.get(equipe, 0) + 1
         match_counts[match_key] = match_counts.get(match_key, 0) + 1
         final_top10.append(r)
-        if len(final_top10) >= 20: break  # sécurité max 20 picks/vague
+        if len(final_top10) >= 20: break 
 
     logger.info(f"\n=== RÉSULTATS VAGUE {wave_label} ===")
     if not final_top10:
         logger.info("Aucun joueur n'a passé les filtres sur cette vague.")
         return
 
-    # Regrouper les picks par match — label fixé home vs away depuis MATCHS_DU_SOIR
-    # MATCHS_DU_SOIR = [(home_abbr, away_abbr), ...]
     home_away_map = {frozenset([h, a]): (h, a) for h, a in MATCHS_DU_SOIR}
 
     picks_by_match = {}
     for r in final_top10:
         match_key = frozenset([r['Equipe'], r['Adversaire']])
         if match_key not in picks_by_match:
-            # Récupère home/away dans le bon ordre
             if match_key in home_away_map:
                 home_abbr, away_abbr = home_away_map[match_key]
             else:
-                # fallback : is_home du premier pick
                 home_abbr = r['Equipe'] if r['IsHome'] else r['Adversaire']
                 away_abbr = r['Adversaire'] if r['IsHome'] else r['Equipe']
             home_full = predictor_v9.REVERSE_TEAM_MAPPING.get(home_abbr, home_abbr)
@@ -384,7 +379,6 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             }
         picks_by_match[match_key]['picks'].append(r)
 
-    # Icônes catégories
     CAT_ICONS = {
         "SAFE":    "🔒 SAFE",
         "JOUABLE": "✅ JOUABLE",
@@ -423,7 +417,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             ])
             if not file_exists:
                 writer.writeheader()
-            seen_picks = set()  # dédoublon joueur+equipe dans la même vague
+            seen_picks = set()  
             for r in final_top10:
                 pick_key = (r['Joueur'], r['Equipe'])
                 if pick_key in seen_picks:
@@ -460,8 +454,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture picks_log.csv : {e}")
 
-    # --- players_log.csv : tous les joueurs analysés (picks + non-picks) ---
-    picked_names = {r['Joueur'] for r in final_top10}
+    picked_names  = {r['Joueur'] for r in final_top10}
+    results_index = {r['Joueur']: r for r in results}
     pl_exists = os.path.exists(players_log_path)
     try:
         with open(players_log_path, 'a', newline='', encoding='utf-8') as f:
@@ -475,41 +469,73 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             ])
             if not pl_exists:
                 writer.writeheader()
-            seen_players = set()  # dédoublon joueur+equipe dans la même vague
-            for r in results:
-                player_key = (r['Joueur'], r['Equipe'])
-                if player_key in seen_players:
-                    logger.warning(f"[WARN] Doublon ignoré dans players_log : {r['Joueur']} ({r['Equipe']})")
+            seen_players = set()
+            n_logged = 0
+            for player in COMPOS_DU_SOIR_BRUTES:
+                if player in seen_players:
                     continue
-                seen_players.add(player_key)
-                verdict = r.get('Categorie', 'RISQUE')
-                writer.writerow({
-                    'date':       TODAY_DATE,
-                    'vague':      wave_label,
-                    'joueur':     r['Joueur'],
-                    'equipe':     r['Equipe'],
-                    'adversaire': r['Adversaire'],
-                    'score':      r['Score'],
-                    'picked':     r['Joueur'] in picked_names,
-                    'pp1':        '⭐' in r['PP1'],
-                    'backup':     '🥅' in r['Tag'],
-                    'b2b':        '😴' in r['Tag'],
-                    'ixg':        r['ixg'],
-                    'hdcf':       r['hdcf'],
-                    'sog':        r['sog'],
-                    'atoi':       r['atoi'],
-                    'l10_g':      r['l10_g'],
-                    'season_g':   r['season_g'],
-                    'pdo':        r['pdo'],
-                    'ga_g':       r['ga_g'],
-                    'cf_pct':     r['cf_pct'],
-                    'hdca_g':     r['hdca_g'],
-                    'pk_pct':     r['pk_pct'],
-                    'rebounds':   r.get('rebounds', 0),
-                    'rush':       r.get('rush', 0),
-                    'but':        ''
-                })
-        logger.info(f"[OK] players_log.csv : {len(results)} joueurs loggués ({len(picked_names)} picks, {len(results)-len(picked_names)} non-picks)")
+                seen_players.add(player)
+                if player in results_index:
+                    r = results_index[player]
+                    writer.writerow({
+                        'date':       TODAY_DATE,
+                        'vague':      wave_label,
+                        'joueur':     r['Joueur'],
+                        'equipe':     r['Equipe'],
+                        'adversaire': r['Adversaire'],
+                        'score':      r['Score'],
+                        'picked':     r['Joueur'] in picked_names,
+                        'pp1':        '⭐' in r['PP1'],
+                        'backup':     '🥅' in r['Tag'],
+                        'b2b':        '😴' in r['Tag'],
+                        'ixg':        r['ixg'],
+                        'hdcf':       r['hdcf'],
+                        'sog':        r['sog'],
+                        'atoi':       r['atoi'],
+                        'l10_g':      r['l10_g'],
+                        'season_g':   r['season_g'],
+                        'pdo':        r['pdo'],
+                        'ga_g':       r['ga_g'],
+                        'cf_pct':     r['cf_pct'],
+                        'hdca_g':     r['hdca_g'],
+                        'pk_pct':     r['pk_pct'],
+                        'rebounds':   r.get('rebounds', 0),
+                        'rush':       r.get('rush', 0),
+                        'but':        ''
+                    })
+                else:
+                    p_form    = form_data.get(player, {})
+                    team      = predictor_v9.clean_team_name(p_form.get('Team', '')) if p_form else ''
+                    adv       = opponents_tonight.get(team, '')
+                    adv_stats = matchups.get(adv, {}) if adv else {}
+                    writer.writerow({
+                        'date':       TODAY_DATE,
+                        'vague':      wave_label,
+                        'joueur':     player,
+                        'equipe':     team,
+                        'adversaire': adv,
+                        'score':      '',
+                        'picked':     False,
+                        'pp1':        player in PP1_PLAYERS,
+                        'backup':     False,
+                        'b2b':        team in B2B_TEAMS,
+                        'ixg':        round(p_form.get('L10_ixG_G', 0.0), 3),
+                        'hdcf':       round(p_form.get('L10_iHDCF_G', 0.0), 2),
+                        'sog':        round(p_form.get('L10_SOG_G', 0.0), 2),
+                        'atoi':       round(p_form.get('ATOI', 0.0), 1),
+                        'l10_g':      round(p_form.get('L10_G_G', 0.0), 3),
+                        'season_g':   '',
+                        'pdo':        '',
+                        'ga_g':       round(adv_stats.get('GA_G', 0.0), 2),
+                        'cf_pct':     round(adv_stats.get('CF_pct', 50.0), 1),
+                        'hdca_g':     round(adv_stats.get('HDCA_G', 0.0), 2),
+                        'pk_pct':     round(adv_stats.get('PK%', 80.0), 1),
+                        'rebounds':   round(p_form.get('L10_Rebounds_G', 0.0), 2),
+                        'rush':       round(p_form.get('L10_Rush_G', 0.0), 2),
+                        'but':        ''
+                    })
+                n_logged += 1
+        logger.info(f"[OK] players_log.csv : {n_logged} joueurs loggués ({len(picked_names)} picks, {n_logged - len(picked_names)} non-picks)")
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture players_log.csv : {e}")
 
@@ -625,7 +651,6 @@ def send_session_report():
         )
         msg.attach(MIMEText(body, 'plain'))
 
-        # Pièce jointe 1 — picks_log.csv
         def attach_file(filepath, filename):
             with open(filepath, "rb") as f:
                 part = MIMEBase("application", "octet-stream")
@@ -636,7 +661,6 @@ def send_session_report():
 
         attach_file(log_path, f"picks_{today_str}.csv")
 
-        # Pièce jointe 2 — players_log.csv (si présent)
         if os.path.exists(players_log_path):
             attach_file(players_log_path, f"players_{today_str}.csv")
         else:
@@ -652,11 +676,9 @@ def send_session_report():
     except Exception as e:
         logger.error(f"❌ Erreur lors du rapport de session : {e}")
     finally:
-        # Archive picks_log
         if os.path.exists(log_path):
             os.rename(log_path, archive_picks)
             logger.info(f"📁 picks archivé : {archive_picks}")
-        # Archive players_log
         if os.path.exists(players_log_path):
             os.rename(players_log_path, archive_players)
             logger.info(f"📁 players archivé : {archive_players}")

@@ -468,15 +468,13 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     
     sog = p_form.get('L10_SOG_G', 0.0)
 
-    # oiSH élevé sur peu de GP peut être du bruit → on pondère par GP
     gp = v5_stats.get('GP', 0)
-    if gp >= 20:  # assez de GP pour que l'oiSH soit significatif
+    if gp >= 20:  
         if oish > 16.0: qs -= 2.0
         elif oish > 14.0: qs -= 1.0
-    elif gp >= 10:  # GP modéré → pénalité atténuée de moitié
+    elif gp >= 10:  
         if oish > 16.0: qs -= 1.0
         elif oish > 14.0: qs -= 0.5
-    # < 10 GP : oiSH ignoré (trop peu de données)
     if is_b2b: qs -= 1.5
 
     g1 = 0.0
@@ -513,7 +511,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if pdo < 96.0: g3 += 1.5
     elif pdo < 98.0: g3 += 0.75
     if season_g > 0:
-        ratio = l10_g / max(season_g, 0.05)  # plancher 0.05 (~1 but/20GP) pour éviter explosion ratio
+        ratio = l10_g / max(season_g, 0.05) 
         if ratio >= 2.0:   g3 -= 0.5
         elif ratio >= 1.5: g3 += 1.0
         elif ratio >= 1.0: g3 += 0.5
@@ -525,14 +523,13 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
 
     if is_pp1:
         if pk_pct < 77.0:   qs += 2.5
-        elif pk_pct > 83.0: qs += 0.5   # PK solide → bonus réduit (était 1.0)
+        elif pk_pct > 83.0: qs += 0.5   
         else:               qs += 1.75
 
-    # Backup bonus conditionnel : seulement si la défense adverse concède réellement
     if is_backup and ga_g >= 2.8:
         qs += 2.0
     elif is_backup:
-        qs += 0.75  # backup contre une défense serrée → bonus modéré
+        qs += 0.75 
 
 
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 9.5))))
