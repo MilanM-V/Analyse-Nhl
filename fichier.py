@@ -354,6 +354,22 @@ def compute_last10_stats(all_teams):
                     owner = det.get('eventOwnerTeamId')
 
                     shot_type = det.get('shotType', 'wrist')
+
+                    tsec = time_to_sec(play.get('timeInPeriod', '0:00')) + (per-1)*1200
+                    is_rebound = False
+                    is_rush    = False
+                    for j in range(max(0, i-5), i):
+                        pj  = plays_list[j]
+                        if pj.get('periodDescriptor', {}).get('number', 1) != per:
+                            continue
+                        tj    = pj.get('typeDescKey', '')
+                        tsecj = time_to_sec(pj.get('timeInPeriod','0:00')) + (per-1)*1200
+                        delta = tsec - tsecj
+                        if tj == 'shot-on-goal' and 0 < delta <= 3:
+                            is_rebound = True
+                        if tj == 'takeaway' and 0 < delta <= 4:
+                            is_rush = True
+
                     xg_val = xg_model.predict(x, y, shot_type, sit, is_rebound=is_rebound, is_rush=is_rush, period=per) if zone == 'O' else 0.0
                     hd     = is_high_danger(x, y, zone, home_side, owner, home_team_id)
                     dist   = math.sqrt((89 - abs(x))**2 + y**2) if zone == 'O' else 999
@@ -372,21 +388,6 @@ def compute_last10_stats(all_teams):
                         ps['shots'] += 1 
                     if t == 'goal':
                         ps['goals'] += 1
-
-                    tsec = time_to_sec(play.get('timeInPeriod', '0:00')) + (per-1)*1200
-                    is_rebound = False
-                    is_rush    = False
-                    for j in range(max(0, i-5), i):
-                        pj  = plays_list[j]
-                        if pj.get('periodDescriptor', {}).get('number', 1) != per:
-                            continue
-                        tj    = pj.get('typeDescKey', '')
-                        tsecj = time_to_sec(pj.get('timeInPeriod','0:00')) + (per-1)*1200
-                        delta = tsec - tsecj
-                        if tj == 'shot-on-goal' and 0 < delta <= 3:
-                            is_rebound = True
-                        if tj == 'takeaway' and 0 < delta <= 4:
-                            is_rush = True
 
                     ps['rebounds'] += int(is_rebound)
                     ps['rush']     += int(is_rush)
