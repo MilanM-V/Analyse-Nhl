@@ -2,6 +2,7 @@ import time
 import os
 import sys
 import requests
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -12,6 +13,10 @@ from datetime import datetime, timedelta
 from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
 
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
+    
 load_dotenv()
 
 BRAVE_PATH = os.getenv("BRAVE_PATH")
@@ -52,7 +57,7 @@ def _utc_to_local(utc_str):
     try:
         dt = datetime.strptime(utc_str[:19], "%Y-%m-%dT%H:%M:%S")
         m, d = dt.month, dt.day
-        is_winter = (m < 3 or (m == 3 and d < 26) or m > 10 or (m == 10 and d >= 26))
+        is_winter = (m < 3 or (m == 3 and d < 29) or m > 10 or (m == 10 and d >= 26))
         offset = 1 if is_winter else 2
         return (dt + timedelta(hours=offset)).strftime("%d.%m. %H:%M")
     except Exception:
