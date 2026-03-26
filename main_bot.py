@@ -5,7 +5,7 @@ import sys
 import subprocess
 import requests
 import scraper
-import predictor_v9
+import predictor_v10
 import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
@@ -250,13 +250,13 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
     TODAY_DATE = datetime.now().strftime("%Y-%m-%d")
     
-    form_data  = predictor_v9.load_recent_form('./stats/last 10.csv')
-    matchups   = predictor_v9.load_matchup_data_mp('./stats/team.csv')
-    pp_stats   = predictor_v9.load_powerplay_stats('./stats/power play.csv')
-    oi_data = predictor_v9.load_on_ice_stats('./stats/on_ice.csv')
-    v5_data = predictor_v9.load_v5_base_stats('./stats/Player Season Totals.csv', oi_data)
-    goalie_stats = predictor_v9.load_goalie_stats('./stats/goalies.csv')
-    pk_stats   = predictor_v9.load_pk_stats('./stats/pk.csv')
+    form_data  = predictor_v10.load_recent_form('./stats/last 10.csv')
+    matchups   = predictor_v10.load_matchup_data_mp('./stats/team.csv')
+    pp_stats   = predictor_v10.load_powerplay_stats('./stats/power play.csv')
+    oi_data = predictor_v10.load_on_ice_stats('./stats/on_ice.csv')
+    v5_data = predictor_v10.load_v5_base_stats('./stats/Player Season Totals.csv', oi_data)
+    goalie_stats = predictor_v10.load_goalie_stats('./stats/goalies.csv')
+    pk_stats   = predictor_v10.load_pk_stats('./stats/pk.csv')
 
     for team_abbr, pk_pct in pk_stats.items():
         if team_abbr in matchups:
@@ -264,27 +264,27 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
     known_players = list(form_data.keys()) + list(v5_data.keys()) + list(goalie_stats.keys())
 
-    MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v9.parse_flashscore_file(FICHIER_COMPOS_TEMPORAIRE, known_players, form_data)
+    MATCHS_DU_SOIR, COMPOS_DU_SOIR_BRUTES, STARTING_GOALIES = predictor_v10.parse_flashscore_file(FICHIER_COMPOS_TEMPORAIRE, known_players, form_data)
     COMPOS_DU_SOIR = [p for p in COMPOS_DU_SOIR_BRUTES if p in form_data]
     HOME_TEAMS = [mt[0] for mt in MATCHS_DU_SOIR]
 
     opponents_tonight = {t1: t2 for t1, t2 in MATCHS_DU_SOIR}
     opponents_tonight.update({t2: t1 for t1, t2 in MATCHS_DU_SOIR})
 
-    B2B_TEAMS  = [t for t in predictor_v9.get_b2b_teams('./stats/match.csv', TODAY_DATE) if t in opponents_tonight]
-    PP1_PLAYERS = predictor_v9.get_auto_pp1_players(form_data, pp_stats, opponents_tonight.keys())
+    B2B_TEAMS  = [t for t in predictor_v10.get_b2b_teams('./stats/match.csv', TODAY_DATE) if t in opponents_tonight]
+    PP1_PLAYERS = predictor_v10.get_auto_pp1_players(form_data, pp_stats, opponents_tonight.keys())
 
-    active_superstars_by_team = {t: [] for t in predictor_v9.TEAM_MAPPING.values()}
+    active_superstars_by_team = {t: [] for t in predictor_v10.TEAM_MAPPING.values()}
     for p in COMPOS_DU_SOIR:
-        if p in predictor_v9.SUPERSTARS_PLAYMAKERS and p in form_data:
-            team_clean = predictor_v9.clean_team_name(form_data[p]['Team'])
+        if p in predictor_v10.SUPERSTARS_PLAYMAKERS and p in form_data:
+            team_clean = predictor_v10.clean_team_name(form_data[p]['Team'])
             if team_clean in active_superstars_by_team:
                 active_superstars_by_team[team_clean].append(p)
 
     results = []
     for player, p_form in form_data.items():
         if player not in COMPOS_DU_SOIR: continue
-        team = predictor_v9.clean_team_name(p_form['Team'])
+        team = predictor_v10.clean_team_name(p_form['Team'])
         if p_form['ATOI'] < 13.0: continue
 
         if team in opponents_tonight:
@@ -298,9 +298,9 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             has_star_linemate = len([s for s in stars_in_team if s != player]) > 0
             is_b2b = team in B2B_TEAMS and adversaire not in B2B_TEAMS
             adv_goalie = STARTING_GOALIES.get(adversaire, "")
-            is_backup = predictor_v9.check_if_backup_goalie(adv_goalie, goalie_stats)
+            is_backup = predictor_v10.check_if_backup_goalie(adv_goalie, goalie_stats)
 
-            base_qs = predictor_v9.calculate_base_qs(
+            base_qs = predictor_v10.calculate_base_qs(
                 p_v5_stats, p_form, adv_stats,
                 is_pp1, is_home, has_star_linemate,
                 is_backup, is_b2b
@@ -339,16 +339,18 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
 
 
 
-    SAFE_SCORE    = 8.5;  SAFE_HDCF    = 2.0
-    JOUABLE_SCORE = 8.0;  JOUABLE_HDCF = 1.5
-    VALEUR_SCORE  = 7.5;  VALEUR_HDCF  = 1.2
-    RISQUE_SCORE  = 7.0;  RISQUE_HDCF  = 1.0
+    # Seuils v10 — calibrés sur données réelles (117 picks, LogReg LOO-CV)
+    # Sigmoid recalibrée (centre 9.5→6.5) pour aligner avec nouvelle formule
+    # hdcf>=2.5 validé comme meilleur filtre (+14.7pp vs baseline 30.8%)
+    # Supprimé : VALEUR et RISQUE | Ajouté : ELITE (cible ~45% WR)
+    ELITE_SCORE   = 10.5;  ELITE_HDCF   = 2.5
+    SAFE_SCORE    =  9.5;  SAFE_HDCF    = 2.0
+    JOUABLE_SCORE =  7.5;  JOUABLE_HDCF = 1.8
 
     def get_categorie(score, hdcf):
+        if score >= ELITE_SCORE   and hdcf >= ELITE_HDCF:   return "ELITE"
         if score >= SAFE_SCORE    and hdcf >= SAFE_HDCF:    return "SAFE"
         if score >= JOUABLE_SCORE and hdcf >= JOUABLE_HDCF: return "JOUABLE"
-        if score >= VALEUR_SCORE  and hdcf >= VALEUR_HDCF:  return "VALEUR"
-        if score >= RISQUE_SCORE  and hdcf >= RISQUE_HDCF:  return "RISQUE"
         return None
 
     team_counts  = {}
@@ -383,8 +385,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
             else:
                 home_abbr = r['Equipe'] if r['IsHome'] else r['Adversaire']
                 away_abbr = r['Adversaire'] if r['IsHome'] else r['Equipe']
-            home_full = predictor_v9.REVERSE_TEAM_MAPPING.get(home_abbr, home_abbr)
-            away_full = predictor_v9.REVERSE_TEAM_MAPPING.get(away_abbr, away_abbr)
+            home_full = predictor_v10.REVERSE_TEAM_MAPPING.get(home_abbr, home_abbr)
+            away_full = predictor_v10.REVERSE_TEAM_MAPPING.get(away_abbr, away_abbr)
             picks_by_match[match_key] = {
                 'label': f"{home_full} - {away_full}",
                 'picks': []
@@ -392,12 +394,11 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
         picks_by_match[match_key]['picks'].append(r)
 
     CAT_ICONS = {
+        "ELITE":   "💎 ELITE",
         "SAFE":    "🔒 SAFE",
         "JOUABLE": "✅ JOUABLE",
-        "VALEUR":  "⚡️ VALEUR",
-        "RISQUE":  "⚠️ RISQUE",
     }
-    CAT_ORDER = {"SAFE": 0, "JOUABLE": 1, "VALEUR": 2, "RISQUE": 3}
+    CAT_ORDER = {"ELITE": 0, "SAFE": 1, "JOUABLE": 2}
 
     tg_message = f"<b>VAGUE {wave_label} — {nb_matchs} match(s) NHL</b>\n\n"
 
@@ -519,7 +520,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                     writer.writerow(format_row_for_european_csv(row_data))
                 else:
                     p_form    = form_data.get(player, {})
-                    team      = predictor_v9.clean_team_name(p_form.get('Team', '')) if p_form else ''
+                    team      = predictor_v10.clean_team_name(p_form.get('Team', '')) if p_form else ''
                     adv       = opponents_tonight.get(team, '')
                     adv_stats = matchups.get(adv, {}) if adv else {}
                     row_data = {
