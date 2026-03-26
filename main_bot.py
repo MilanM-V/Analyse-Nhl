@@ -216,6 +216,18 @@ def purge_old_matches():
 
 
 def run_analysis_and_send(match_ids_for_wave, wave_label):
+    def format_row_for_european_csv(row_dict):
+        """
+        Iterates through a dictionary, converting float values to comma-separated strings.
+        """
+        formatted_row = {}
+        for key, value in row_dict.items():
+            if isinstance(value, float):
+                formatted_row[key] = str(value).replace('.', ',')
+            else:
+                formatted_row[key] = value
+        return formatted_row
+        
     nb_matchs = len(match_ids_for_wave)
     logger.info(f"\n---  ANALYSE VAGUE {wave_label} ({nb_matchs} matchs) ---")
 
@@ -425,7 +437,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                     continue
                 seen_picks.add(pick_key)
                 verdict = r.get('Categorie', 'RISQUE')
-                writer.writerow({
+                row_data = {
                     'date':       TODAY_DATE,
                     'vague':      wave_label,
                     'joueur':     r['Joueur'],
@@ -450,7 +462,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                     'rebounds':   r.get('rebounds', 0),
                     'rush':       r.get('rush', 0),
                     'but':        ''
-                })
+                }
+                writer.writerow(format_row_for_european_csv(row_data))
     except Exception as e:
         logger.info(f"[WARN] Erreur écriture picks_log.csv : {e}")
 
@@ -477,7 +490,7 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                 seen_players.add(player)
                 if player in results_index:
                     r = results_index[player]
-                    writer.writerow({
+                    row_data = {
                         'date':       TODAY_DATE,
                         'vague':      wave_label,
                         'joueur':     r['Joueur'],
@@ -502,13 +515,14 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                         'rebounds':   r.get('rebounds', 0),
                         'rush':       r.get('rush', 0),
                         'but':        ''
-                    })
+                    }
+                    writer.writerow(format_row_for_european_csv(row_data))
                 else:
                     p_form    = form_data.get(player, {})
                     team      = predictor_v9.clean_team_name(p_form.get('Team', '')) if p_form else ''
                     adv       = opponents_tonight.get(team, '')
                     adv_stats = matchups.get(adv, {}) if adv else {}
-                    writer.writerow({
+                    row_data = {
                         'date':       TODAY_DATE,
                         'vague':      wave_label,
                         'joueur':     player,
@@ -533,7 +547,8 @@ def run_analysis_and_send(match_ids_for_wave, wave_label):
                         'rebounds':   round(p_form.get('L10_Rebounds_G', 0.0), 2),
                         'rush':       round(p_form.get('L10_Rush_G', 0.0), 2),
                         'but':        ''
-                    })
+                    }
+                    writer.writerow(format_row_for_european_csv(row_data))
                 n_logged += 1
         logger.info(f"[OK] players_log.csv : {n_logged} joueurs loggués ({len(picked_names)} picks, {n_logged - len(picked_names)} non-picks)")
     except Exception as e:
