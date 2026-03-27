@@ -2,6 +2,7 @@ import time
 import os
 import sys
 import requests
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -12,6 +13,10 @@ from datetime import datetime, timedelta
 from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
 
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
+    
 load_dotenv()
 
 BRAVE_PATH = os.getenv("BRAVE_PATH")
@@ -52,7 +57,7 @@ def _utc_to_local(utc_str):
     try:
         dt = datetime.strptime(utc_str[:19], "%Y-%m-%dT%H:%M:%S")
         m, d = dt.month, dt.day
-        is_winter = (m < 3 or (m == 3 and d < 26) or m > 10 or (m == 10 and d >= 26))
+        is_winter = (m < 3 or (m == 3 and d < 29) or m > 10 or (m == 10 and d >= 26))
         offset = 1 if is_winter else 2
         return (dt + timedelta(hours=offset)).strftime("%d.%m. %H:%M")
     except Exception:
@@ -104,7 +109,7 @@ def get_scheduled_matches(url=""):
     except Exception as e:
         print(f"[WARN] API NHL schedule indisponible ({e}), fallback Flashscore")
         return _get_scheduled_matches_flashscore(
-            url or "https://www.flashscore.fr/hockey/usa/nhl/calendrier/")
+            url or "https://www.flashscore.fr/hockey/usa/nhl/")
 
     now = datetime.now()
     ref = now - timedelta(days=1) if now.hour < 12 else now
@@ -206,14 +211,15 @@ def _resolve_flashscore_id(nhl_game_id, home, away):
         for row in driver.find_elements(By.CSS_SELECTOR, ".event__match"):
             try:
                 home_txt = row.find_element(
-                    By.CLASS_NAME, "event__participant--home").text.lower()
+                    By.CLASS_NAME, "event__homeParticipant").text.lower()
                 away_txt = row.find_element(
-                    By.CLASS_NAME, "event__participant--away").text.lower()
+                    By.CLASS_NAME, "event__awayParticipant").text.lower()
                 if home_kw and away_kw and home_kw in home_txt and away_kw in away_txt:
                     fs_id = row.get_attribute("id").replace("g_4_", "")
                     break
-            except Exception:
-                continue
+                    
+            except Exception as e:
+                print(f"[ERROR] _resolve_flashscore_id : {e}")
     except Exception as e:
         print(f"[ERROR] _resolve_flashscore_id : {e}")
     finally:
