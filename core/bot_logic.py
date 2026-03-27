@@ -41,14 +41,14 @@ class NhlBot:
             if not ok and self.datastore.last_load_date == nhl_date:
                 logger.warning(f"[{now.strftime('%H:%M:%S')}] CSV KO : {', '.join(ko_files)} — Re-extraction forcée...")
             else:
-                logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR NST EN COURS...")
+                logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR API NHL EN COURS...")
 
             try:
                 subprocess.run([sys.executable, "fichier.py"], check=True)
                 ok2, ko2 = self._check_csv_integrity()
                 if ok2:
                     self.datastore.force_refresh()
-                    logger.info("Fichiers NST mis à jour avec succès et chargés en RAM.")
+                    logger.info("Fichiers API NHL mis à jour avec succès et chargés en RAM.")
                     return True
                 else:
                     logger.warning(f"CSV toujours KO après extraction : {', '.join(ko2)}")

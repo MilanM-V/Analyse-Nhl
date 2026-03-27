@@ -259,7 +259,7 @@ def load_on_ice_stats(filepath):
         return {}
 def load_pk_stats(filepath):
     """
-    Charge le PK% depuis le tableau 4v5 NST (sit=4v5).
+    Charge le PK% depuis le tableau 4v5 API NHL (sit=4v5).
     La colonne utile est SV% (= taux d'arrêt en infériorité = PK%).
     """
     try:
@@ -345,7 +345,7 @@ def check_if_backup_goalie(goalie_name, goalie_stats):
 
 def parse_flashscore_file(filepath, known_players, form_data=None):
     """
-    form_data optionnel : si fourni, filtre les joueurs dont l'équipe NST
+    form_data optionnel : si fourni, filtre les joueurs dont l'équipe API NHL
     ne correspond à aucune équipe du match (évite les faux positifs de matching).
     """
     matches = []
@@ -354,7 +354,7 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
 
     def get_real_name(scraped_name, team_context=None):
         """
-        Résout un nom Flashscore ('Kreider C.') vers le nom complet NST ('Chris Kreider').
+        Résout un nom Flashscore ('Kreider C.') vers le nom complet API NHL ('Chris Kreider').
         team_context : abbr de l'équipe du match (DOM ou EXT) pour filtrer les candidats.
         """
         s_name = scraped_name.strip()

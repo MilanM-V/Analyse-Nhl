@@ -12,7 +12,7 @@ from core.bot_logic import NhlBot
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5)
+file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')
 file_handler.setFormatter(formatter)
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
@@ -31,13 +31,13 @@ def main():
     logger.info("  Architecture refactorisée (DataStore SQLite+RAM ) ")
     logger.info("=====================================================")
 
+    if not os.path.exists("./stats"):
+        os.makedirs("./stats")
     datastore = DataStore()
     telegram = TelegramNotifier()
     bot = NhlBot(datastore, telegram)
 
     telegram_app = create_telegram_app(bot)
-
-    # bot.run_scan_cycle() — supprimé : le JobQueue (first=0) lance déjà le 1er scan
 
     logger.info("Planificateur Telegram JobQueue initialisé. Le bot est en attente...")
 

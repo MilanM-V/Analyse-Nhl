@@ -29,11 +29,15 @@ load_dotenv()
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5)
-file_handler.setFormatter(formatter)
+try:
+    file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+except Exception:
+    pass # Déjà ouvert par main_bot.py probablement
+
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 
 FOLDER_NAME = "stats"
