@@ -103,7 +103,7 @@ def create_telegram_app(nhl_bot):
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, nhl_bot.end_of_day_cleanup)
 
-    app.job_queue.run_repeating(job_scan_cycle, interval=900, first=0)
+    app.job_queue.run_repeating(job_scan_cycle, interval=900, first=900)
 
     import datetime as dt
     target_time = dt.time(hour=5, minute=0, tzinfo=dt.timezone.utc) 

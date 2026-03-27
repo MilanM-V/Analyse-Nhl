@@ -39,7 +39,17 @@ def main():
 
     telegram_app = create_telegram_app(bot)
 
-    logger.info("Planificateur Telegram JobQueue initialisé. Le bot est en attente...")
+    if telegram_app is not None:
+        logger.info("Planificateur Telegram JobQueue initialisé.")
+    else:
+        logger.info("Mode sans Telegram activé.")
+
+    logger.info("🚀 Lancement immédiat du premier scan de la journée en arrière-plan...")
+    # Lancement d'un thread séparé pour le scan immédiat
+    import threading
+    threading.Thread(target=bot.run_scan_cycle, daemon=True).start()
+
+    logger.info("Le bot est en attente...")
 
     try:
         telegram_app.run_polling(drop_pending_updates=True)
