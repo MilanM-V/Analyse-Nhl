@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 if hasattr(time, 'tzset'):
     os.environ['TZ'] = 'Europe/Paris'
     time.tzset()
-    
+
 load_dotenv()
 
 BRAVE_PATH = os.getenv("BRAVE_PATH")
@@ -44,13 +44,11 @@ NHL_ABBR_TO_FULL = {
     'WPG': 'Winnipeg Jets',       'UTA': 'Utah Hockey Club',
 }
 
-
 def _nhl_date():
     now = datetime.now()
     if now.hour < 12:
         return (now - timedelta(days=1)).strftime("%Y-%m-%d")
     return now.strftime("%Y-%m-%d")
-
 
 def _utc_to_local(utc_str):
     """UTC → heure Paris. UTC+1 hiver (avant 26 mars / après 26 oct), UTC+2 été."""
@@ -62,7 +60,6 @@ def _utc_to_local(utc_str):
         return (dt + timedelta(hours=offset)).strftime("%d.%m. %H:%M")
     except Exception:
         return ""
-
 
 def get_driver(show_browser=False):
     options = Options()
@@ -85,7 +82,6 @@ def get_driver(show_browser=False):
         service.creation_flags = 0x08000000
     return webdriver.Chrome(options=options, service=service)
 
-
 def is_valid_lineup(player_list):
     if len(player_list) < 22:
         return False
@@ -94,11 +90,10 @@ def is_valid_lineup(player_list):
             return False
     return True
 
-def get_scheduled_matches(url=""):
+def get_scheduled_matches(url="", driver=None):
     """
     Retourne les matchs NHL du soir via l'API officielle NHL.
-    Le paramètre `url` est conservé pour compatibilité avec main_bot.py mais ignoré.
-    Fallback automatique sur Flashscore si l'API est injoignable.
+    Fallback automatique sur Flashscore si l'API est injoignable avec driver persistant.
     """
     date_str = _nhl_date()
     try:
@@ -109,7 +104,7 @@ def get_scheduled_matches(url=""):
     except Exception as e:
         print(f"[WARN] API NHL schedule indisponible ({e}), fallback Flashscore")
         return _get_scheduled_matches_flashscore(
-            url or "https://www.flashscore.fr/hockey/usa/nhl/")
+            url or "https://www.flashscore.fr/hockey/usa/nhl/", driver)
 
     now = datetime.now()
     ref = now - timedelta(days=1) if now.hour < 12 else now
@@ -151,10 +146,13 @@ def get_scheduled_matches(url=""):
     print(f"[API NHL] {len(matches_found)} match(s) pour {date_str}")
     return matches_found
 
-
-def _get_scheduled_matches_flashscore(url):
+def _get_scheduled_matches_flashscore(url, driver=None):
     """Fallback Selenium sur Flashscore si l'API NHL est down."""
-    driver = get_driver()
+    local_driver = False
+    if driver is None:
+        driver = get_driver()
+        local_driver = True
+
     now = datetime.now()
     ref = now - timedelta(days=1) if now.hour < 12 else now
     start_limit = ref.replace(hour=17, minute=0, second=0, microsecond=0)
@@ -179,13 +177,13 @@ def _get_scheduled_matches_flashscore(url):
             except Exception as e:
                 print(f"[WARN] _flashscore_schedule row : {e}")
     finally:
-        driver.quit()
+        if local_driver:
+            driver.quit()
     return matches_found
 
 _FS_ID_CACHE: dict = {}  
 
-
-def _resolve_flashscore_id(nhl_game_id, home, away):
+def _resolve_flashscore_id(nhl_game_id, home, away, driver=None):
     """
     Trouve l'ID Flashscore en scrapant la page calendrier NHL de Flashscore.
     Matching sur le dernier mot du nom d'équipe (ex: "Bruins", "Oilers").
@@ -202,7 +200,11 @@ def _resolve_flashscore_id(nhl_game_id, home, away):
     home_kw = get_team_keyword(home)
     away_kw = get_team_keyword(away)
 
-    driver = get_driver()
+    local_driver = False
+    if driver is None:
+        driver = get_driver()
+        local_driver = True
+
     fs_id = None
     try:
         driver.get("https://www.flashscore.fr/hockey/usa/nhl/calendrier/")
@@ -217,13 +219,14 @@ def _resolve_flashscore_id(nhl_game_id, home, away):
                 if home_kw and away_kw and home_kw in home_txt and away_kw in away_txt:
                     fs_id = row.get_attribute("id").replace("g_4_", "")
                     break
-                    
+
             except Exception as e:
                 print(f"[ERROR] _resolve_flashscore_id : {e}")
     except Exception as e:
         print(f"[ERROR] _resolve_flashscore_id : {e}")
     finally:
-        driver.quit()
+        if local_driver:
+            driver.quit()
 
     if fs_id:
         _FS_ID_CACHE[nhl_game_id] = fs_id
@@ -232,8 +235,7 @@ def _resolve_flashscore_id(nhl_game_id, home, away):
         print(f"[WARN] ID Flashscore introuvable pour {home} vs {away}")
     return fs_id
 
-
-def get_lineups(match_id, home="", away=""):
+def get_lineups(match_id, home="", away="", driver=None):
     """
     Scrape les compos depuis Flashscore.
 
@@ -245,14 +247,19 @@ def get_lineups(match_id, home="", away=""):
     main_bot.py les passe automatiquement via m['home'] et m['away'].
     """
     if match_id.isdigit() and len(match_id) >= 9:
-        fs_id = _resolve_flashscore_id(match_id, home, away)
+        fs_id = _resolve_flashscore_id(match_id, home, away, driver)
         if not fs_id:
             return "compo pas dispo"
     else:
         fs_id = match_id
 
     url = f"https://www.flashscore.fr/match/{fs_id}/"
-    driver = get_driver()
+
+    local_driver = False
+    if driver is None:
+        driver = get_driver()
+        local_driver = True
+
     try:
         driver.get(url)
         wait = WebDriverWait(driver, 10)
@@ -264,18 +271,19 @@ def get_lineups(match_id, home="", away=""):
                 driver.execute_script("arguments[0].click();", tab)
                 break
 
-        wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, '[data-testid="wcl-scores-simple-text-01"]')))
-        time.sleep(2)
+        try:
+            wait.until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '[data-testid="wcl-scores-simple-text-01"]')))
+            time.sleep(2)
+        except:
+            time.sleep(3)                                                
 
-        els = driver.find_elements(
-            By.CSS_SELECTOR, '[data-testid="wcl-scores-simple-text-01"]')
         full_list = []
+
+        els = driver.find_elements(By.CSS_SELECTOR, '[data-testid="wcl-scores-simple-text-01"]')
         for e in els:
             name = e.text.strip()
-            if (name and not name.startswith('(')
-                    and not name.isdigit()
-                    and name.upper() not in ["V", "D", "?", "P"]):
+            if name and not name.startswith('(') and not name.isdigit() and name.upper() not in ["V", "D", "?", "P"]:
                 full_list.append(name)
 
         if not is_valid_lineup(full_list):
@@ -294,8 +302,25 @@ def get_lineups(match_id, home="", away=""):
         print(f"[ERROR] get_lineups {fs_id} : {e}")
         return "compo pas dispo"
     finally:
-        driver.quit()
+        if local_driver:
+            driver.quit()
 
+class ScraperDriverContext:
+    """
+    Context manager that provides a persistent selenium webdriver instance
+    to prevent starting/quitting Brave repeatedly during a wave scan.
+    """
+    def __init__(self):
+        self.driver = None
+
+    def __enter__(self):
+        self.driver = get_driver()
+        return self.driver
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.driver:
+            self.driver.quit()
+            self.driver = None
 
 if __name__ == "__main__":
     print("=== Test schedule (API NHL) ===")

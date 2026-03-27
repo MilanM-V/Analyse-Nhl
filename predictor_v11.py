@@ -2,6 +2,7 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 import math
+import os
 
 TEAM_MAPPING = {
     'Anaheim Ducks': 'ANA', 'Boston Bruins': 'BOS', 'Buffalo Sabres': 'BUF', 'Calgary Flames': 'CGY',
@@ -35,7 +36,6 @@ def clean_team_name(team_str):
     t = team_str.split(',')[0].strip()
     return TEAM_CLEANER.get(t, t)
 
-
 def get_b2b_teams(match_filepath, today_str):
     try:
         import re
@@ -44,7 +44,7 @@ def get_b2b_teams(match_filepath, today_str):
 
         team_names = '|'.join(re.escape(t) for t in TEAM_MAPPING)
         pattern = re.compile(
-            rf'^(\d{{4}}-\d{{2}}-\d{{2}}) - .+ ({team_names}) (?:Limited|Full) Report'
+            rf'^(\d{ 4} -\d{ 2} -\d{ 2} ) - .+ ({team_names}) (?:Limited|Full) Report'
         )
 
         b2b_teams = set()
@@ -59,7 +59,7 @@ def get_b2b_teams(match_filepath, today_str):
     except Exception as e:
         print(f"[WARN] get_b2b_teams : {e}")
         return []
-    
+
 def load_goalie_stats(filepath):
     try:
         df = pd.read_csv(filepath)
@@ -76,7 +76,7 @@ def load_goalie_stats(filepath):
         return g_dict
     except:
         return {}
-    
+
 def load_v5_base_stats(filepath,oi_stats):
     try:
         v5_dict = {}
@@ -217,7 +217,6 @@ def load_matchup_data_mp(filepath):
         print(f"[WARN] load_matchup_data_mp : {e}")
         return {}
 
-
 def load_powerplay_stats(filepath):
     try:
         df = pd.read_csv(filepath)
@@ -310,7 +309,6 @@ def load_pk_stats(filepath):
         print(f"[WARN] load_pk_stats : {e}")
         return {}
 
-
 def get_auto_pp1_players(form_data, pp_stats, teams_playing):
     pp1_list = []
     for team in teams_playing:
@@ -350,7 +348,7 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
     matches = []
     compos_by_team = {}  
     goalies = {}
-    
+
     def get_real_name(scraped_name, team_context=None):
         """
         Résout un nom Flashscore ('Kreider C.') vers le nom complet NST ('Chris Kreider').
@@ -358,31 +356,31 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
         """
         s_name = scraped_name.strip()
         if not s_name: return ""
-        
+
         s_clean = re.sub(r'\s+(II|III|IV|Jr|Sr)\.?$', '', s_name, flags=re.IGNORECASE).strip()
         parts = s_clean.split(' ')
         if len(parts) < 2: return s_name
-        
+
         last_name = " ".join(parts[:-1]).replace(',', '').strip().lower()
         first_init = parts[-1][0].lower()
-        
+
         candidates = []
         for k_name in known_players:
             k_parts = k_name.split(' ')
             k_first = k_parts[0].lower()
             k_last = " ".join(k_parts[1:]).lower()
-            
+
             if last_name in k_last and k_first.startswith(first_init):
                 exact = (last_name == k_last)
-                
+
                 team_match = 0
                 if team_context and form_data:
                     p_team = form_data.get(k_name, {}).get('Team', '')
                     team_match = 2 if p_team == team_context else 0
-                
+
                 score = (2 if exact else 1) + team_match
                 candidates.append((k_name, score))
-        
+
         if not candidates: return s_name
         candidates.sort(key=lambda x: x[1], reverse=True)
 
@@ -391,12 +389,12 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
             k_last_best = " ".join(best_name.split()[1:]).lower()
             if last_name != k_last_best:
                 return s_name  
-        
+
         return best_name
 
     current_dom = ""
     current_ext = ""
-    
+
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             for line in f:
@@ -437,9 +435,8 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
     all_compos = set()
     for players in compos_by_team.values():
         all_compos.update(players)
-        
-    return matches, list(all_compos), goalies
 
+    return matches, list(all_compos), goalies
 
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
     """
@@ -459,9 +456,46 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if g_gp < 0.18: return -99.0
     if pos in ('D', 'LD', 'RD'): return -99.0
 
+    model_path = "./pregame_model.pkl"
+    if os.path.exists(model_path):
+        import joblib
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            model = joblib.load(model_path)
+
+        _opp = opp_stats or {}
+        features_vec = [[
+            p_form.get('L10_ixG_G', 0.0),
+            p_form.get('L10_iHDCF_G', 0.0),
+            p_form.get('L10_SOG_G', 0.0),
+            p_form.get('ATOI', 0.0),
+            p_form.get('L10_G_G', 0.0),
+            v5_stats.get('G_GP', 0.0) if v5_stats else 0.0,
+            v5_stats.get('PDO', 100.0) if v5_stats else 100.0,
+            _opp.get('GA_G', 0.0),
+            _opp.get('CF_pct', 50.0),
+            _opp.get('HDCA_G', 0.0),
+            _opp.get('PK%', 80.0),
+            p_form.get('L10_Rebounds_G', 0.0),
+            p_form.get('L10_Rush_G', 0.0)
+        ]]
+
+        try:
+            proba = model.predict_proba(features_vec)[0][1]                                 
+
+            scaled_qs = proba * 24.0
+
+            if is_pp1: scaled_qs += 1.0
+            if is_backup: scaled_qs += 1.0
+            if is_b2b: scaled_qs -= 1.5
+
+            return min(scaled_qs, 12.0)
+        except Exception as e:
+            pass                          
+
     qs = 3.5
 
-    # ── Chargement features ────────────────────────────────────────────
     oish     = v5_stats.get('oiSH', 10.0)
     pdo      = v5_stats.get('PDO', 100.0)
     season_g = v5_stats.get('G_GP', 0.0)
@@ -477,8 +511,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     ga_g   = _opp.get('GA_G',    2.7)
     hdca_g = _opp.get('HDCA_G',  8.0)
 
-    # ── Pénalités préalables ───────────────────────────────────────────
-    # oiSH élevé = chance luck → régression à venir (gatée par GP)
     if gp >= 20:
         if oish > 16.0:   qs -= 2.0
         elif oish > 14.0: qs -= 1.0
@@ -487,8 +519,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
         elif oish > 14.0: qs -= 0.5
     if is_b2b: qs -= 1.5
 
-    # ── G1 — Dangerosité joueur (cap 5.0) ─────────────────────────────
-    # ixG est le composant PRIMAIRE (corrélation +0.188, importance 0.177)
     g1 = 0.0
 
     ixg_score = (4.0 if ixg >= 0.55 else
@@ -499,22 +529,17 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
                 -1.0)
     g1 += ixg_score
 
-    # hdcf : seuil dur à 2.5 validé comme meilleur filtre (+14.7pp WR)
     if hdcf >= 2.5:   g1 += 2.5
     elif hdcf >= 2.0: g1 += 1.75
     elif hdcf >= 1.5: g1 += 1.0
     elif hdcf >= 1.0: g1 += 0.25
     else:             g1 -= 0.5
 
-    # sog : volume tirs (corrélation +0.181)
     if sog >= 3.5:   g1 += 1.0
     elif sog >= 2.5: g1 += 0.5
 
     qs += min(g1, 5.0)
 
-    # ── G2 — Défense adverse (cap 3.5) ────────────────────────────────
-    # GA/j + PK% : les deux features adverses qui prédisent (LogReg 0.179 + 0.117)
-    # Supprimé : cf_pct, hdcf_pct, sa_g (signal faible ou capturé ailleurs)
     g2 = 0.0
 
     if ga_g >= 3.00:   g2 += 2.5
@@ -526,45 +551,36 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     elif pk_pct < 80.0: g2 += 0.5
     elif pk_pct > 85.0: g2 -= 0.5
 
-    # hdca_g : gardé mais poids réduit (importance 0.096 vs 0.179 pour GA)
     if hdca_g >= 12.0:   g2 += 0.75
     elif hdca_g >= 10.0: g2 += 0.375
     elif hdca_g <= 5.0:  g2 -= 0.5
 
     qs += min(g2, 3.5)
 
-    # ── G3 — Contexte joueur (cap 3.0) ────────────────────────────────
-    # PDO + ATOI uniquement — supprimé : ratio l10/season (bruit), home, star_linemate
     g3 = 0.0
 
     if atoi >= 20.0:   g3 += 1.5
     elif atoi >= 18.0: g3 += 0.75
 
-    # PDO bas → régression positive à attendre (importance LogReg 0.113)
     if pdo < 96.0:    g3 += 1.5
     elif pdo < 98.0:  g3 += 0.75
     elif pdo > 104.0: g3 -= 0.5
 
-    # Productivité saison (simple, sans ratio bruyant)
-    if season_g >= 0.35:   g3 += 0.5   # buteur de métier
+    if season_g >= 0.35:   g3 += 0.5                        
     elif season_g >= 0.25: g3 += 0.25
 
     qs += min(g3, 3.0)
 
-    # ── Bonus PP1 ──────────────────────────────────────────────────────
     if is_pp1:
         if pk_pct < 77.0:   qs += 2.5
         elif pk_pct > 83.0: qs += 0.5
         else:               qs += 1.75
 
-    # ── Bonus Backup (conditionnel GA/j) ──────────────────────────────
     if is_backup and ga_g >= 2.8:
         qs += 2.0
     elif is_backup:
         qs += 0.75
 
-    # ── Normalisation sigmoid (inchangée) ─────────────────────────────
-    # centre abaissé de 9.5 → 6.5 pour la nouvelle plage de scores v10
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 6.5))))
 
     return qs_normalized

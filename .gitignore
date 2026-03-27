@@ -5,3 +5,10 @@ stats/
 compos_live.txt
 analyse/
 __pycache__/
+*.db
+*.sqlite
+*.sqlite3
+*.pkl
+*.log
+*.txt
+!requirements.txt

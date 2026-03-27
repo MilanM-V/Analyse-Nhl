@@ -60,7 +60,6 @@ TEAM_FULL_TO_ABBR = {
     'Winnipeg Jets': 'WPG', 'Utah Hockey Club': 'UTA',
 }
 
-
 def api_get(url, retries=3):
     for i in range(retries):
         try:
@@ -91,7 +90,6 @@ def fetch_all(endpoint, exp=None, limit=100):
         start += limit
         time.sleep(0.2)
     return all_data
-
 
 SHOT_TYPE_ENCODE = {
     'wrist': 1.0, 'snap': 0.85, 'backhand': 0.75,
@@ -170,7 +168,6 @@ def get_xg_model():
         _xg_model = XGModel()
     return _xg_model
 
-
 def is_high_danger(x, y, zone_code, home_defending_side, event_owner_team_id, home_team_id):
     """
     Zone haute danger NHL = slot devant le filet.
@@ -184,7 +181,6 @@ def is_high_danger(x, y, zone_code, home_defending_side, event_owner_team_id, ho
     dist = math.sqrt((89 - ax)**2 + y**2)
     in_slot = ax >= 54 and abs(y) <= 9
     return in_slot or dist < 20
-
 
 def get_last_n_game_ids(team_abbr, n=10):
     """Retourne les IDs des n derniers matchs terminés d'une équipe."""
@@ -438,7 +434,6 @@ def compute_last10_stats(all_teams):
         })
 
     return pd.DataFrame(rows)
-
 
 def build_player_season_totals():
     """Équivalent Player Season Totals.csv — stats saison + oiSH% + PDO + CF%"""
@@ -767,7 +762,6 @@ def verify_outputs():
             else:
                 logger.info(f"  OK: {f} ({len(df)} lignes)")
     return all_ok
-
 
 if __name__ == "__main__":
     logger.info("=" * 55)

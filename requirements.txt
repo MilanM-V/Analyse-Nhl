@@ -4,3 +4,4 @@ python-dotenv
 requests
 undetected-chromedriver
 scikit-learn
+python-telegram-bot[job-queue]
