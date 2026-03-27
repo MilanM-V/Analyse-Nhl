@@ -73,7 +73,8 @@ def _utc_to_local(utc_str):
 
 def get_driver(show_browser=False):
     options = Options()
-    options.binary_location = BRAVE_PATH
+    if BRAVE_PATH:
+        options.binary_location = BRAVE_PATH
     if sys.platform.startswith('linux'):
         if not show_browser:
             options.add_argument("--headless=new")

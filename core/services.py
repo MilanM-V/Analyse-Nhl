@@ -95,11 +95,13 @@ def create_telegram_app(nhl_bot):
     app.add_handler(CommandHandler("force", force_cmd))
     app.add_handler(CommandHandler("roi", roi_cmd))
 
-    def job_scan_cycle(context: ContextTypes.DEFAULT_TYPE):
-        nhl_bot.run_scan_cycle()
+    async def job_scan_cycle(context: ContextTypes.DEFAULT_TYPE):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, nhl_bot.run_scan_cycle)
 
-    def job_end_of_day(context: ContextTypes.DEFAULT_TYPE):
-        nhl_bot.end_of_day_cleanup()
+    async def job_end_of_day(context: ContextTypes.DEFAULT_TYPE):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, nhl_bot.end_of_day_cleanup)
 
     app.job_queue.run_repeating(job_scan_cycle, interval=900, first=0)
 

@@ -42,7 +42,7 @@ def main():
     logger.info("Planificateur Telegram JobQueue initialisé. Le bot est en attente...")
 
     try:
-        telegram_app.run_polling()
+        telegram_app.run_polling(drop_pending_updates=True)
     except KeyboardInterrupt:
         logger.info("Interruption forcée (Ctrl+C). Arrêt du bot.")
         sys.exit(0)

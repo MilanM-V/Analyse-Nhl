@@ -18,6 +18,7 @@ class NhlBot:
         self.matchs_traites = set()
         self.compos_en_memoire = {}
         self.vagues_envoyees = set()
+        self._is_scanning = False
 
         self.ecart_max_vague_min = 5
         self.force_envoi_min_avant = 17
@@ -146,36 +147,47 @@ class NhlBot:
 
     def run_scan_cycle(self):
         """Fonction principale de scan appelée par le scheduler toutes les 15 minutes."""
+        if self._is_scanning:
+            logger.warning("Un scan est déjà en cours. Ignoré pour éviter les lancements multiples.")
+            return
+
         if not self.is_active_hours():
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Hors horaires (05h-17h). En veille...")
             return
 
-        if not self.update_daily_stats():
-            logger.warning("Analyse suspendue — CSV invalides.")
-            return
+        self._is_scanning = True
+        try:
 
-        logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] Lancement du scan Flashscore...")
-        self.purge_old_matches()
+            if not self.update_daily_stats():
+                logger.warning("Analyse suspendue — CSV invalides.")
+                return
 
-        with scraper.ScraperDriverContext() as driver:
-            matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/", driver=driver)
+            logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] Lancement du scan Flashscore...")
+            self.purge_old_matches()
 
-            for m in matches_du_jour:
-                match_id = m['id']
-                if match_id in self.matchs_traites:
-                    continue
+            with scraper.ScraperDriverContext() as driver:
+                matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/", driver=driver)
 
-                logger.info(f"   Vérification compo : {m['home']} - {m['away']}...")
-                compo = scraper.get_lineups(match_id, m['home'], m['away'], driver=driver)
+                for m in matches_du_jour:
+                    match_id = m['id']
+                    if match_id in self.matchs_traites:
+                        continue
 
-                if isinstance(compo, dict):
-                    logger.info("    COMPO TROUVÉE ! Mise en mémoire.")
-                    self.compos_en_memoire[match_id] = {"match_info": m, "compo": compo}
-                    self.matchs_traites.add(match_id)
-                else:
-                    logger.info(f"   {compo} — On réessaiera au prochain cycle.")
+                    logger.info(f"   Vérification compo : {m['home']} - {m['away']}...")
+                    compo = scraper.get_lineups(match_id, m['home'], m['away'], driver=driver)
 
-        self.evaluate_waves(matches_du_jour)
+                    if isinstance(compo, dict):
+                        logger.info("    COMPO TROUVÉE ! Mise en mémoire.")
+                        self.compos_en_memoire[match_id] = {"match_info": m, "compo": compo}
+                        self.matchs_traites.add(match_id)
+                    else:
+                        logger.info(f"   {compo} — On réessaiera au prochain cycle.")
+
+            self.evaluate_waves(matches_du_jour)
+        except Exception as e:
+            logger.error(f"ERREUR CRITIQUE lors du run_scan_cycle : {e}")
+        finally:
+            self._is_scanning = False
 
     def evaluate_waves(self, matches_du_jour):
         if not self.compos_en_memoire:
