@@ -1,6 +1,7 @@
 import time
 import os
 import sys
+import logging
 import requests
 from datetime import datetime, timedelta
 from selenium import webdriver
@@ -18,6 +19,8 @@ if hasattr(time, 'tzset'):
     time.tzset()
 
 load_dotenv()
+
+logger = logging.getLogger("NHL_Bot")
 
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 
@@ -51,12 +54,19 @@ def _nhl_date():
     return now.strftime("%Y-%m-%d")
 
 def _utc_to_local(utc_str):
-    """UTC → heure Paris. UTC+1 hiver (avant 26 mars / après 26 oct), UTC+2 été."""
+    """UTC → heure Paris via calcul DST correct (dernier dimanche de mars/octobre)."""
     try:
+        from calendar import monthrange
         dt = datetime.strptime(utc_str[:19], "%Y-%m-%dT%H:%M:%S")
-        m, d = dt.month, dt.day
-        is_winter = (m < 3 or (m == 3 and d < 29) or m > 10 or (m == 10 and d >= 26))
-        offset = 1 if is_winter else 2
+
+        def last_sunday(year, month):
+            last_day = monthrange(year, month)[1]
+            d = datetime(year, month, last_day)
+            return d - timedelta(days=(d.weekday() + 1) % 7)
+
+        dst_start = last_sunday(dt.year, 3).replace(hour=1)   # passage à UTC+2
+        dst_end = last_sunday(dt.year, 10).replace(hour=1)     # retour à UTC+1
+        offset = 2 if dst_start <= dt < dst_end else 1
         return (dt + timedelta(hours=offset)).strftime("%d.%m. %H:%M")
     except Exception:
         return ""
@@ -102,7 +112,7 @@ def get_scheduled_matches(url="", driver=None):
             raise Exception(f"HTTP {r.status_code}")
         data = r.json()
     except Exception as e:
-        print(f"[WARN] API NHL schedule indisponible ({e}), fallback Flashscore")
+        logger.warning(f"API NHL schedule indisponible ({e}), fallback Flashscore")
         return _get_scheduled_matches_flashscore(
             url or "https://www.flashscore.fr/hockey/usa/nhl/", driver)
 
@@ -143,7 +153,7 @@ def get_scheduled_matches(url="", driver=None):
                 "away": away_full,
             })
 
-    print(f"[API NHL] {len(matches_found)} match(s) pour {date_str}")
+    logger.info(f"[API NHL] {len(matches_found)} match(s) pour {date_str}")
     return matches_found
 
 def _get_scheduled_matches_flashscore(url, driver=None):
@@ -175,7 +185,7 @@ def _get_scheduled_matches_flashscore(url, driver=None):
                     matches_found.append({"id": match_id, "time": time_str,
                                           "home": home, "away": away})
             except Exception as e:
-                print(f"[WARN] _flashscore_schedule row : {e}")
+                logger.warning(f"_flashscore_schedule row : {e}")
     finally:
         if local_driver:
             driver.quit()
@@ -221,18 +231,18 @@ def _resolve_flashscore_id(nhl_game_id, home, away, driver=None):
                     break
 
             except Exception as e:
-                print(f"[ERROR] _resolve_flashscore_id : {e}")
+                logger.error(f"_resolve_flashscore_id : {e}")
     except Exception as e:
-        print(f"[ERROR] _resolve_flashscore_id : {e}")
+        logger.error(f"_resolve_flashscore_id : {e}")
     finally:
         if local_driver:
             driver.quit()
 
     if fs_id:
         _FS_ID_CACHE[nhl_game_id] = fs_id
-        print(f"[Scraper] {home} vs {away} → FS id={fs_id}")
+        logger.info(f"[Scraper] {home} vs {away} → FS id={fs_id}")
     else:
-        print(f"[WARN] ID Flashscore introuvable pour {home} vs {away}")
+        logger.warning(f"ID Flashscore introuvable pour {home} vs {away}")
     return fs_id
 
 def get_lineups(match_id, home="", away="", driver=None):
@@ -299,7 +309,7 @@ def get_lineups(match_id, home="", away="", driver=None):
         }
 
     except Exception as e:
-        print(f"[ERROR] get_lineups {fs_id} : {e}")
+        logger.error(f"get_lineups {fs_id} : {e}")
         return "compo pas dispo"
     finally:
         if local_driver:

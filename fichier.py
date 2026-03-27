@@ -60,13 +60,19 @@ TEAM_FULL_TO_ABBR = {
     'Winnipeg Jets': 'WPG', 'Utah Hockey Club': 'UTA',
 }
 
-def api_get(url, retries=3):
+def api_get(url, retries=5):
     for i in range(retries):
         try:
             r = requests.get(url, timeout=15)
             if r.status_code == 200:
                 return r.json()
+            if r.status_code == 429:
+                wait = min(2 ** (i + 1), 30)
+                logger.warning(f"HTTP 429 (rate limit) — attente {wait}s avant retry {i+1}/{retries} — {url}")
+                time.sleep(wait)
+                continue
             logger.warning(f"HTTP {r.status_code} — {url}")
+            time.sleep(1)
         except Exception as e:
             logger.warning(f"Tentative {i+1}/{retries} échouée: {e}")
             time.sleep(2)
@@ -522,17 +528,21 @@ def build_power_play():
     logger.info(f"  OK — {len(df)} joueurs")
     return df
 
-def compute_hdca_from_cache(all_teams):
+def compute_hdca_from_cache(all_teams, game_ids_cache=None):
     """
     Calcule HDCA et HDCF par équipe depuis les PBP déjà en cache.
     Retourne {team_abbr: {'hdca': n, 'hdcf': n, 'gp': n}}
+    game_ids_cache: dict {team_abbr: [game_ids]} — évite de re-appeler get_last_n_game_ids.
     """
     xg_model = get_xg_model()
     team_stats = defaultdict(lambda: {'hdca': 0, 'hdcf': 0, 'gp': set()})
     processed = set()
 
     for team_abbr in all_teams:
-        game_ids = get_last_n_game_ids(team_abbr, n=10)
+        if game_ids_cache and team_abbr in game_ids_cache:
+            game_ids = game_ids_cache[team_abbr]
+        else:
+            game_ids = get_last_n_game_ids(team_abbr, n=10)
         for gid in game_ids:
             if gid in processed:
                 continue
@@ -576,7 +586,7 @@ def compute_hdca_from_cache(all_teams):
 
     return team_stats
 
-def build_team_stats(all_teams=None):
+def build_team_stats(all_teams=None, game_ids_cache=None):
     """Équivalent team.csv — GA/j, SA/j, CA/j, CF%, HDCA/j, PK%"""
     logger.info("  team.csv...")
 
@@ -592,7 +602,7 @@ def build_team_stats(all_teams=None):
     hdca_data = {}
     if all_teams:
         logger.info("    Calcul HDCA depuis cache PBP...")
-        hdca_data = compute_hdca_from_cache(all_teams)
+        hdca_data = compute_hdca_from_cache(all_teams, game_ids_cache)
 
     full_to_abbr = {v: k for k, v in {
         v2: k2 for k2, v2 in TEAM_FULL_TO_ABBR.items()
@@ -705,7 +715,7 @@ def build_match_history():
                 'Team': full_name,
                 'Date': date,
             })
-        time.sleep(0.1)
+        time.sleep(0.5)
 
     df = pd.DataFrame(rows)
     path = os.path.join(FOLDER_NAME, 'match.csv')
@@ -714,8 +724,15 @@ def build_match_history():
     return df
 
 def build_last10(all_teams):
-    """Équivalent last 10.csv avec ixG et iHDCF calculés depuis PBP"""
+    """Équivalent last 10.csv avec ixG et iHDCF calculés depuis PBP.
+    Retourne (df, game_ids_cache) pour éviter de refetch les game_ids dans build_team_stats."""
     logger.info("  last 10.csv (via play-by-play — peut prendre 2-3 min)...")
+
+    # Collecter les game_ids pour chaque équipe (réutilisés par compute_hdca_from_cache)
+    game_ids_cache = {}
+    for team_abbr in all_teams:
+        game_ids_cache[team_abbr] = get_last_n_game_ids(team_abbr, n=10)
+
     df = compute_last10_stats(all_teams)
     df['Team'] = df['Team'].replace('', pd.NA)
     before = len(df)
@@ -725,7 +742,7 @@ def build_last10(all_teams):
     path = os.path.join(FOLDER_NAME, 'last 10.csv')
     df.to_csv(path, index=False, encoding='utf-8-sig')
     logger.info(f"  OK — {len(df)} joueurs")
-    return df
+    return df, game_ids_cache
 
 def cleanup_pbp_cache():
     """Supprime les fichiers cache PBP de plus de 2 jours."""
@@ -777,8 +794,8 @@ if __name__ == "__main__":
     build_power_play()
     build_goalies()
     build_match_history()
-    build_last10(ALL_TEAMS)       
-    build_team_stats(ALL_TEAMS)   
+    _, gid_cache = build_last10(ALL_TEAMS)       
+    build_team_stats(ALL_TEAMS, game_ids_cache=gid_cache)   
     build_pk()
 
     logger.info("\nVérification des fichiers...")

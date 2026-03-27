@@ -56,7 +56,7 @@ def create_telegram_app(nhl_bot):
     app = ApplicationBuilder().token(token).build()
 
     async def start_cmd(update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("🏒 NHL Bot V12 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan")
+        await update.message.reply_text("🏒 NHL Bot V11 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan")
 
     async def status_cmd(update, context: ContextTypes.DEFAULT_TYPE):
         n_match = len(nhl_bot.matchs_traites)

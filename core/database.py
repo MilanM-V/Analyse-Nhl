@@ -79,9 +79,11 @@ def init_db():
     conn.commit()
     conn.close()
 
-def insert_pick(pick_data):
+def insert_pick(pick_data, conn=None):
     """Insère un pari sélectionné dans la table picks."""
-    conn = get_connection()
+    auto_close = conn is None
+    if auto_close:
+        conn = get_connection()
     c = conn.cursor()
 
     cols = ', '.join(pick_data.keys())
@@ -90,12 +92,15 @@ def insert_pick(pick_data):
     sql = f'INSERT INTO picks ({cols}) VALUES ({placeholders})'
     c.execute(sql, list(pick_data.values()))
 
-    conn.commit()
-    conn.close()
+    if auto_close:
+        conn.commit()
+        conn.close()
 
-def insert_player(player_data):
+def insert_player(player_data, conn=None):
     """Insère le log d'un joueur évalué dans la table players."""
-    conn = get_connection()
+    auto_close = conn is None
+    if auto_close:
+        conn = get_connection()
     c = conn.cursor()
 
     cols = ', '.join(player_data.keys())
@@ -104,8 +109,9 @@ def insert_player(player_data):
     sql = f'INSERT INTO players ({cols}) VALUES ({placeholders})'
     c.execute(sql, list(player_data.values()))
 
-    conn.commit()
-    conn.close()
+    if auto_close:
+        conn.commit()
+        conn.close()
 
 def get_roi_stats():
     """Renvoie le ROI par catégories et le total depuis la BDD SQLite avec calcul des Unités."""

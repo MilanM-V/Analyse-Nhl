@@ -250,7 +250,9 @@ class NhlBot:
                     "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
                     "Score": round(qs, 1), "hdcf": round(p_form.get('L10_iHDCF_G', 0), 2),
                     "Categorie": self._get_categorie(qs, round(p_form.get('L10_iHDCF_G', 0), 2)),
-                    "ixg": p_form.get('L10_ixG_G', 0), "sog": p_form.get('L10_SOG_G', 0), "PP1": "⭐" if player in pp1_players else ""
+                    "ixg": p_form.get('L10_ixG_G', 0), "sog": p_form.get('L10_SOG_G', 0), "PP1": "⭐" if player in pp1_players else "",
+                    "Backup": is_backup,
+                    "B2B": team in b2b_teams and adv not in b2b_teams,
                 })
 
         final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]][:20]
@@ -335,8 +337,8 @@ class NhlBot:
                         'score':      r['Score'],
                         'verdict':    r['Categorie'],
                         'pp1':        '⭐' in r.get('PP1', ''),
-                        'backup':     '🥅' in r.get('Tag', ''),
-                        'b2b':        '😴' in r.get('Tag', ''),
+                        'backup':     r.get('Backup', False),
+                        'b2b':        r.get('B2B', False),
                         'ixg':        r.get('ixg', 0),
                         'hdcf':       r.get('hdcf', 0),
                         'sog':        r.get('sog', 0),
@@ -380,6 +382,7 @@ class NhlBot:
                     writer.writeheader()
                 seen_players = set()
                 n_logged = 0
+                pp1_set = set(predictor_v11.get_auto_pp1_players(ds.form_data, ds.pp_stats, opponents.keys()))
                 for player in compos_brutes:
                     if player in seen_players:
                         continue
@@ -401,7 +404,7 @@ class NhlBot:
                         'adversaire': adv,
                         'score':      r.get('Score', 0.0) if isinstance(r.get('Score'), (int, float)) else 0.0,
                         'picked':     player in picked_names,
-                        'pp1':        player in predictor_v11.get_auto_pp1_players(ds.form_data, ds.pp_stats, opponents.keys()),
+                        'pp1':        player in pp1_set,
                         'backup':     False,                  
                         'b2b':        False,                  
                         'ixg':        round(p_form.get('L10_ixG_G', 0.0), 3),

@@ -3,6 +3,9 @@ import re
 from datetime import datetime, timedelta
 import math
 import os
+import logging
+
+logger = logging.getLogger("NHL_Bot")
 
 TEAM_MAPPING = {
     'Anaheim Ducks': 'ANA', 'Boston Bruins': 'BOS', 'Buffalo Sabres': 'BUF', 'Calgary Flames': 'CGY',
@@ -44,7 +47,7 @@ def get_b2b_teams(match_filepath, today_str):
 
         team_names = '|'.join(re.escape(t) for t in TEAM_MAPPING)
         pattern = re.compile(
-            rf'^(\d{ 4} -\d{ 2} -\d{ 2} ) - .+ ({team_names}) (?:Limited|Full) Report'
+            rf'^(\d{4}-\d{2}-\d{2}) - .+ ({team_names}) (?:Limited|Full) Report'
         )
 
         b2b_teams = set()
@@ -57,7 +60,7 @@ def get_b2b_teams(match_filepath, today_str):
         return list(b2b_teams)
 
     except Exception as e:
-        print(f"[WARN] get_b2b_teams : {e}")
+        logger.warning(f"get_b2b_teams : {e}")
         return []
 
 def load_goalie_stats(filepath):
@@ -121,7 +124,7 @@ def load_recent_form(filepath):
             }
         return form_dict
     except Exception as e:
-        print(f"[WARN] load_recent_form : {e}")
+        logger.warning(f"load_recent_form : {e}")
         return {}
 
 def load_matchup_data(filepath):
@@ -184,7 +187,7 @@ def load_matchup_data(filepath):
         return matchup_dict
 
     except Exception as e:
-        print(f"[WARN] load_matchup_data : {e}")
+        logger.warning(f"load_matchup_data : {e}")
         return {}
 def load_matchup_data_mp(filepath):
     """
@@ -211,10 +214,10 @@ def load_matchup_data_mp(filepath):
                 'PK%':      float(row.get('PK%', 80.0)),
             }
         if not matchup_dict:
-            print(f"[WARN] load_matchup_data_mp : aucune équipe parsée depuis {filepath}")
+            logger.warning(f"load_matchup_data_mp : aucune équipe parsée depuis {filepath}")
         return matchup_dict
     except Exception as e:
-        print(f"[WARN] load_matchup_data_mp : {e}")
+        logger.warning(f"load_matchup_data_mp : {e}")
         return {}
 
 def load_powerplay_stats(filepath):
@@ -252,7 +255,7 @@ def load_on_ice_stats(filepath):
             }
         return oi_dict
     except Exception as e:
-        print(f"[WARN] load_on_ice_stats : {e}")
+        logger.warning(f"load_on_ice_stats : {e}")
         return {}
 def load_pk_stats(filepath):
     """
@@ -264,7 +267,7 @@ def load_pk_stats(filepath):
             content = f.read()
         idx = content.find('Team')
         if idx == -1:
-            print("[WARN] load_pk_stats : header 'Team' introuvable")
+            logger.warning("load_pk_stats : header 'Team' introuvable")
             return {}
         lines = content[idx:].strip().split('\n')
         headers = lines[0].split()
@@ -300,13 +303,13 @@ def load_pk_stats(filepath):
                 continue
 
         if pk_dict:
-            print(f"[OK] load_pk_stats : {len(pk_dict)} équipes chargées")
+            logger.info(f"load_pk_stats : {len(pk_dict)} équipes chargées")
         else:
-            print("[WARN] load_pk_stats : aucune équipe parsée")
+            logger.warning("load_pk_stats : aucune équipe parsée")
         return pk_dict
 
     except Exception as e:
-        print(f"[WARN] load_pk_stats : {e}")
+        logger.warning(f"load_pk_stats : {e}")
         return {}
 
 def get_auto_pp1_players(form_data, pp_stats, teams_playing):
@@ -430,7 +433,7 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
                         if real_p:
                             compos_by_team.setdefault(current_dom, set()).add(real_p)
     except Exception as e:
-        print(f"[WARN] parse_flashscore_file : {e}")
+        logger.warning(f"parse_flashscore_file : {e}")
 
     all_compos = set()
     for players in compos_by_team.values():

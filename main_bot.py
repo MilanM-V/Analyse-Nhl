@@ -37,7 +37,7 @@ def main():
 
     telegram_app = create_telegram_app(bot)
 
-    bot.run_scan_cycle()
+    # bot.run_scan_cycle() — supprimé : le JobQueue (first=0) lance déjà le 1er scan
 
     logger.info("Planificateur Telegram JobQueue initialisé. Le bot est en attente...")
 
