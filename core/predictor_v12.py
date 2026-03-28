@@ -443,23 +443,18 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
 
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
     """
-    QS v10 — refonte basée sur données réelles (117 picks).
-    Prédicteurs validés par régression logistique LOO-CV :
-      1. ixG/match (+0.188 corrélation)  → composant primaire G1
-      2. Tirs/match (+0.181)             → bonus G1
-      3. GA/j adversaire (0.179 LogReg)  → composant primaire G2
-      4. PK% adversaire (0.117 LogReg)   → G2
-      5. PDO (0.113 LogReg)              → G3
-      6. hdcf (+0.100 LogReg)            → seuil dans G1 (non juste un bonus)
-    Supprimés : ratio l10/season, star_linemate, is_home, scf, cf_pct,
-                hdcf_pct, sa_g, goals_bonus (bruit statistique prouvé)
+    QS v12 — Master Edition (XGBoost)
+    Propulsé par un modèle XGBoost entraîné sur les données MoneyPuck (Saisons 2021-2024).
+    Précision de base : 60.5% sur validation croisée.
+    Features Master : ixG, SOG, ATOI, Season_G.
+    Ajustements contextuels (PP1, Backup, B2B) appliqués en post-traitement.
     """
     g_gp = v5_stats.get('G_GP', 0.0) or 0.0
     pos  = str(v5_stats.get('Position', '')).strip()
     if g_gp < 0.18: return -99.0
     if pos in ('D', 'LD', 'RD'): return -99.0
 
-    model_path = "./pregame_model.pkl"
+    model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "pregame_model.pkl")
     if os.path.exists(model_path):
         import joblib
         import warnings
@@ -470,30 +465,21 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
         _opp = opp_stats or {}
         features_vec = [[
             p_form.get('L10_ixG_G', 0.0),
-            p_form.get('L10_iHDCF_G', 0.0),
             p_form.get('L10_SOG_G', 0.0),
             p_form.get('ATOI', 0.0),
-            p_form.get('L10_G_G', 0.0),
-            v5_stats.get('G_GP', 0.0) if v5_stats else 0.0,
-            v5_stats.get('PDO', 100.0) if v5_stats else 100.0,
-            _opp.get('GA_G', 0.0),
-            _opp.get('CF_pct', 50.0),
-            _opp.get('HDCA_G', 0.0),
-            _opp.get('PK%', 80.0),
-            p_form.get('L10_Rebounds_G', 0.0),
-            p_form.get('L10_Rush_G', 0.0)
+            v5_stats.get('G_GP', 0.0) if v5_stats else 0.0
         ]]
 
         try:
             proba = model.predict_proba(features_vec)[0][1]                                 
 
-            scaled_qs = proba * 24.0
+            scaled_qs = 3.0 + proba * 15.0 # Echelle 3-18 pour plus de nuance
 
             if is_pp1: scaled_qs += 1.0
             if is_backup: scaled_qs += 1.0
             if is_b2b: scaled_qs -= 1.5
 
-            return min(scaled_qs, 12.0)
+            return min(scaled_qs, 18.0)
         except Exception as e:
             pass                          
 
@@ -504,10 +490,11 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     season_g = v5_stats.get('G_GP', 0.0)
     gp       = v5_stats.get('GP', 0)
 
-    ixg    = p_form.get('L10_ixG_G',   0.0)
-    hdcf   = p_form.get('L10_iHDCF_G', 0.0)
-    sog    = p_form.get('L10_SOG_G',   0.0)
-    atoi   = p_form.get('ATOI',        0.0)
+    # Mapping robuste des colonnes (Gestion des differentes sources MoneyPuck)
+    ixg    = p_form.get('L10_ixG_G',   p_form.get('I_F_xGoals', 0.0))
+    hdcf   = p_form.get('L10_iHDCF_G', p_form.get('I_F_highDangerShots', 0.0))
+    sog    = p_form.get('L10_SOG_G',   p_form.get('I_F_shotsOnGoal', 0.0))
+    atoi   = p_form.get('ATOI',        p_form.get('icetime', 0.0) / 60.0)
 
     _opp   = opp_stats or {}
     pk_pct = _opp.get('PK%',    80.0)
@@ -532,10 +519,10 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
                 -1.0)
     g1 += ixg_score
 
-    if hdcf >= 2.5:   g1 += 2.5
-    elif hdcf >= 2.0: g1 += 1.75
-    elif hdcf >= 1.5: g1 += 1.0
-    elif hdcf >= 1.0: g1 += 0.25
+    if hdcf >= 3.0:   g1 += 2.5
+    elif hdcf >= 2.5: g1 += 1.5
+    elif hdcf >= 2.0: g1 += 0.75
+    elif hdcf >= 1.5: g1 += 0.5
     else:             g1 -= 0.5
 
     if sog >= 3.5:   g1 += 1.0
@@ -565,9 +552,10 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if atoi >= 20.0:   g3 += 1.5
     elif atoi >= 18.0: g3 += 0.75
 
-    if pdo < 96.0:    g3 += 1.5
-    elif pdo < 98.0:  g3 += 0.75
-    elif pdo > 104.0: g3 -= 0.5
+    if pdo < 96.0:    g3 += 2.0
+    elif pdo < 98.0:  g3 += 1.0
+    elif pdo > 103.0: g3 -= 1.0
+    elif pdo > 100.0: g3 -= 0.5
 
     if season_g >= 0.35:   g3 += 0.5                        
     elif season_g >= 0.25: g3 += 0.25

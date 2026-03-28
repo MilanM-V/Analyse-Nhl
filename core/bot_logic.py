@@ -5,8 +5,9 @@ from datetime import datetime, timedelta
 import subprocess
 import sys
 
-import scraper
-import predictor_v11
+import core.scraper as scraper
+import core.predictor_v12 as predictor_v11  # On garde l'alias pour limiter les modifs internes
+from core.odds_api import enrich_picks_with_odds, get_api_usage
 
 logger = logging.getLogger("NHL_Bot")
 
@@ -267,24 +268,34 @@ class NhlBot:
                     "B2B": team in b2b_teams and adv not in b2b_teams,
                 })
 
-        final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]][:20]
+        final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]][:50]
 
         if not final_picks:
             logger.info("Aucun joueur n'a passé les filtres.")
             return
 
+        # Enrichir les picks avec les cotes réelles (si API disponible)
+        for match_key in {(r['Equipe'] if r['IsHome'] else r['Adversaire'], r['Adversaire'] if r['IsHome'] else r['Equipe']) for r in final_picks}:
+            home_full = predictor_v11.REVERSE_TEAM_MAPPING.get(match_key[0], match_key[0])
+            away_full = predictor_v11.REVERSE_TEAM_MAPPING.get(match_key[1], match_key[1])
+            enrich_picks_with_odds(final_picks, home_full, away_full)
+
         self._send_telegram_recap(final_picks, wave_label)
         self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
 
     def _get_categorie(self, score, hdcf):
-        if score >= 10.5 and hdcf >= 2.5: return "ELITE"
-        if score >= 9.5 and hdcf >= 2.0: return "SAFE"
-        if score >= 7.5 and hdcf >= 1.8: return "JOUABLE"
+        """V12.8 Pure Profit - Graduation 3 ans de données."""
+        if score >= 14.1: return "ELITE"
+        if score >= 13.2: return "SAFE"
+        if score >= 11.2: return "JOUABLE"
+        # Profils RISQUE : Gros volume offensif mais score pénalisé par le manque de buts récents (Good Value)
+        if score >= 9.5 and hdcf >= 0.1: return "RISQUE"
         return None
 
     def _send_telegram_recap(self, picks, wave_label):
-        msg = f"<b>VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>🏒 NHL V12.8 MASTER - VAGUE {wave_label}</b>\n\n"
         picks_by_match = {}
+        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "JOUABLE": "⚖️ ", "RISQUE": "⚠️ "}
         for r in picks:
             if r['IsHome']:
                 match_str = f"{r['Equipe']} vs {r['Adversaire']}"
@@ -296,10 +307,25 @@ class NhlBot:
         for match, lst in picks_by_match.items():
             msg += f"<b>Match {match} :</b>\n"
             for r in lst:
-                icon = "💎" if r['Categorie'] == "ELITE" else "🔒" if r['Categorie'] == "SAFE" else "✅"
+                icon = cat_emoji.get(r['Categorie'], "✅")
                 side = "🏠" if r['IsHome'] else "✈️"
-                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} ({r['Score']}/{r['hdcf']})\n"
+                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} ({r['Score']}/{r['hdcf']})"
+
+                # Affichage des cotes et Value Bet si disponibles
+                if r.get('Cote') is not None:
+                    if r.get('ValueBet'):
+                        msg += f" | 💰 @{r['Cote']} VALUE ({r['Kelly']:.1f}%)"
+                    else:
+                        msg += f" | @{r['Cote']} ❌"
+                msg += "\n"
             msg += "\n"
+
+        # Ajout du compteur API en bas du message
+        try:
+            usage = get_api_usage()
+            msg += f"<i>📊 API Cotes : {usage}</i>\n"
+        except Exception:
+            pass
 
         self.telegram.send_message(msg)
 

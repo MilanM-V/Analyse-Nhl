@@ -13,3 +13,16 @@ __pycache__/
 *.txt
 !requirements.txt
 .context/
+# Infrastructure IA
+.antigravity/
+.clinerules
+.cursorrules
+conductor/
+.context/
+AGENTS.md
+CLAUDE.md
+CONTEXT.md  
+memory/
+artifacts/
+.github/
+.windsurfrules

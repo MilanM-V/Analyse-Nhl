@@ -56,7 +56,7 @@ def create_telegram_app(nhl_bot):
     app = ApplicationBuilder().token(token).build()
 
     async def start_cmd(update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("🏒 NHL Bot V11 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan")
+        await update.message.reply_text("🏒 NHL Bot V12 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan\n/odds - Usage API cotes")
 
     async def status_cmd(update, context: ContextTypes.DEFAULT_TYPE):
         n_match = len(nhl_bot.matchs_traites)
@@ -90,10 +90,16 @@ def create_telegram_app(nhl_bot):
         stats = get_roi_stats()
         await update.message.reply_text(f"💰 **ROI ACTUEL** :\n\n{stats}", parse_mode="HTML")
 
+    async def odds_cmd(update, context: ContextTypes.DEFAULT_TYPE):
+        from core.odds_api import get_api_usage
+        usage = get_api_usage()
+        await update.message.reply_text(f"📊 Odds API :\n{usage}")
+
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("force", force_cmd))
     app.add_handler(CommandHandler("roi", roi_cmd))
+    app.add_handler(CommandHandler("odds", odds_cmd))
 
     async def job_scan_cycle(context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()
