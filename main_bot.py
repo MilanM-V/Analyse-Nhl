@@ -52,10 +52,15 @@ def main():
     logger.info("Le bot est en attente...")
 
     try:
+        from telegram.error import Conflict
         telegram_app.run_polling(drop_pending_updates=True)
     except KeyboardInterrupt:
         logger.info("Interruption forcée (Ctrl+C). Arrêt du bot.")
         sys.exit(0)
+    except Conflict:
+        logger.error("🛑 ERREUR CRITIQUE : Un autre bot utilise déjà ce token Telegram !")
+        logger.error("👉 Solution : Ferme tous tes autres terminaux/consoles (ou le gestionnaire de tâches) qui font tourner le bot, puis relance `main_bot.py`.")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"ERREUR CRITIQUE dans la boucle principale Telegram : {e}")
         logger.info("Fermeture.")

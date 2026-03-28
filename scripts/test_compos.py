@@ -47,24 +47,37 @@ def main():
         
         if qs >= 0:
             hdcf = round(p_form.get('L10_iHDCF_G', 0), 2)
+            pos = p_form.get('pos', ds.v5_data.get(player, {}).get('Position', ''))
+            
+            xgb_proba = predictor.evaluate_xgb_proba(
+                ds.v5_data.get(player, {}), p_form, adv_stats,
+                team in home_teams, team in b2b_teams, adv in b2b_teams, 
+                player in pp1_players, qs
+            )
             
             # Seuils calibrés sur 20 000 matchs (backtest V3)
             cat = None
-            if qs >= 11.5: cat = "ELITE"   # 41.6% WR
-            elif qs >= 10.5: cat = "SAFE"  # 35.1% WR
+            if pos in ('D', 'LD', 'RD'):
+                if qs >= 9.5 and xgb_proba >= 0.35:
+                    cat = "DÉFENSEUR"
+            else:
+                if qs >= 11.5: 
+                    cat = "ELITE"
+                elif qs >= 10.5 and xgb_proba >= 0.55: 
+                    cat = "SAFE"
             
             results.append({
                 "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
-                "Score": round(qs, 1), "hdcf": hdcf, "Categorie": cat, "PP1": "⭐" if player in pp1_players else ""
+                "Score": round(qs, 1), "hdcf": hdcf, "Proba": xgb_proba, "Categorie": cat, "PP1": "⭐" if player in pp1_players else ""
             })
 
     final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]]
     
-    print(f"\n--- NHL V12.9 CALIBRÉ — {len(final_picks)} picks ---")
+    print(f"\n--- NHL V13.0 PROD — {len(final_picks)} picks ---")
     for r in final_picks:
         side = "🏠" if r['IsHome'] else "✈️"
-        icon = "🚀" if r['Categorie'] == "ELITE" else "✅"
-        print(f"{side} {r['Equipe']} | {r['Joueur']} : {icon} {r['Categorie']} (Score: {float(r['Score']):.1f} / HDCF: {float(r['hdcf']):.2f}) {r['PP1']}")
+        icon = "🚀" if r['Categorie'] == "ELITE" else ("🛡️" if r['Categorie'] == "DÉFENSEUR" else "✅")
+        print(f"{side} {r['Equipe']} | {r['Joueur']} : {icon} {r['Categorie']} (QS: {float(r['Score']):.1f} / P: {(r['Proba']*100):.1f}%) {r['PP1']}")
         
     if not final_picks:
         print("Aucun pick n'a passé les filtres calibrés.")

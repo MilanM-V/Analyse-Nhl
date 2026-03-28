@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import math
 import os
 import logging
+import joblib
+import numpy as np
 
 logger = logging.getLogger("NHL_Bot")
 
@@ -453,8 +455,8 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     """
     g_gp = v5_stats.get('G_GP', 0.0) or 0.0
     pos  = str(v5_stats.get('Position', '')).strip()
-    if g_gp < 0.18: return -99.0
-    if pos in ('D', 'LD', 'RD'): return -99.0
+    if g_gp < 0.18 and pos not in ('D', 'LD', 'RD'): 
+        return -99.0
 
     qs = 3.5
 
@@ -554,3 +556,49 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 6.5))))
 
     return qs_normalized
+
+_xgb_prod_model = None
+def get_xgb_prod_model():
+    global _xgb_prod_model
+    if _xgb_prod_model is None:
+        try:
+            _xgb_prod_model = joblib.load('./models/prod_model_v5.pkl')
+        except:
+            return None
+    return _xgb_prod_model
+
+def evaluate_xgb_proba(v5_stats, p_form, opp_stats, is_home, is_b2b, opp_is_b2b, is_pp1, qs_v10):
+    model_data = get_xgb_prod_model()
+    if not model_data or 'model' not in model_data:
+        return 0.50 # Fallback
+
+    ixg    = p_form.get('L10_ixG_G', 0.0)
+    hdcf   = p_form.get('L10_iHDCF_G', 0.0)
+    sog    = p_form.get('L10_SOG_G', 0.0)
+    atoi   = p_form.get('ATOI', 0.0)
+    season_g = v5_stats.get('G_GP', 0.0)
+    consec = p_form.get('ConsecGoals', 0)
+    goals_10 = p_form.get('L10_G_G', 0.0) * p_form.get('L10_GP', 1)
+
+    _opp   = opp_stats or {}
+    ga_g   = _opp.get('GA_G', 2.7)
+    hdca_g = _opp.get('HDCA_G', 8.0)
+
+    # Derived
+    ixg_unnorm = ixg * p_form.get('L10_GP', 1)
+    luck_factor = goals_10 / max(ixg_unnorm, 0.01) if ixg_unnorm > 0 else 1.0
+    ixg_x_hdcf = ixg * hdcf
+    sog_x_atoi = sog * atoi
+    ixg_x_ga = ixg * ga_g
+    streak_x_ixg = consec * ixg
+
+    X = np.array([[
+        ixg, hdcf, sog, atoi, season_g,
+        ga_g, hdca_g, int(is_pp1), int(is_home), int(is_b2b), int(opp_is_b2b),
+        consec, qs_v10,
+        luck_factor, ixg_x_hdcf, sog_x_atoi, ixg_x_ga, streak_x_ixg
+    ]])
+
+    m = model_data['model']
+    proba = m.predict_proba(X)[0][1]
+    return float(proba)

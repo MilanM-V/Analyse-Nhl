@@ -46,7 +46,9 @@ class NhlBot:
                 logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR API NHL EN COURS...")
 
             try:
-                subprocess.run([sys.executable, "fichier.py"], check=True)
+                # Isoler le sous-processus sur Windows pour éviter qu'il reçoive les signaux (Ctrl+C dummy de telegram)
+                cflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+                subprocess.run([sys.executable, "fichier.py"], check=True, creationflags=cflags)
                 ok2, ko2 = self._check_csv_integrity()
                 if ok2:
                     self.datastore.force_refresh()
@@ -259,10 +261,18 @@ class NhlBot:
             )
 
             if qs >= 0:
+                pos = p_form.get('pos', ds.v5_data.get(player, {}).get('Position', ''))
+                xgb_proba = predictor_v11.evaluate_xgb_proba(
+                    ds.v5_data.get(player, {}), p_form, adv_stats,
+                    team in home_teams, team in b2b_teams, adv in b2b_teams, 
+                    player in pp1_players, qs
+                )
+
                 results.append({
                     "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
                     "Score": round(qs, 1), "hdcf": round(p_form.get('L10_iHDCF_G', 0), 2),
-                    "Categorie": self._get_categorie(qs, round(p_form.get('L10_iHDCF_G', 0), 2)),
+                    "Proba": xgb_proba, "Pos": pos,
+                    "Categorie": self._get_categorie(qs, round(p_form.get('L10_iHDCF_G', 0), 2), pos, xgb_proba),
                     "ixg": p_form.get('L10_ixG_G', 0), "sog": p_form.get('L10_SOG_G', 0), "PP1": "⭐" if player in pp1_players else "",
                     "Backup": is_backup,
                     "B2B": team in b2b_teams and adv not in b2b_teams,
@@ -283,16 +293,20 @@ class NhlBot:
         self._send_telegram_recap(final_picks, wave_label)
         self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
 
-    def _get_categorie(self, score, hdcf):
-        """Seuils calibrés sur 20 000 matchs (backtest V3)."""
-        if score >= 11.5: return "ELITE"   # 41.6% WR validé
-        if score >= 10.5: return "SAFE"    # 35.1% WR validé
+    def _get_categorie(self, score, hdcf, pos, xgb_proba):
+        """Seuils V13.0 avec XGBoost et sous-catégorie Défenseurs."""
+        if pos in ('D', 'LD', 'RD'):
+            if score >= 9.5 and xgb_proba >= 0.35: return "DÉFENSEUR"
+            return None
+            
+        if score >= 11.5: return "ELITE"
+        if score >= 10.5 and xgb_proba >= 0.55: return "SAFE"
         return None
 
     def _send_telegram_recap(self, picks, wave_label):
-        msg = f"<b>🏒 NHL V12.9 CALIBRÉ - VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>🏒Test NHL V12.9 CALIBRÉ - VAGUE {wave_label}</b>\n\n"
         picks_by_match = {}
-        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ "}
+        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "DÉFENSEUR": "🛡️ "}
         for r in picks:
             if r['IsHome']:
                 match_str = f"{r['Equipe']} vs {r['Adversaire']}"
@@ -306,7 +320,7 @@ class NhlBot:
             for r in lst:
                 icon = cat_emoji.get(r['Categorie'], "✅")
                 side = "🏠" if r['IsHome'] else "✈️"
-                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} ({float(r['Score']):.1f}/{float(r['hdcf']):.2f})"
+                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} (QS:{float(r['Score']):.1f} | P:{(r.get('Proba', 0)*100):.1f}%)"
 
                 # Affichage des cotes et Value Bet si disponibles
                 if r.get('Cote') is not None:
