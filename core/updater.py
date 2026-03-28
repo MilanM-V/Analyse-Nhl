@@ -62,7 +62,7 @@ def update_pending_picks():
             goals_map = {}
             for g in games:
                 if g.get("gameState") not in ('OFF', 'FINAL', 'FINAL_OT', 'FINAL_SO'):
-                    continue                         
+                    continue
 
                 gid = g["id"]
                 try:
@@ -75,35 +75,38 @@ def update_pending_picks():
                     players_data = box.get('playerByGameStats', {}).get(side, {})
                     all_players = players_data.get('forwards', []) + players_data.get('defense', [])
 
+                    if team_abbrev not in goals_map:
+                        goals_map[team_abbrev] = {}
+
                     for p in all_players:
                         name = p.get('name', {}).get('default', '')
                         g_scored = p.get('goals', 0)
-
-                        if team_abbrev not in goals_map:
-                            goals_map[team_abbrev] = {}
-
-                        goals_map[team_abbrev][name] = g_scored
+                        sog_scored = p.get('shots', 0)
+                        goals_map[team_abbrev][name] = {'goals': g_scored, 'shots': sog_scored}
 
             if not goals_map:
                 logger.info(f"[Auto-ROI] Les matchs du {date_str} ne sont pas encore terminés ou indisponibles.")
                 continue
 
-            c.execute("SELECT id, joueur, equipe FROM picks WHERE date = ? AND (but IS NULL OR but = '')", (date_str,))
+            c.execute("SELECT id, joueur, equipe, verdict FROM picks WHERE date = ? AND (but IS NULL OR but = '')", (date_str,))
             picks_to_check = c.fetchall()
 
-            for pick_id, joueur, equipe in picks_to_check:
+            for pick_id, joueur, equipe, verdict in picks_to_check:
                 api_team = TEAM_MAPPING_API.get(equipe, equipe)
 
                 if api_team in goals_map:
-
-                    found_goals = None
-                    for api_name, nb_goals in goals_map[api_team].items():
+                    found_stats = None
+                    for api_name, stats in goals_map[api_team].items():
                         if match_player_name(joueur, api_name):
-                            found_goals = nb_goals
+                            found_stats = stats
                             break
 
-                    if found_goals is not None:
-                        but_value = 1 if found_goals > 0 else 0
+                    if found_stats is not None:
+                        if verdict == "TIREUR":
+                            but_value = 1 if found_stats['shots'] >= 3 else 0
+                        else:
+                            but_value = 1 if found_stats['goals'] > 0 else 0
+                            
                         c.execute("UPDATE picks SET but = ? WHERE id = ?", (but_value, pick_id))
                         resolved_count += 1
 

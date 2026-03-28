@@ -95,11 +95,30 @@ def create_telegram_app(nhl_bot):
         usage = get_api_usage()
         await update.message.reply_text(f"📊 Odds API :\n{usage}")
 
+    async def backup_cmd(update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("📦 Préparation de l'archive...")
+        db_path = "./bot_database.db"
+        if os.path.exists(db_path):
+            with open(db_path, "rb") as db_file:
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=db_file, filename="bot_database.db")
+            await update.message.reply_text("✅ Base de données sauvegardée avec succès.")
+        else:
+            await update.message.reply_text("❌ Base de données introuvable.")
+
+    async def resetdb_cmd(update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("⚠️ Suppression de la base de données SQLite en cours...")
+        from core.database import reset_db
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, reset_db)
+        await update.message.reply_text("✅ La base de données a été réinitialisée à 0.")
+
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("force", force_cmd))
     app.add_handler(CommandHandler("roi", roi_cmd))
     app.add_handler(CommandHandler("odds", odds_cmd))
+    app.add_handler(CommandHandler("backup", backup_cmd))
+    app.add_handler(CommandHandler("resetdb", resetdb_cmd))
 
     async def job_scan_cycle(context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()

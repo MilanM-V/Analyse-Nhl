@@ -113,6 +113,15 @@ def insert_player(player_data, conn=None):
         conn.commit()
         conn.close()
 
+def reset_db():
+    """Supprime tout le contenu de la base de données (picks et players)."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM picks")
+    c.execute("DELETE FROM players")
+    conn.commit()
+    conn.close()
+
 def get_roi_stats():
     """Renvoie le ROI par catégories et le total depuis la BDD SQLite avec calcul des Unités."""
     conn = get_connection()
