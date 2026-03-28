@@ -518,13 +518,16 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
         qs += 2.0
     elif is_backup:
         qs += 0.75
-        
-    if consec >= 3:
-        qs += 1.0
-    elif consec == 2:
-        qs += 0.5
 
+    # La normalisation sigmoïde écrase les scores bruts extrêmes entre 2.0 et 12.0
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 6.5))))
+
+    # Appliquer le bonus du Hot Streak (ConsecGoals) APRÈS la sigmoïde 
+    # pour ne pas fausser le seuil ELITE (11.5) calibré sans ce bonus.
+    if consec >= 3:
+        qs_normalized += 0.5
+    elif consec == 2:
+        qs_normalized += 0.3
 
     return qs_normalized
 
