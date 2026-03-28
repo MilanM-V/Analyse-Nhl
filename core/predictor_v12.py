@@ -579,3 +579,95 @@ def evaluate_xgb_proba(v5_stats, p_form, opp_stats, is_home, is_b2b, opp_is_b2b,
     m = model_data['model']
     proba = m.predict_proba(X)[0][1]
     return float(proba)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SOG (Shots on Goal) — Marché Over 2.5 Tirs Cadrés
+# ═══════════════════════════════════════════════════════════════
+
+def calculate_sog_score(p_form, opp_stats, is_pp1, is_home):
+    """Score heuristique pour prédire SOG >= 3. Calibré sur 187k entrées."""
+    sog  = p_form.get('L10_SOG_G', 0.0)
+    atoi = p_form.get('ATOI', 0.0)
+    ixg  = p_form.get('L10_ixG_G', 0.0)
+    hdcf = p_form.get('L10_iHDCF_G', 0.0)
+
+    _opp = opp_stats or {}
+    sa_g = _opp.get('SA_G', 30.0)  # Shots Against per game
+
+    score = 0.0
+
+    # SOG moyen L10 (poids dominant)
+    if sog >= 4.0:   score += 4.0
+    elif sog >= 3.5: score += 3.0
+    elif sog >= 3.0: score += 2.0
+    elif sog >= 2.5: score += 1.0
+    elif sog >= 2.0: score += 0.5
+    else:            score -= 1.0
+
+    # ATOI
+    if atoi >= 20.0:   score += 2.0
+    elif atoi >= 18.0: score += 1.0
+    elif atoi >= 16.0: score += 0.5
+
+    # ixG
+    if ixg >= 0.50:   score += 1.5
+    elif ixg >= 0.35: score += 1.0
+    elif ixg >= 0.25: score += 0.5
+
+    # HDCF
+    if hdcf >= 2.5: score += 1.0
+    elif hdcf >= 2.0: score += 0.5
+
+    # PP1
+    if is_pp1: score += 1.5
+
+    # Home
+    if is_home: score += 0.25
+
+    # SA/G adverse
+    if sa_g >= 32.0:   score += 1.0
+    elif sa_g >= 30.0: score += 0.5
+
+    return score
+
+
+_sog_model = None
+def get_sog_model():
+    """Charge le modèle XGBoost SOG (lazy singleton)."""
+    global _sog_model
+    if _sog_model is None:
+        try:
+            model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'sog_model_v1.pkl')
+            _sog_model = joblib.load(model_path)
+        except Exception as e:
+            logger.error(f"❌ Erreur chargement modèle SOG : {e}")
+            return None
+    return _sog_model
+
+
+def evaluate_sog_proba(p_form, opp_stats, is_pp1, is_home, sog_score):
+    """Évalue la probabilité SOG >= 3 via XGBoost SOG."""
+    model_data = get_sog_model()
+    if not model_data or 'model' not in model_data:
+        return 0.50
+
+    sog  = p_form.get('L10_SOG_G', 0.0)
+    atoi = p_form.get('ATOI', 0.0)
+    ixg  = p_form.get('L10_ixG_G', 0.0)
+    hdcf = p_form.get('L10_iHDCF_G', 0.0)
+    season_g = p_form.get('L10_G_G', 0.0)
+
+    _opp = opp_stats or {}
+    sa_g = _opp.get('SA_G', 30.0)
+
+    X = np.array([[
+        sog, atoi, ixg, hdcf, season_g,
+        sa_g, int(is_pp1), int(is_home),
+        sog * atoi,   # sog_x_atoi
+        sog_score,
+    ]])
+
+    m = model_data['model']
+    proba = m.predict_proba(X)[0][1]
+    return float(proba)

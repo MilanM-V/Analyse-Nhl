@@ -236,6 +236,19 @@ class NhlBot:
             self.fichier_compos_temp, ds.known_players, ds.form_data
         )
 
+        # --- Construire l'index des lignes pour la synergie ---
+        lines_index = {}  # {joueur: set(coéquipiers sur la même ligne)}
+        try:
+            with open(self.fichier_compos_temp, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith(('f1 ', 'f2 ')):
+                        players_on_line = [p.strip() for p in line.split(':', 1)[1].split(',') if p.strip()]
+                        for p in players_on_line:
+                            lines_index.setdefault(p, set()).update(players_on_line)
+        except Exception:
+            pass
+
         compos_filtrees = [p for p in compos_brutes if p in ds.form_data]
         home_teams = [m[0] for m in matches_soir]
         opponents = {t1: t2 for t1, t2 in matches_soir}
@@ -244,6 +257,7 @@ class NhlBot:
         b2b_teams = [t for t in predictor_v11.get_b2b_teams('./stats/match.csv', TODAY) if t in opponents]
         pp1_players = predictor_v11.get_auto_pp1_players(ds.form_data, ds.pp_stats, opponents.keys())
 
+        # --- Passe 1 : Calculer tous les scores bruts ---
         results = []
         for player in compos_filtrees:
             p_form = ds.form_data[player]
@@ -260,7 +274,11 @@ class NhlBot:
                 False, is_backup, team in b2b_teams and adv not in b2b_teams
             )
 
-            if qs >= 0:
+            sog_score = predictor_v11.calculate_sog_score(
+                p_form, adv_stats, player in pp1_players, team in home_teams
+            )
+
+            if qs >= 0 or sog_score >= 0:
                 pos = p_form.get('pos', ds.v5_data.get(player, {}).get('Position', ''))
                 xgb_proba = predictor_v11.evaluate_xgb_proba(
                     ds.v5_data.get(player, {}), p_form, adv_stats,
@@ -268,15 +286,35 @@ class NhlBot:
                     player in pp1_players, qs
                 )
 
+                xgb_sog_proba = predictor_v11.evaluate_sog_proba(
+                    p_form, adv_stats, player in pp1_players, team in home_teams, sog_score
+                )
+
                 results.append({
                     "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
                     "Score": round(qs, 1), "hdcf": round(p_form.get('L10_iHDCF_G', 0), 2),
                     "Proba": xgb_proba, "Pos": pos,
-                    "Categorie": self._get_categorie(qs, round(p_form.get('L10_iHDCF_G', 0), 2), pos, xgb_proba),
+                    "SogScore": round(sog_score, 1), "ProbaSog": xgb_sog_proba,
+                    "Categorie": None,  # Sera assigné en Passe 2
                     "ixg": p_form.get('L10_ixG_G', 0), "sog": p_form.get('L10_SOG_G', 0), "PP1": "⭐" if player in pp1_players else "",
                     "Backup": is_backup,
                     "B2B": team in b2b_teams and adv not in b2b_teams,
                 })
+
+        # --- Passe 2 : Détecter la synergie et assigner les catégories ---
+        elite_players = {r["Joueur"] for r in results if r["Score"] >= 11.5 and r["Proba"] >= 0.50}
+
+        for r in results:
+            # Bonus synergie : +0.3 si un coéquipier ELITE est sur la même ligne
+            linemates = lines_index.get(r["Joueur"], set())
+            has_elite_linemate = bool(linemates & elite_players - {r["Joueur"]})
+            if has_elite_linemate:
+                r["Score"] = round(r["Score"] + 0.3, 1)
+                r["Synergie"] = True
+            else:
+                r["Synergie"] = False
+
+            r["Categorie"] = self._get_categorie(r["Score"], r["hdcf"], r["Pos"], r["Proba"], r.get("SogScore", 0), r.get("ProbaSog", 0))
 
         final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]]
 
@@ -293,20 +331,25 @@ class NhlBot:
         self._send_telegram_recap(final_picks, wave_label)
         self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
 
-    def _get_categorie(self, score, hdcf, pos, xgb_proba):
-        """Seuils V13.0 avec XGBoost et sous-catégorie Défenseurs."""
+    def _get_categorie(self, score, hdcf, pos, xgb_proba, sog_score=0, proba_sog=0):
+        """Seuils V13.1 avec XGBoost + SOG."""
+        cat = None
         if pos in ('D', 'LD', 'RD'):
-            if score >= 9.5 and xgb_proba >= 0.35: return "DÉFENSEUR"
-            return None
+            if score >= 9.5 and xgb_proba >= 0.35: cat = "DÉFENSEUR"
+        else:
+            if score >= 11.5 and xgb_proba >= 0.50: cat = "ELITE"
+            elif score >= 10.5 and xgb_proba >= 0.55: cat = "SAFE"
+        
+        # SOG couche : si ni Elite ni Safe mais a un fort SOG
+        if not cat and sog_score >= 8.0 and proba_sog >= 0.55:
+            cat = "TIREUR"
             
-        if score >= 11.5: return "ELITE"
-        if score >= 10.5 and xgb_proba >= 0.55: return "SAFE"
-        return None
+        return cat
 
     def _send_telegram_recap(self, picks, wave_label):
-        msg = f"<b>🏒Test NHL V12.9 CALIBRÉ - VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>🏒 NHL V13.1 — VAGUE {wave_label}</b>\n\n"
         picks_by_match = {}
-        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "DÉFENSEUR": "🛡️ "}
+        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "DÉFENSEUR": "🛡️ ", "TIREUR": "🎯 "}
         for r in picks:
             if r['IsHome']:
                 match_str = f"{r['Equipe']} vs {r['Adversaire']}"
@@ -318,9 +361,17 @@ class NhlBot:
         for match, lst in picks_by_match.items():
             msg += f"<b>Match {match} :</b>\n"
             for r in lst:
-                icon = cat_emoji.get(r['Categorie'], "✅")
+                cat = r['Categorie']
+                icon = cat_emoji.get(cat, "✅ ")
                 side = "🏠" if r['IsHome'] else "✈️"
-                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} (QS:{float(r['Score']):.1f} | P:{(r.get('Proba', 0)*100):.1f}%)"
+                
+                stat_str = f"QS:{float(r['Score']):.1f} | P:{(r.get('Proba', 0)*100):.1f}%"
+                if cat == "TIREUR":
+                    stat_str = f"SOG:{float(r.get('SogScore', 0)):.1f} | P:{(r.get('ProbaSog', 0)*100):.1f}%"
+
+                msg += f"  • {side} <b>{r['Joueur']}</b> {icon}{cat} ({stat_str})"
+                if r.get('Synergie') and cat != "TIREUR":
+                    msg += " 🔗"
 
                 # Affichage des cotes et Value Bet si disponibles
                 if r.get('Cote') is not None:
