@@ -6,6 +6,7 @@ import os
 import logging
 import joblib
 import numpy as np
+import xgboost as xgb
 
 logger = logging.getLogger("NHL_Bot")
 
@@ -562,8 +563,11 @@ def get_xgb_prod_model():
     global _xgb_prod_model
     if _xgb_prod_model is None:
         try:
-            _xgb_prod_model = joblib.load('./models/prod_model_v5.pkl')
-        except:
+            # Assurer le chemin absolu depuis le ROOT (où main_bot est lancé)
+            model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'prod_model_v5.pkl')
+            _xgb_prod_model = joblib.load(model_path)
+        except Exception as e:
+            logger.error(f"❌ Erreur critique chargement XGBoost : {e}")
             return None
     return _xgb_prod_model
 
