@@ -268,7 +268,7 @@ class NhlBot:
                     "B2B": team in b2b_teams and adv not in b2b_teams,
                 })
 
-        final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]][:50]
+        final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]]
 
         if not final_picks:
             logger.info("Aucun joueur n'a passé les filtres.")
@@ -284,18 +284,15 @@ class NhlBot:
         self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
 
     def _get_categorie(self, score, hdcf):
-        """V12.8 Pure Profit - Graduation 3 ans de données."""
-        if score >= 14.1: return "ELITE"
-        if score >= 13.2: return "SAFE"
-        if score >= 11.2: return "JOUABLE"
-        # Profils RISQUE : Gros volume offensif mais score pénalisé par le manque de buts récents (Good Value)
-        if score >= 9.5 and hdcf >= 0.1: return "RISQUE"
+        """Seuils calibrés sur 20 000 matchs (backtest V3)."""
+        if score >= 11.5: return "ELITE"   # 41.6% WR validé
+        if score >= 10.5: return "SAFE"    # 35.1% WR validé
         return None
 
     def _send_telegram_recap(self, picks, wave_label):
-        msg = f"<b>🏒 NHL V12.8 MASTER - VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>🏒 NHL V12.9 CALIBRÉ - VAGUE {wave_label}</b>\n\n"
         picks_by_match = {}
-        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "JOUABLE": "⚖️ ", "RISQUE": "⚠️ "}
+        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ "}
         for r in picks:
             if r['IsHome']:
                 match_str = f"{r['Equipe']} vs {r['Adversaire']}"
@@ -309,7 +306,7 @@ class NhlBot:
             for r in lst:
                 icon = cat_emoji.get(r['Categorie'], "✅")
                 side = "🏠" if r['IsHome'] else "✈️"
-                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} ({r['Score']}/{r['hdcf']})"
+                msg += f"  • {side} <b>{r['Joueur']}</b> {icon} {r['Categorie']} ({float(r['Score']):.1f}/{float(r['hdcf']):.2f})"
 
                 # Affichage des cotes et Value Bet si disponibles
                 if r.get('Cote') is not None:

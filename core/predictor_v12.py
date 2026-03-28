@@ -110,6 +110,7 @@ def load_recent_form(filepath):
             team = clean_team_name(str(row.get('Team', ''))) 
             gp = max(1, int(row.get('GP', 1)))
             toi = float(row.get('TOI', 0))
+            consec_goals = int(row.get('ConsecGoals', 0))
             form_dict[player] = {
                 'Team': team, 'L10_GP': gp,
                 'L10_G_G': float(row.get('Goals', 0)) / gp,
@@ -120,7 +121,8 @@ def load_recent_form(filepath):
                 'L10_iHDCF_G':    float(row.get('iHDCF', 0)) / gp,
                 'L10_Rebounds_G': float(row.get('Rebounds', 0)) / gp,
                 'L10_Rush_G':     float(row.get('RushShots', 0)) / gp,
-                'ATOI': toi / gp 
+                'ATOI': toi / gp,
+                'ConsecGoals': consec_goals
             }
         return form_dict
     except Exception as e:
@@ -454,35 +456,6 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     if g_gp < 0.18: return -99.0
     if pos in ('D', 'LD', 'RD'): return -99.0
 
-    model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "pregame_model.pkl")
-    if os.path.exists(model_path):
-        import joblib
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            model = joblib.load(model_path)
-
-        _opp = opp_stats or {}
-        features_vec = [[
-            p_form.get('L10_ixG_G', 0.0),
-            p_form.get('L10_SOG_G', 0.0),
-            p_form.get('ATOI', 0.0),
-            v5_stats.get('G_GP', 0.0) if v5_stats else 0.0
-        ]]
-
-        try:
-            proba = model.predict_proba(features_vec)[0][1]                                 
-
-            scaled_qs = 3.0 + proba * 15.0 # Echelle 3-18 pour plus de nuance
-
-            if is_pp1: scaled_qs += 1.0
-            if is_backup: scaled_qs += 1.0
-            if is_b2b: scaled_qs -= 1.5
-
-            return min(scaled_qs, 18.0)
-        except Exception as e:
-            pass                          
-
     qs = 3.5
 
     oish     = v5_stats.get('oiSH', 10.0)
@@ -495,6 +468,7 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
     hdcf   = p_form.get('L10_iHDCF_G', p_form.get('I_F_highDangerShots', 0.0))
     sog    = p_form.get('L10_SOG_G',   p_form.get('I_F_shotsOnGoal', 0.0))
     atoi   = p_form.get('ATOI',        p_form.get('icetime', 0.0) / 60.0)
+    consec = p_form.get('ConsecGoals', 0)
 
     _opp   = opp_stats or {}
     pk_pct = _opp.get('PK%',    80.0)
@@ -571,6 +545,11 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
         qs += 2.0
     elif is_backup:
         qs += 0.75
+        
+    if consec >= 3:
+        qs += 1.0
+    elif consec == 2:
+        qs += 0.5
 
     qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 6.5))))
 

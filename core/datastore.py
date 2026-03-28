@@ -1,6 +1,6 @@
 import os
 import logging
-import predictor_v11
+import core.predictor_v12 as predictor_v11
 from datetime import datetime, timedelta
 
 logger = logging.getLogger("NHL_Bot")

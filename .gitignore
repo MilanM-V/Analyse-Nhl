@@ -4,6 +4,7 @@ watchdog.log
 stats/
 compos_live.txt
 analyse/
+tests/
 __pycache__/
 *.db
 *.sqlite
