@@ -264,48 +264,18 @@ def load_on_ice_stats(filepath):
         return {}
 def load_pk_stats(filepath):
     """
-    Charge le PK% depuis le tableau 4v5 API NHL (sit=4v5).
-    La colonne utile est SV% (= taux d'arrêt en infériorité = PK%).
+    Charge le PK% depuis pk.csv via Pandas.
     """
     try:
-        with open(filepath, encoding='utf-8-sig') as f:
-            content = f.read()
-        idx = content.find('Team')
-        if idx == -1:
-            logger.warning("load_pk_stats : header 'Team' introuvable")
-            return {}
-        lines = content[idx:].strip().split('\n')
-        headers = lines[0].split()
-        sv_from_end  = -2   
-        pdo_from_end = -1   
-        sv_idx = None  
-
+        df = pd.read_csv(filepath)
         pk_dict = {}
-        for line in lines[1:]:
-            parts = line.split()
-            if not parts or not parts[0].isdigit():
-                continue
-            team_name = None
-            team_word_count = 0
-            for name in TEAM_MAPPING:
-                words = name.split()
-                candidate = ' '.join(parts[1:1 + len(words)])
-                if candidate == name:
-                    team_name = name
-                    team_word_count = len(words)
-                    break
-            if not team_name:
-                continue
-            stats_part = parts[1 + team_word_count:]
-            if len(stats_part) < 2:
-                continue
-            try:
-                sv_pct = float(stats_part[-2])   
-                if sv_pct < 2.0:
-                    sv_pct *= 100
-                pk_dict[TEAM_MAPPING[team_name]] = round(sv_pct, 1)
-            except ValueError:
-                continue
+        for _, row in df.iterrows():
+            name = str(row.get('Team', '')).strip()
+            team_abbr = TEAM_MAPPING.get(name)
+            if team_abbr:
+                val = float(row.get('PK%', 80.0))
+                if val < 2.0: val *= 100
+                pk_dict[team_abbr] = round(val, 1)
 
         if pk_dict:
             logger.info(f"load_pk_stats : {len(pk_dict)} équipes chargées")
