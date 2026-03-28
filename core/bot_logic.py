@@ -359,7 +359,10 @@ class NhlBot:
             picks_by_match.setdefault(match_str, []).append(r)
 
         for match, lst in picks_by_match.items():
-            msg += f"<b>Match {match} :</b>\n"
+            t1, t2 = match.split(" vs ")
+            t1_full = predictor_v11.REVERSE_TEAM_MAPPING.get(t1, t1)
+            t2_full = predictor_v11.REVERSE_TEAM_MAPPING.get(t2, t2)
+            msg += f"<b>Match {t1_full} vs {t2_full} :</b>\n"
             for r in lst:
                 cat = r['Categorie']
                 icon = cat_emoji.get(cat, "✅ ")
