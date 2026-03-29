@@ -40,6 +40,7 @@ class NhlBot:
 
     def update_daily_stats(self):
         """Force l'update des fichiers CSV si pas fait aujourd'hui."""
+        now = datetime.now()
         nhl_date = self.get_nhl_session_date()
 
         ok, ko_files = self._check_csv_integrity()
