@@ -416,7 +416,7 @@ class NhlBot:
                     'score', 'verdict', 'pp1', 'backup', 'b2b',
                     'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
                     'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
-                    'rebounds', 'rush', 'but'
+                    'rebounds', 'rush', 'is_home', 'opp_b2b', 'consec_goals', 'but'
                 ])
                 if not file_exists:
                     writer.writeheader()
@@ -455,6 +455,9 @@ class NhlBot:
                         'pk_pct':     round(adv_stats.get('PK%', 80.0), 1),
                         'rebounds':   round(p_form.get('L10_Rebounds_G', 0.0), 2),
                         'rush':       round(p_form.get('L10_Rush_G', 0.0), 2),
+                        'is_home':    r.get('IsHome', False),
+                        'opp_b2b':    adv_stats.get('B2B', False),
+                        'consec_goals': p_form.get('ConsecGoals', 0),
                         'but':        None
                     }
 
@@ -479,7 +482,7 @@ class NhlBot:
                     'score', 'picked', 'pp1', 'backup', 'b2b',
                     'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
                     'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
-                    'rebounds', 'rush', 'but'
+                    'rebounds', 'rush', 'is_home', 'opp_b2b', 'consec_goals', 'but'
                 ])
                 if not pl_exists:
                     writer.writeheader()
@@ -523,6 +526,9 @@ class NhlBot:
                         'pk_pct':     round(adv_stats.get('PK%', 80.0), 1) if adv_stats else 0.0,
                         'rebounds':   round(p_form.get('L10_Rebounds_G', 0.0), 2),
                         'rush':       round(p_form.get('L10_Rush_G', 0.0), 2),
+                        'is_home':    r.get('IsHome', False),
+                        'opp_b2b':    adv_stats.get('B2B', False) if adv_stats else False,
+                        'consec_goals': p_form.get('ConsecGoals', 0) if p_form else 0,
                         'but':        None
                     }
 
@@ -547,6 +553,14 @@ class NhlBot:
             logger.error(f"[WARN] Erreur écriture players_log.csv : {e}")
 
     def end_of_day_cleanup(self):
+        """Action de fin de journée : résolution des scores et archivage."""
+        try:
+            from core.updater import update_pending_picks
+            logger.info("🔄 Auto-résolution des résultats dans la DB avant le rapport final...")
+            update_pending_picks()
+        except Exception as e:
+            logger.error(f"Erreur auto-résolution : {e}")
+
         if self.matchs_traites:
             from core.services import EmailReporter
             EmailReporter.send_session_report(self.log_path, self.players_log_path)

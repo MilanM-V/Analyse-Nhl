@@ -49,6 +49,32 @@ def main():
     import threading
     threading.Thread(target=bot.run_scan_cycle, daemon=True).start()
 
+    # V14 : Trigger Weekly Retraining ML (Dimanche)
+    def trigger_retraining():
+        from datetime import datetime
+        last_retrain_file = "stats/last_retrain.txt"
+        today = datetime.now()
+        if today.weekday() == 6:  # Dimanche
+            today_str = today.strftime("%Y-%m-%d")
+            already_run = False
+            if os.path.exists(last_retrain_file):
+                with open(last_retrain_file, "r") as f:
+                    if f.read().strip() == today_str:
+                        already_run = True
+            
+            if not already_run:
+                logger.info("🤖 C'est Dimanche ! Démarrage du ré-apprentissage ML en arrière-plan...")
+                telegram.send_message("🤖 <b>Auto-Retraining V14</b>\nLancement du ré-apprentissage hebdomadaire XGBoost en tâche de fond...")
+                try:
+                    cflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+                    subprocess.run([sys.executable, "scripts/weekly_retrain.py"], check=True, creationflags=cflags)
+                    telegram.send_message("✅ <b>Retraining Terminé</b>\nLes poids du modèle XGBoost Production ont été réajustés avec le backtest du dimanche.")
+                except Exception as e:
+                    logger.error(f"Erreur Retraining ML : {e}")
+                    telegram.send_message(f"❌ <b>Échec du Retraining</b>\nErreur: {e}")
+
+    threading.Thread(target=trigger_retraining, daemon=True).start()
+
     logger.info("Le bot est en attente...")
 
     try:

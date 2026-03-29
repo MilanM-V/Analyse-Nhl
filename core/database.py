@@ -75,6 +75,21 @@ def init_db():
             but INTEGER DEFAULT NULL
         )
     ''')
+    
+    # V14 : Ajout dynamique des colonnes XGBoost si elles n'existent pas
+    for table in ["picks", "players"]:
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN is_home BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN opp_b2b BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN consec_goals INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     conn.close()
