@@ -324,18 +324,17 @@ class NhlBot:
 
         final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]]
 
-        if not final_picks:
-            logger.info("Aucun joueur n'a passé les filtres.")
-            return
-
         # Enrichir les picks avec les cotes réelles (si API disponible)
         for match_key in {(r['Equipe'] if r['IsHome'] else r['Adversaire'], r['Adversaire'] if r['IsHome'] else r['Equipe']) for r in final_picks}:
             home_full = predictor_v11.REVERSE_TEAM_MAPPING.get(match_key[0], match_key[0])
             away_full = predictor_v11.REVERSE_TEAM_MAPPING.get(match_key[1], match_key[1])
             enrich_picks_with_odds(final_picks, home_full, away_full)
 
-        self._send_telegram_recap(final_picks, wave_label)
-        self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
+        self._send_telegram_recap(final_picks, wave_label, wave_ids)
+        if final_picks:
+            self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
+        else:
+            logger.info("Aucun joueur n'a passé les filtres pour cette vague.")
 
     def _get_categorie(self, score, hdcf, pos, xgb_proba, sog_score=0, proba_sog=0):
         """Seuils V13.1 avec XGBoost + SOG."""
@@ -352,43 +351,58 @@ class NhlBot:
             
         return cat
 
-    def _send_telegram_recap(self, picks, wave_label):
+    def _send_telegram_recap(self, picks, wave_label, wave_ids):
         msg = f"<b>🏒 NHL V13.1 — VAGUE {wave_label}</b>\n\n"
+        
+        # Grouper les picks par match
         picks_by_match = {}
-        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "DÉFENSEUR": "🛡️ ", "TIREUR": "🎯 "}
         for r in picks:
-            if r['IsHome']:
-                match_str = f"{r['Equipe']} vs {r['Adversaire']}"
-            else:
-                match_str = f"{r['Adversaire']} vs {r['Equipe']}"
-
+            match_str = f"{r['Equipe']} vs {r['Adversaire']}" if r['IsHome'] else f"{r['Adversaire']} vs {r['Equipe']}"
             picks_by_match.setdefault(match_str, []).append(r)
 
-        for match, lst in picks_by_match.items():
-            t1, t2 = match.split(" vs ")
-            t1_full = predictor_v11.REVERSE_TEAM_MAPPING.get(t1, t1)
-            t2_full = predictor_v11.REVERSE_TEAM_MAPPING.get(t2, t2)
+        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "DÉFENSEUR": "🛡️ ", "TIREUR": "🎯 "}
+
+        # Parcourir tous les matchs de la vague pour s'assurer que même ceux sans picks sont affichés
+        for mid in wave_ids:
+            data = self.compos_en_memoire.get(mid)
+            if not data: continue
+            
+            m = data["match_info"]
+            # Récupérer les noms complets pour l'affichage (si déjà complets, ça ne change rien)
+            t1_full = predictor_v11.REVERSE_TEAM_MAPPING.get(m['home'], m['home'])
+            t2_full = predictor_v11.REVERSE_TEAM_MAPPING.get(m['away'], m['away'])
+            
+            # On cherche les picks correspondant à ce match (ID interne format "AbbrHome vs AbbrAway")
+            h_abbr = predictor_v11.TEAM_MAPPING.get(m['home'], m['home'])
+            a_abbr = predictor_v11.TEAM_MAPPING.get(m['away'], m['away'])
+            match_key = f"{h_abbr} vs {a_abbr}"
+            match_picks = picks_by_match.get(match_key, [])
+
             msg += f"<b>Match {t1_full} vs {t2_full} :</b>\n"
-            for r in lst:
-                cat = r['Categorie']
-                icon = cat_emoji.get(cat, "✅ ")
-                side = "🏠" if r['IsHome'] else "✈️"
-                
-                stat_str = f"QS:{float(r['Score']):.1f} | P:{(r.get('Proba', 0)*100):.1f}%"
-                if cat == "TIREUR":
-                    stat_str = f"SOG:{float(r.get('SogScore', 0)):.1f} | P:{(r.get('ProbaSog', 0)*100):.1f}%"
+            
+            if not match_picks:
+                msg += "  <i>⚠️ Aucun joueur n'a passé les filtres.</i>\n"
+            else:
+                for r in match_picks:
+                    cat = r['Categorie']
+                    icon = cat_emoji.get(cat, "✅ ")
+                    side = "🏠" if r['IsHome'] else "✈️"
+                    
+                    stat_str = f"QS:{float(r['Score']):.1f} | P:{(r.get('Proba', 0)*100):.1f}%"
+                    if cat == "TIREUR":
+                        stat_str = f"SOG:{float(r.get('SogScore', 0)):.1f} | P:{(r.get('ProbaSog', 0)*100):.1f}%"
 
-                msg += f"  • {side} <b>{r['Joueur']}</b> {icon}{cat} ({stat_str})"
-                if r.get('Synergie') and cat != "TIREUR":
-                    msg += " 🔗"
+                    msg += f"  • {side} <b>{r['Joueur']}</b> {icon}{cat} ({stat_str})"
+                    if r.get('Synergie') and cat != "TIREUR":
+                        msg += " 🔗"
 
-                # Affichage des cotes et Value Bet si disponibles
-                if r.get('Cote') is not None:
-                    if r.get('ValueBet'):
-                        msg += f" | 💰 @{r['Cote']} VALUE ({r['Kelly']:.1f}%)"
-                    else:
-                        msg += f" | @{r['Cote']} ❌"
-                msg += "\n"
+                    # Affichage des cotes et Value Bet si disponibles
+                    if r.get('Cote') is not None:
+                        if r.get('ValueBet'):
+                            msg += f" | 💰 @{r['Cote']} VALUE ({r['Kelly']:.1f}%)"
+                        else:
+                            msg += f" | @{r['Cote']} ❌"
+                    msg += "\n"
             msg += "\n"
 
         # Ajout du compteur API en bas du message
