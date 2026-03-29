@@ -27,6 +27,12 @@ class NhlBot:
         self.players_log_path = './stats/players_log.csv'
         self.fichier_compos_temp = "compos_live.txt"
 
+    @staticmethod
+    def get_nhl_session_date():
+        """Retourne la date de la session NHL actuelle (J-1 si < 07h00)."""
+        # Utiliser un décalage de 14h pour couvrir les scans de fin de nuit/début de matinée.
+        return (datetime.now() - timedelta(hours=14)).strftime("%Y-%m-%d")
+
     def is_active_hours(self):
         now = datetime.now()
         hour = now.hour
@@ -34,8 +40,7 @@ class NhlBot:
 
     def update_daily_stats(self):
         """Force l'update des fichiers CSV si pas fait aujourd'hui."""
-        now = datetime.now()
-        nhl_date = (now - timedelta(hours=12)).strftime("%Y-%m-%d")
+        nhl_date = self.get_nhl_session_date()
 
         ok, ko_files = self._check_csv_integrity()
 
@@ -406,7 +411,7 @@ class NhlBot:
                     formatted_row[key] = value
             return formatted_row
 
-        TODAY_DATE = datetime.now().strftime("%Y-%m-%d")
+        TODAY_DATE = self.get_nhl_session_date()
 
         file_exists = os.path.exists(self.log_path)
         try:
