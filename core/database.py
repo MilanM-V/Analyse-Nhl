@@ -77,20 +77,33 @@ def init_db() -> None:
     # Upgrade existing tables if necessary (V14 Migration)
     # On vérifie chaque table pour les colonnes manquantes
     tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
-    columns_to_add = [
+    
+    # Colonnes communes ajoutées en V14
+    common_cols = [
         ("is_home", "BOOLEAN DEFAULT 0"),
         ("opp_b2b", "BOOLEAN DEFAULT 0"),
         ("consec_goals", "INTEGER DEFAULT 0")
     ]
     
     for table in tables_to_fix:
-        for col_name, col_type in columns_to_add:
+        for col_name, col_type in common_cols:
             try:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
                 logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table '{table}'.")
-            except sqlite3.OperationalError:
-                # La colonne existe déjà, on passe
-                pass
+            except sqlite3.OperationalError: pass
+
+    # Colonnes spécifiques à la table 'players' (Transition V12 -> V14)
+    player_cols = [
+        ("score_but", "REAL"), ("score_assist", "REAL"), ("score_point", "REAL"),
+        ("picked_but", "BOOLEAN"), ("picked_assist", "BOOLEAN"), ("picked_point", "BOOLEAN"),
+        ("l10_a", "REAL"), ("l10_pts", "REAL"), ("season_a", "REAL"), ("season_pts", "REAL"),
+        ("assist", "INTEGER DEFAULT NULL"), ("point", "INTEGER DEFAULT NULL")
+    ]
+    for col_name, col_type in player_cols:
+        try:
+            c.execute(f"ALTER TABLE players ADD COLUMN {col_name} {col_type}")
+            logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table 'players'.")
+        except sqlite3.OperationalError: pass
     
     conn.commit()
     conn.close()
