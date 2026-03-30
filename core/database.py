@@ -10,6 +10,27 @@ DB_PATH = "./bot_database.db"
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
+# V14 : Ajout dynamique des colonnes XGBoost si elles n'existent pas
+def ensure_schema():
+    """Vérifie et met à jour le schéma si nécessaire."""
+    conn = get_connection()
+    c = conn.cursor()
+    for table in ["picks", "players"]:
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN is_home BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN opp_b2b BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN consec_goals INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    conn.close()
+
 def init_db():
     """Initialise le schéma de la base de données SQL si elle n'existe pas."""
     logger.info("Initialisation de la base SQLite...")
@@ -76,23 +97,9 @@ def init_db():
         )
     ''')
     
-    # V14 : Ajout dynamique des colonnes XGBoost si elles n'existent pas
-    for table in ["picks", "players"]:
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN is_home BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN opp_b2b BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN consec_goals INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-
     conn.commit()
     conn.close()
+    ensure_schema()
 
 def insert_pick(pick_data, conn=None):
     """Insère un pari sélectionné dans la table picks."""
@@ -180,3 +187,5 @@ def get_roi_stats():
 
 if not os.path.exists(DB_PATH):
     init_db()
+else:
+    ensure_schema()
