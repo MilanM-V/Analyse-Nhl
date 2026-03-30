@@ -114,7 +114,9 @@ def load_recent_form(filepath):
                 'L10_TOI': toi,
                 'L10_ixG_G': float(row.get('ixG', 0)) / gp,
                 'L10_iSCF_G':  float(row.get('iSCF', 0)) / gp,
-                'L10_iHDCF_G': float(row.get('iHDCF', 0)) / gp,
+                'L10_iHDCF_G':    float(row.get('iHDCF', 0)) / gp,
+                'L10_Rebounds_G': float(row.get('Rebounds', 0)) / gp,
+                'L10_Rush_G':     float(row.get('RushShots', 0)) / gp,
                 'ATOI': toi / gp 
             }
         return form_dict
@@ -184,6 +186,37 @@ def load_matchup_data(filepath):
     except Exception as e:
         print(f"[WARN] load_matchup_data : {e}")
         return {}
+def load_matchup_data_mp(filepath):
+    """
+    Version MoneyPuck de load_matchup_data.
+    Lit un CSV propre avec colonnes: Team, GP, GA, SA, CA, CF%, HDCA, HDCF%, PK%
+    """
+    try:
+        df = pd.read_csv(filepath, encoding='utf-8-sig')
+        matchup_dict = {}
+        for _, row in df.iterrows():
+            team_full = str(row.get('Team', '')).strip()
+            if team_full in TEAM_MAPPING:
+                team_abbr = TEAM_MAPPING[team_full]
+            else:
+                team_abbr = team_full
+            gp = max(1, int(row.get('GP', 1)))
+            matchup_dict[team_abbr] = {
+                'GA_G':     float(row.get('GA', 0)) / gp,
+                'SA_G':     float(row.get('SA', 0)) / gp,
+                'CA_G':     float(row.get('CA', 0)) / gp,
+                'CF_pct':   float(row.get('CF%', 50.0)),
+                'HDCA_G':   float(row.get('HDCA', 0)) / gp,
+                'HDCF_pct': float(row.get('HDCF%', 50.0)),
+                'PK%':      float(row.get('PK%', 80.0)),
+            }
+        if not matchup_dict:
+            print(f"[WARN] load_matchup_data_mp : aucune équipe parsée depuis {filepath}")
+        return matchup_dict
+    except Exception as e:
+        print(f"[WARN] load_matchup_data_mp : {e}")
+        return {}
+
 
 def load_powerplay_stats(filepath):
     try:
@@ -409,6 +442,18 @@ def parse_flashscore_file(filepath, known_players, form_data=None):
 
 
 def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_linemate, is_backup=False, is_b2b=False):
+    """
+    QS v10 — refonte basée sur données réelles (117 picks).
+    Prédicteurs validés par régression logistique LOO-CV :
+      1. ixG/match (+0.188 corrélation)  → composant primaire G1
+      2. Tirs/match (+0.181)             → bonus G1
+      3. GA/j adversaire (0.179 LogReg)  → composant primaire G2
+      4. PK% adversaire (0.117 LogReg)   → G2
+      5. PDO (0.113 LogReg)              → G3
+      6. hdcf (+0.100 LogReg)            → seuil dans G1 (non juste un bonus)
+    Supprimés : ratio l10/season, star_linemate, is_home, scf, cf_pct,
+                hdcf_pct, sa_g, goals_bonus (bruit statistique prouvé)
+    """
     g_gp = v5_stats.get('G_GP', 0.0) or 0.0
     pos  = str(v5_stats.get('Position', '')).strip()
     if g_gp < 0.18: return -99.0
@@ -416,80 +461,110 @@ def calculate_base_qs(v5_stats, p_form, opp_stats, is_pp1, is_home, has_star_lin
 
     qs = 3.5
 
+    # ── Chargement features ────────────────────────────────────────────
     oish     = v5_stats.get('oiSH', 10.0)
     pdo      = v5_stats.get('PDO', 100.0)
-    hdcf     = p_form.get('L10_iHDCF_G', 0.0)
-    scf      = p_form.get('L10_iSCF_G', 0.0)
-    l10_g    = p_form.get('L10_G_G', 0.0)
     season_g = v5_stats.get('G_GP', 0.0)
-    ixg      = p_form.get('L10_ixG_G', 0.0)
-    atoi     = p_form.get('ATOI', 0.0)
-    
+    gp       = v5_stats.get('GP', 0)
+
+    ixg    = p_form.get('L10_ixG_G',   0.0)
+    hdcf   = p_form.get('L10_iHDCF_G', 0.0)
+    sog    = p_form.get('L10_SOG_G',   0.0)
+    atoi   = p_form.get('ATOI',        0.0)
+
     _opp   = opp_stats or {}
-    cf_pct = _opp.get('CF_pct', 50.0)
     pk_pct = _opp.get('PK%',    80.0)
     ga_g   = _opp.get('GA_G',    2.7)
-    sa_g   = _opp.get('SA_G',   28.0)
-    hdca_g   = _opp.get('HDCA_G', 8.0)
-    hdcf_pct = _opp.get('HDCF_pct', 50.0)
-    
-    sog = p_form.get('L10_SOG_G', 0.0)
+    hdca_g = _opp.get('HDCA_G',  8.0)
 
-    if oish > 16.0: qs -= 2.0
-    elif oish > 14.0: qs -= 1.0
+    # ── Pénalités préalables ───────────────────────────────────────────
+    # oiSH élevé = chance luck → régression à venir (gatée par GP)
+    if gp >= 20:
+        if oish > 16.0:   qs -= 2.0
+        elif oish > 14.0: qs -= 1.0
+    elif gp >= 10:
+        if oish > 16.0:   qs -= 1.0
+        elif oish > 14.0: qs -= 0.5
     if is_b2b: qs -= 1.5
 
+    # ── G1 — Dangerosité joueur (cap 5.0) ─────────────────────────────
+    # ixG est le composant PRIMAIRE (corrélation +0.188, importance 0.177)
     g1 = 0.0
-    ixg_bonus = (3.0 if ixg >= 0.55 else
-                 2.0 if ixg >= 0.40 else
-                 1.0 if ixg >= 0.28 else
-                -1.5 if ixg <= 0.12 else 0.0)
-    goals_bonus = min(1.0, l10_g * 2.5)
-    g1 += max(ixg_bonus, goals_bonus)
-    if sog >= 3.0: g1 += 1.0
-    if hdcf >= 1.5: g1 += 1.5
-    elif hdcf >= 1.0: g1 += 0.75
-    if scf >= 4.0: g1 += 0.5
-    qs += min(g1, 4.0)
 
+    ixg_score = (4.0 if ixg >= 0.55 else
+                 3.0 if ixg >= 0.45 else
+                 2.5 if ixg >= 0.38 else
+                 1.5 if ixg >= 0.30 else
+                 0.5 if ixg >= 0.22 else
+                -1.0)
+    g1 += ixg_score
+
+    # hdcf : seuil dur à 2.5 validé comme meilleur filtre (+14.7pp WR)
+    if hdcf >= 2.5:   g1 += 2.5
+    elif hdcf >= 2.0: g1 += 1.75
+    elif hdcf >= 1.5: g1 += 1.0
+    elif hdcf >= 1.0: g1 += 0.25
+    else:             g1 -= 0.5
+
+    # sog : volume tirs (corrélation +0.181)
+    if sog >= 3.5:   g1 += 1.0
+    elif sog >= 2.5: g1 += 0.5
+
+    qs += min(g1, 5.0)
+
+    # ── G2 — Défense adverse (cap 3.5) ────────────────────────────────
+    # GA/j + PK% : les deux features adverses qui prédisent (LogReg 0.179 + 0.117)
+    # Supprimé : cf_pct, hdcf_pct, sa_g (signal faible ou capturé ailleurs)
     g2 = 0.0
-    if ga_g >= 3.00:   g2 += 2.0
-    elif ga_g >= 2.80: g2 += 1.0
-    elif ga_g < 2.50:  g2 -= 0.25  
-    if cf_pct >= 54.0:   g2 -= 0.75  
-    elif cf_pct >= 52.0: g2 -= 0.25  
-    elif cf_pct <= 46.0: g2 += 1.5
-    elif cf_pct <= 48.0: g2 += 0.5
-    if hdca_g >= 12.0:   g2 += 1.5
-    elif hdca_g >= 10.0: g2 += 0.75
-    elif hdca_g <= 6.0:  g2 -= 0.75
-    if hdcf_pct <= 46.0: g2 += 0.5
-    if sa_g >= 30.0 and sog >= 2.5: g2 += 0.75
-    qs += min(g2, 4.0)
 
+    if ga_g >= 3.00:   g2 += 2.5
+    elif ga_g >= 2.80: g2 += 1.5
+    elif ga_g >= 2.50: g2 += 0.5
+    elif ga_g < 2.30:  g2 -= 0.5
+
+    if pk_pct < 77.0:   g2 += 1.0
+    elif pk_pct < 80.0: g2 += 0.5
+    elif pk_pct > 85.0: g2 -= 0.5
+
+    # hdca_g : gardé mais poids réduit (importance 0.096 vs 0.179 pour GA)
+    if hdca_g >= 12.0:   g2 += 0.75
+    elif hdca_g >= 10.0: g2 += 0.375
+    elif hdca_g <= 5.0:  g2 -= 0.5
+
+    qs += min(g2, 3.5)
+
+    # ── G3 — Contexte joueur (cap 3.0) ────────────────────────────────
+    # PDO + ATOI uniquement — supprimé : ratio l10/season (bruit), home, star_linemate
     g3 = 0.0
-    if atoi >= 20.0: g3 += 2.0
-    elif atoi >= 17.0: g3 += 1.0  
-    if pdo < 96.0: g3 += 1.5
-    elif pdo < 98.0: g3 += 0.75
-    if season_g > 0:
-        ratio = l10_g / season_g
-        if ratio >= 2.0:   g3 += 1.5
-        elif ratio >= 1.5: g3 += 1.0
-        elif ratio <= 0.3: g3 -= 2.0
-        elif ratio <= 0.5: g3 -= 1.0
-    if is_home: g3 += 0.5
-    if has_star_linemate: g3 += 0.5
-    qs += min(g3, 4.0)
 
+    if atoi >= 20.0:   g3 += 1.5
+    elif atoi >= 18.0: g3 += 0.75
+
+    # PDO bas → régression positive à attendre (importance LogReg 0.113)
+    if pdo < 96.0:    g3 += 1.5
+    elif pdo < 98.0:  g3 += 0.75
+    elif pdo > 104.0: g3 -= 0.5
+
+    # Productivité saison (simple, sans ratio bruyant)
+    if season_g >= 0.35:   g3 += 0.5   # buteur de métier
+    elif season_g >= 0.25: g3 += 0.25
+
+    qs += min(g3, 3.0)
+
+    # ── Bonus PP1 ──────────────────────────────────────────────────────
     if is_pp1:
-        if pk_pct < 77.0: qs += 2.5
-        elif pk_pct > 83.0: qs += 1.0
-        else: qs += 1.75
+        if pk_pct < 77.0:   qs += 2.5
+        elif pk_pct > 83.0: qs += 0.5
+        else:               qs += 1.75
 
-    if is_backup: qs += 2.0
+    # ── Bonus Backup (conditionnel GA/j) ──────────────────────────────
+    if is_backup and ga_g >= 2.8:
+        qs += 2.0
+    elif is_backup:
+        qs += 0.75
 
-
-    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 9.5))))
+    # ── Normalisation sigmoid (inchangée) ─────────────────────────────
+    # centre abaissé de 9.5 → 6.5 pour la nouvelle plage de scores v10
+    qs_normalized = 2 + 10 * (1 / (1 + math.exp(-0.45 * (qs - 6.5))))
 
     return qs_normalized

@@ -4,3 +4,4 @@ watchdog.log
 stats/
 compos_live.txt
 analyse/
+__pycache__/
