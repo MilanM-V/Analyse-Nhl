@@ -202,8 +202,8 @@ def enrich_picks_with_odds(picks: List[Dict[str, Any]], home_team_full: str, awa
     # Déterminer le marché en fonction de la catégorie du premier pick
     cat = picks[0].get("Categorie", "")
     market_key = "player_goal_scorer_anytime"
-    if cat == "PASSEUR": market_key = "player_assist"
-    elif cat == "POINTEUR": market_key = "player_points"
+    if "PASSEUR" in cat: market_key = "player_assist"
+    elif "POINTEUR" in cat: market_key = "player_points"
 
     odds = fetch_market_odds(home_team_full, away_team_full, market_key)
     if not odds:
@@ -234,9 +234,7 @@ def enrich_picks_with_odds(picks: List[Dict[str, Any]], home_team_full: str, awa
             pick["Cote"] = round(cote, 2)
             pick["ValueBet"] = is_value
             pick["Kelly"] = kelly_pct
-        else:
-            pick["Cote"] = None
-            pick["ValueBet"] = None
-            pick["Kelly"] = None
+        # On ne met plus à None si non trouvé, pour éviter d'écraser les picks d'autres matchs
+        # ou de perdre le '?' informatif si l'API est indisponible.
 
     return picks

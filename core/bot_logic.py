@@ -350,11 +350,19 @@ class NhlBot:
                 player in pp1_players, qs_but
             ) if qs_but > 0 else 0.0
 
+            # Analyse SOG (Tirs)
+            sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
+            sog_proba = predictor_v14.evaluate_sog_proba(p_form, adv_stats, player in pp1_players, team in home_teams, sog_score)
+
             cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
-                                         ds.v5_data.get(player, {}).get('Position', ''), xgb_proba)
+                                         ds.v5_data.get(player, {}).get('Position', ''), xgb_proba,
+                                         sog_score, sog_proba)
             
-            cat_ast = "PASSEUR" if qs_ast >= 11.0 else None # Paliers simplifiés pour l'instant
-            cat_pts = "POINTEUR" if qs_pts >= 11.5 else None
+            # Catégories PASSEURS (Optimisé via simulation 716k opportunités)
+            cat_ast = "ELITE_PASSEUR" if qs_ast >= 11.5 else "SAFE_PASSEUR" if qs_ast >= 10.0 else None
+            
+            # Catégories POINTEURS (Optimisé via simulation 716k opportunités)
+            cat_pts = "ELITE_POINTEUR" if qs_pts >= 12.0 else "SAFE_POINTEUR" if qs_pts >= 11.0 else None
 
             # Construction des dicts de picks
             common_data = {
@@ -417,8 +425,13 @@ class NhlBot:
         if pos in ('D', 'LD', 'RD'):
             if score >= 9.5 and xgb_proba >= 0.35: cat = "DÉFENSEUR"
         else:
-            if score >= 11.5 and xgb_proba >= 0.50: cat = "ELITE"
-            elif score >= 10.5 and xgb_proba >= 0.55: cat = "SAFE"
+            if score >= 9.75 and xgb_proba >= 0.65: cat = "ELITE"
+            elif score >= 6.72 and xgb_proba >= 0.585: cat = "SAFE"
+            
+        # Fallback TIREUR : gros volume de tirs sans être un buteur d'élite
+        if not cat and sog_score >= 8.5 and proba_sog >= 0.65:
+            cat = "TIREUR"
+            
         return cat
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
@@ -451,14 +464,16 @@ class NhlBot:
             if m_ast:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> @{r.get('Cote', '?')}\n"
+                    label = r['Categorie'].replace("_PASSEUR", "")
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}) @{r.get('Cote', '?')}\n"
             
             # POINTS
             m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
             if m_pts:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> @{r.get('Cote', '?')}\n"
+                    label = r['Categorie'].replace("_POINTEUR", "")
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}) @{r.get('Cote', '?')}\n"
             
             if not m_buts and not m_ast and not m_pts:
                 msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"
