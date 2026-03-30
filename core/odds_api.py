@@ -12,13 +12,15 @@ import logging
 import requests
 from datetime import datetime
 from difflib import SequenceMatcher
+from typing import Dict, List, Any, Optional, Tuple
+from core.services import safe_get
 
 logger = logging.getLogger("NHL_Bot")
 
 ODDS_COUNTER_FILE = "./stats/odds_api_counter.json"
 
 
-def _load_counter():
+def _load_counter() -> Dict[str, Any]:
     """Charge le compteur de requêtes API depuis le disque."""
     if os.path.exists(ODDS_COUNTER_FILE):
         try:
@@ -33,7 +35,7 @@ def _load_counter():
     return {"month": datetime.now().strftime("%Y-%m"), "count": 0}
 
 
-def _save_counter(data):
+def _save_counter(data: Dict[str, Any]) -> None:
     """Sauvegarde le compteur de requêtes API sur le disque."""
     os.makedirs(os.path.dirname(ODDS_COUNTER_FILE), exist_ok=True)
     try:
@@ -43,7 +45,7 @@ def _save_counter(data):
         logger.warning(f"Impossible de sauvegarder le compteur Odds API : {e}")
 
 
-def _increment_counter():
+def _increment_counter() -> int:
     """Incrémente le compteur de requêtes et retourne le nombre actuel."""
     data = _load_counter()
     data["count"] += 1
@@ -51,7 +53,7 @@ def _increment_counter():
     return data["count"]
 
 
-def get_api_usage():
+def get_api_usage() -> str:
     """Retourne une chaîne résumant l'utilisation de l'API ce mois-ci.
 
     Returns:
@@ -62,7 +64,7 @@ def get_api_usage():
     return f"{data['count']}/500 requêtes utilisées ({month_label})"
 
 
-def get_kelly_bet(proba_bot, cote_bookmaker, kelly_fraction=4):
+def get_kelly_bet(proba_bot: float, cote_bookmaker: float, kelly_fraction: int = 4) -> Tuple[bool, float]:
     """Calcule le pourcentage de Bankroll à miser selon le Critère de Kelly Fractionné.
 
     Args:
@@ -87,7 +89,7 @@ def get_kelly_bet(proba_bot, cote_bookmaker, kelly_fraction=4):
     return is_value, round(bet_percentage, 2)
 
 
-def _fuzzy_match_name(player_name, api_names, threshold=0.75):
+def _fuzzy_match_name(player_name: str, api_names: List[str], threshold: float = 0.75) -> Optional[str]:
     """Trouve le meilleur match entre un nom de joueur NHL et les noms de l'API de cotes.
 
     Args:
@@ -126,36 +128,31 @@ def _fuzzy_match_name(player_name, api_names, threshold=0.75):
     return best_match if best_score >= threshold else None
 
 
-def fetch_goalscorer_odds(home_team, away_team):
-    """Récupère les cotes "Anytime Goalscorer" pour un match NHL donné.
+def fetch_market_odds(home_team: str, away_team: str, market_key: str = "player_goal_scorer_anytime") -> Dict[str, float]:
+    """Récupère les cotes pour un marché spécifique (buteur, passeur, points).
 
     Args:
-        home_team: Nom complet de l'équipe à domicile (ex: "Edmonton Oilers").
-        away_team: Nom complet de l'équipe à l'extérieur (ex: "Calgary Flames").
+        home_team: Nom complet de l'équipe à domicile.
+        away_team: Nom complet de l'équipe à l'extérieur.
+        market_key: Le marché (player_goal_scorer_anytime, player_assist, player_points).
 
     Returns:
-        dict: {player_name: cote_decimale} ou {} si pas de cotes disponibles.
+        dict: {player_name: cote_decimale}
     """
     api_key = os.getenv("ODDS_API_KEY")
     if not api_key:
-        logger.info("ODDS_API_KEY absente du .env — module cotes désactivé.")
         return {}
 
-    # Vérifier le quota — si dépassé, on skip silencieusement (pas de crash)
     counter = _load_counter()
     if counter["count"] >= 500:
-        logger.info(f"Quota Odds API atteint ({counter['count']}/500). Cotes désactivées jusqu'au mois prochain.")
         return {}
 
     try:
-        # Étape 1 : Récupérer la liste des événements NHL
         url_events = f"https://api.the-odds-api.com/v4/sports/icehockey_nhl/events?apiKey={api_key}"
-        resp = requests.get(url_events, timeout=10)
-        resp.raise_for_status()
+        resp_obj = safe_get(url_events, timeout=10)
         _increment_counter()
-        events = resp.json()
+        events = resp_obj.json()
 
-        # Trouver l'événement correspondant au match
         target_event = None
         for ev in events:
             if (home_team.lower() in ev.get("home_team", "").lower()
@@ -164,33 +161,27 @@ def fetch_goalscorer_odds(home_team, away_team):
                 break
 
         if not target_event:
-            logger.info(f"Match {home_team} vs {away_team} introuvable dans l'API de cotes.")
             return {}
 
         event_id = target_event["id"]
 
-        # Étape 2 : Récupérer les cotes "Anytime Goalscorer"
         url_odds = (
             f"https://api.the-odds-api.com/v4/sports/icehockey_nhl/events/{event_id}/odds"
-            f"?apiKey={api_key}&regions=us,eu&markets=player_goal_scorer_anytime&oddsFormat=decimal"
+            f"?apiKey={api_key}&regions=us,eu&markets={market_key}&oddsFormat=decimal"
         )
-        resp_odds = requests.get(url_odds, timeout=10)
-        resp_odds.raise_for_status()
+        resp_odds_obj = safe_get(url_odds, timeout=10)
         _increment_counter()
-        odds_data = resp_odds.json()
+        odds_data = resp_odds_obj.json()
 
         if not odds_data or "bookmakers" not in odds_data or not odds_data["bookmakers"]:
-            logger.info(f"Pas de cotes buteur disponibles pour {home_team} vs {away_team}.")
             return {}
 
-        # Prendre le premier bookmaker disponible (ex: DraftKings, Pinnacle)
         bookmaker = odds_data["bookmakers"][0]
-        market = next((m for m in bookmaker["markets"] if m["key"] == "player_goal_scorer_anytime"), None)
+        market = next((m for m in bookmaker["markets"] if m["key"] == market_key), None)
 
         if not market:
             return {}
 
-        # Construire le dictionnaire {nom_joueur: cote}
         player_odds = {}
         for outcome in market.get("outcomes", []):
             name = outcome.get("name", "")
@@ -198,33 +189,23 @@ def fetch_goalscorer_odds(home_team, away_team):
             if name and name != "Yes" and name != "No" and price > 1.0:
                 player_odds[name] = price
 
-        logger.info(f"Cotes récupérées chez {bookmaker['title']} : {len(player_odds)} joueurs (Usage API: {get_api_usage()})")
         return player_odds
 
-    except requests.exceptions.HTTPError as e:
-        _increment_counter()
-        if hasattr(e, 'response') and e.response is not None and e.response.status_code == 429:
-            logger.warning("Quota Odds API dépassé côté serveur (429). Désactivation automatique pour ce cycle.")
-        else:
-            logger.warning(f"Erreur HTTP Odds API : {e}")
-        return {}
     except Exception as e:
-        logger.warning(f"Erreur Odds API (ignorée, le bot continue normalement) : {e}")
+        logger.warning(f"Erreur Odds API ({market_key}) : {e}")
         return {}
 
+def enrich_picks_with_odds(picks: List[Dict[str, Any]], home_team_full: str, away_team_full: str) -> List[Dict[str, Any]]:
+    """Enrichit une liste de picks avec les cotes réelles et le calcul de Kelly."""
+    if not picks: return picks
+    
+    # Déterminer le marché en fonction de la catégorie du premier pick
+    cat = picks[0].get("Categorie", "")
+    market_key = "player_goal_scorer_anytime"
+    if cat == "PASSEUR": market_key = "player_assist"
+    elif cat == "POINTEUR": market_key = "player_points"
 
-def enrich_picks_with_odds(picks, home_team_full, away_team_full):
-    """Enrichit une liste de picks avec les cotes réelles et le calcul de Kelly.
-
-    Args:
-        picks: Liste de dicts contenant au minimum 'Joueur' et 'Score'.
-        home_team_full: Nom complet de l'équipe domicile.
-        away_team_full: Nom complet de l'équipe extérieur.
-
-    Returns:
-        list: La même liste enrichie avec 'Cote', 'ValueBet', 'Kelly'.
-    """
-    odds = fetch_goalscorer_odds(home_team_full, away_team_full)
+    odds = fetch_market_odds(home_team_full, away_team_full, market_key)
     if not odds:
         return picks
 
@@ -236,20 +217,25 @@ def enrich_picks_with_odds(picks, home_team_full, away_team_full):
 
         if matched and matched in odds:
             cote = odds[matched]
-            # Convertir le score QS (0-15) en probabilité approximative (0.0 - 1.0)
-            # Un score de 10.5 (ELITE) ~ 40% de chance, 7.5 (JOUABLE) ~ 25%
-            score = pick.get("Score", 0)
-            proba_estimee = min(0.60, max(0.10, score / 25.0))
+            if "Proba" in pick:
+                proba_estimee = pick["Proba"]
+            else:
+                score = pick.get("Score", 0)
+                # Paliers de proba ajustés par marché
+                if cat == "PASSEUR":
+                    proba_estimee = min(0.70, max(0.15, score / 20.0))
+                elif cat == "POINTEUR":
+                    proba_estimee = min(0.85, max(0.30, score / 15.0))
+                else:
+                    proba_estimee = min(0.60, max(0.10, score / 25.0))
 
             is_value, kelly_pct = get_kelly_bet(proba_estimee, cote)
 
             pick["Cote"] = round(cote, 2)
-            pick["ProbaBot"] = round(proba_estimee * 100, 1)
             pick["ValueBet"] = is_value
             pick["Kelly"] = kelly_pct
         else:
             pick["Cote"] = None
-            pick["ProbaBot"] = None
             pick["ValueBet"] = None
             pick["Kelly"] = None
 

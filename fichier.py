@@ -1,5 +1,5 @@
 """
-fichier_nhl.py — 100% API NHL officielle (ASYNC TURBO)
+fichier_nhl.py — 100% API NHL officielle (V14.1 ASYNC TURBO)
 Scraping asynchrone pour passer de ~2 min à ~10 secondes.
 """
 
@@ -267,6 +267,8 @@ async def build_player_season_totals(session):
             'Position':     r.get('positionCode', 'F'),
             'GP':           gp,
             'Goals':        r.get('goals', 0),
+            'Assists':      r.get('assists', 0),
+            'Points':       r.get('points', 0),
             'On-Ice SH%':   round(float(p.get('shootingPct5v5') or 0.10) * 100, 2),
             'PDO':          round(float(p.get('skaterShootingPlusSavePct5v5') or 1.0) * 100, 1),
             'CF%_season':   round(float(p.get('satPercentage') or 0.5) * 100, 2),
@@ -484,7 +486,8 @@ def compute_last10_stats(all_teams, game_ids_cache):
 
     player_stats = defaultdict(lambda: {
         'name': '', 'team': '', 'pos': '', 'gp': 0, 'toi_sec': 0,
-        'goals': 0, 'shots': 0, 'ixg': 0.0, 'ihdcf': 0, 'iscf': 0,
+        'goals': 0, 'assists': 0, 'points': 0,
+        'shots': 0, 'ixg': 0.0, 'ihdcf': 0, 'iscf': 0,
         'rebounds': 0, 'rush': 0, 'games_seen': set(), 'games_scored': defaultdict(int),
     })
 
@@ -584,7 +587,18 @@ def compute_last10_stats(all_teams, game_ids_cache):
                     if t in ('shot-on-goal', 'goal'): ps['shots'] += 1 
                     if t == 'goal':
                         ps['goals'] += 1
+                        ps['points'] += 1
                         ps['games_scored'][gid] += 1
+                        
+                        # Assists
+                        for a_key in ('assist1PlayerId', 'assist2PlayerId'):
+                            a_pid = det.get(a_key)
+                            if a_pid and a_pid in roster:
+                                aps = player_stats[a_pid]
+                                aps['name'], aps['team'], aps['pos'] = roster[a_pid]['name'], roster[a_pid]['team'], roster[a_pid]['pos']
+                                aps['assists'] += 1
+                                aps['points'] += 1
+                                aps['games_seen'].add(gid) # Ensure they are counted as having played
 
                     ps['rebounds'] += int(is_rebound)
                     ps['rush']     += int(is_rush)
@@ -620,7 +634,8 @@ def compute_last10_stats(all_teams, game_ids_cache):
         rows.append({
             'Player':   s['name'], 'Team': s['team'], 'Position': s['pos'],
             'GP':       gp, 'TOI': round(s['toi_sec'] / 60.0, 1),
-            'Goals':    s['goals'], 'Shots': s['shots'],
+            'Goals':    s['goals'], 'Assists': s['assists'], 'Points': s['points'],
+            'Shots':    s['shots'],
             'ixG':      round(s['ixg'], 3), 'iSCF': s['iscf'], 'iHDCF': s['ihdcf'],
             'Rebounds': s['rebounds'], 'RushShots': s['rush'], 'ConsecGoals': consec_goals,
         })

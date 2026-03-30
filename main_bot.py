@@ -28,7 +28,7 @@ if hasattr(time, 'tzset'):
 
 def main():
     logger.info("=====================================================")
-    logger.info("  DÉMARRAGE DU ROBOT NHL VALUE BETS V11 (ASYNC)   ")
+    logger.info("  DÉMARRAGE DU ROBOT NHL VALUE BETS V14 (ASYNC)   ")
     logger.info("  Architecture refactorisée (DataStore SQLite+RAM ) ")
     logger.info("=====================================================")
 
