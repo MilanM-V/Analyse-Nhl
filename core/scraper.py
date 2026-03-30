@@ -277,10 +277,17 @@ def get_lineups(match_id, home="", away="", driver=None):
 
         tabs = wait.until(EC.presence_of_all_elements_located(
             (By.CSS_SELECTOR, '[data-testid="wcl-tab"]')))
+        
+        found_compos_tab = False
         for tab in tabs:
             if "COMPOS" in tab.text.upper() or "LINEUPS" in tab.text.upper():
                 driver.execute_script("arguments[0].click();", tab)
+                found_compos_tab = True
                 break
+
+        if not found_compos_tab:
+            logger.info(f"[Scraper] {home} vs {away} : compo pas encore dispo (onglet absent)")
+            return "compo pas dispo"
 
         try:
             wait.until(EC.presence_of_element_located(
@@ -298,7 +305,8 @@ def get_lineups(match_id, home="", away="", driver=None):
                 full_list.append(name)
 
         if not is_valid_lineup(full_list):
-            return "compo incomplète ou pub détectée"
+            logger.warning(f"[Scraper] Compo invalide (trop courte ou pub détectée) : {len(full_list)} joueurs trouvés pour {home} vs {away}")
+            return "compo pas dispo"
 
         return {
             "goalDom": full_list[0],

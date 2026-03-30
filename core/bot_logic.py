@@ -385,6 +385,7 @@ class NhlBot:
                 "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
                 "Score_But": qs_but, "Score_Assist": qs_ast, "Score_Point": qs_pts,
                 "Picked_But": bool(cat_but), "Picked_Assist": bool(cat_ast), "Picked_Point": bool(cat_pts),
+                "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
                 "p_form": p_form, "p_v5": ds.v5_data.get(player, {}), "adv_stats": adv_stats
             })
 
