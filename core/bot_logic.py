@@ -9,7 +9,6 @@ from typing import Dict, List, Any, Optional, Set, Tuple
 import core.loaders as loaders
 import core.scraper as scraper
 import core.predictor_v14 as predictor_v14
-from core.odds_api import enrich_picks_with_odds, get_api_usage
 from core.datastore import DataStore
 from core.services import TelegramNotifier
 
@@ -407,11 +406,7 @@ class NhlBot:
                     r["Synergie"] = True
 
         # Odds enrichment
-        for picks_list in (final_picks_but, final_picks_ast, final_picks_pts):
-            for match_key in {(r['Equipe'] if r['IsHome'] else r['Adversaire'], r['Adversaire'] if r['IsHome'] else r['Equipe']) for r in picks_list}:
-                home_full = loaders.REVERSE_TEAM_MAPPING.get(match_key[0], match_key[0])
-                away_full = loaders.REVERSE_TEAM_MAPPING.get(match_key[1], match_key[1])
-                enrich_picks_with_odds(picks_list, home_full, away_full)
+        # Odds enrichment removed (odds-free mode)
 
         # Telegram Recap (Multi-marchés)
         self._send_telegram_v14(final_picks_but, final_picks_ast, final_picks_pts, wave_label, wave_ids)
@@ -457,7 +452,7 @@ class NhlBot:
             if m_buts:
                 msg += "  🔥 <i>Buteurs :</i>\n"
                 for r in m_buts:
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']}) @{r.get('Cote', '?')}\n"
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']})\n"
             
             # PASSEURS
             m_ast = [r for r in assists if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
@@ -465,7 +460,7 @@ class NhlBot:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
                     label = r['Categorie'].replace("_PASSEUR", "")
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}) @{r.get('Cote', '?')}\n"
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label})\n"
             
             # POINTS
             m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
@@ -473,7 +468,7 @@ class NhlBot:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
                     label = r['Categorie'].replace("_POINTEUR", "")
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}) @{r.get('Cote', '?')}\n"
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label})\n"
             
             if not m_buts and not m_ast and not m_pts:
                 msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"

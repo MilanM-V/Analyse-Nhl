@@ -115,7 +115,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /start command."""
         if update.message:
-            await update.message.reply_text("🏒 NHL Bot V14 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan\n/odds - Usage API cotes")
+            await update.message.reply_text("🏒 NHL Bot V14 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan")
 
     async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /status command."""
@@ -162,12 +162,6 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text(msg, parse_mode="HTML")
 
-    async def odds_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handler for /odds command."""
-        from core.odds_api import get_api_usage
-        usage = get_api_usage()
-        if update.message:
-            await update.message.reply_text(f"📊 Odds API :\n{usage}")
 
     async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /backup command."""
@@ -196,7 +190,6 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("force", force_cmd))
     app.add_handler(CommandHandler("roi", roi_cmd))
-    app.add_handler(CommandHandler("odds", odds_cmd))
     app.add_handler(CommandHandler("backup", backup_cmd))
     app.add_handler(CommandHandler("resetdb", resetdb_cmd))
 
