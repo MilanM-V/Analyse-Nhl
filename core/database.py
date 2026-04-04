@@ -78,11 +78,12 @@ def init_db() -> None:
     # On vérifie chaque table pour les colonnes manquantes
     tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
     
-    # Colonnes communes ajoutées en V14
+    # Colonnes communes ajoutées en V14 et V14.2 (cote)
     common_cols = [
         ("is_home", "BOOLEAN DEFAULT 0"),
         ("opp_b2b", "BOOLEAN DEFAULT 0"),
-        ("consec_goals", "INTEGER DEFAULT 0")
+        ("consec_goals", "INTEGER DEFAULT 0"),
+        ("cote", "REAL DEFAULT NULL")
     ]
     
     for table in tables_to_fix:

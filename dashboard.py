@@ -4,9 +4,9 @@ import sqlite3
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-
+from datetime import datetime, timedelta
 st.set_page_config(
-    page_title="NHL Betting Bot | Dashboard V14.1",
+    page_title="NHL Betting Bot | Dashboard V14.3",
     page_icon="🏒",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -48,16 +48,25 @@ def load_data(table_name="picks", target_col="but"):
     if not os.path.exists(DB_PATH):
         return pd.DataFrame()
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=15)
         query = f"SELECT * FROM {table_name} WHERE {target_col} IS NOT NULL AND {target_col} != ''"
         df = pd.read_sql_query(query, conn)
         conn.close()
         if not df.empty:
             df['date'] = pd.to_datetime(df['date'])
             df['result'] = pd.to_numeric(df[target_col], errors='coerce').fillna(0).astype(int)
-            df['unit'] = df['result'].apply(lambda x: 1 if x > 0 else -1)
+            # Calcul du profit avec la cote si disponible
+            if 'cote' in df.columns:
+                df['cote'] = pd.to_numeric(df['cote'], errors='coerce')
+                mean_cote = round(df['cote'].mean(), 2)
+                mean_cote = mean_cote if pd.notna(mean_cote) else 1.85
+                df['cote'] = df['cote'].fillna(mean_cote)
+                df['unit'] = df.apply(lambda row: (row['cote'] - 1) if row['result'] > 0 else -1, axis=1)
+            else:
+                df['unit'] = df['result'].apply(lambda x: 1 if x > 0 else -1)
+                
             df = df.sort_values('date')
-            df['cumulative_units'] = df['unit'].cumsum()
+            # Le cumulative_units sera calculé dynamiquement plus bas selon le filtre de date
             df['market'] = table_name.replace('picks_', '').replace('picks', 'buts').upper()
         return df
     except Exception as e:
@@ -66,8 +75,9 @@ def load_data(table_name="picks", target_col="but"):
 
 # Sidebar
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
-st.sidebar.title("NHL Bot V14.1")
+st.sidebar.title("NHL Bot V14.3")
 market_filter = st.sidebar.radio("Marché à analyser :", ["GLOBAL", "BUTEURS", "PASSEURS", "POINTEURS"])
+time_filter = st.sidebar.selectbox("Période :", ["Tout (All Time)", "7 Derniers Jours", "30 Derniers Jours", "Saison Actuelle"])
 st.sidebar.markdown("---")
 st.sidebar.info("Connecté à `bot_database.db`")
 
@@ -76,21 +86,39 @@ df_buts = load_data("picks", "but")
 df_asts = load_data("picks_assists", "assist")
 df_pts = load_data("picks_points", "point")
 
+def apply_time_filter(data_df, time_selection):
+    if data_df.empty: return data_df
+    now = pd.to_datetime('today')
+    if time_selection == "7 Derniers Jours":
+        return data_df[data_df['date'] >= now - pd.Timedelta(days=7)]
+    elif time_selection == "30 Derniers Jours":
+        return data_df[data_df['date'] >= now - pd.Timedelta(days=30)]
+    elif time_selection == "Saison Actuelle":
+        season_start_year = now.year if now.month >= 8 else now.year - 1
+        return data_df[data_df['date'] >= pd.to_datetime(f'{season_start_year}-10-01')]
+    return data_df
+
+df_buts = apply_time_filter(df_buts, time_filter)
+df_asts = apply_time_filter(df_asts, time_filter)
+df_pts = apply_time_filter(df_pts, time_filter)
+
 # Combine for global or filter
 if market_filter == "GLOBAL":
-    df = pd.concat([df_buts, df_asts, df_pts]).sort_values('date')
-    if not df.empty:
-        df['cumulative_units'] = df['unit'].cumsum()
+    df = pd.concat([df_buts, df_asts, df_pts]).sort_values('date').reset_index(drop=True)
     title_suffix = "Global"
 elif market_filter == "BUTEURS":
-    df = df_buts
+    df = df_buts.reset_index(drop=True)
     title_suffix = "Buteurs"
 elif market_filter == "PASSEURS":
-    df = df_asts
+    df = df_asts.reset_index(drop=True)
     title_suffix = "Passeurs"
 else:
-    df = df_pts
+    df = df_pts.reset_index(drop=True)
     title_suffix = "Pointeurs"
+
+# Recalcul des unités cumulées pour la période filtrée
+if not df.empty:
+    df['cumulative_units'] = df['unit'].cumsum()
 
 st.title(f"📊 NHL Betting Bot — {title_suffix}")
 
@@ -101,7 +129,7 @@ if df.empty:
 # ----- ROW 1: KPIs -----
 total_played = len(df)
 total_won = df['result'].sum()
-global_units = df['unit'].sum()
+global_units = round(df['unit'].sum(),1)
 winrate = (total_won / total_played * 100) if total_played > 0 else 0
 
 col1, col2, col3, col4 = st.columns(4)

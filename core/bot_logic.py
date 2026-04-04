@@ -9,6 +9,8 @@ from typing import Dict, List, Any, Optional, Set, Tuple
 import core.loaders as loaders
 import core.scraper as scraper
 import core.predictor_v14 as predictor_v14
+import core.odds_scraper as odds_scraper
+import asyncio
 from core.datastore import DataStore
 from core.services import TelegramNotifier
 
@@ -406,7 +408,17 @@ class NhlBot:
                     r["Synergie"] = True
 
         # Odds enrichment
-        # Odds enrichment removed (odds-free mode)
+        players_to_fetch = list({r["Joueur"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list})
+        if players_to_fetch:
+            logger.info(f"   Récupération asynchrone des cotes BettingPros pour {len(players_to_fetch)} joueur(s)...")
+            odds_map = asyncio.run(odds_scraper.fetch_multiple_odds(players_to_fetch))
+            
+            for p in final_picks_but:
+                p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
+            for p in final_picks_ast:
+                p["Cote"] = odds_map.get(p["Joueur"], {}).get("ASSISTS")
+            for p in final_picks_pts:
+                p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
 
         # Telegram Recap (Multi-marchés)
         self._send_telegram_v14(final_picks_but, final_picks_ast, final_picks_pts, wave_label, wave_ids)
@@ -428,6 +440,29 @@ class NhlBot:
             cat = "TIREUR"
             
         return cat
+
+    def _calculate_quarter_kelly(self, score: float, proba: float, cote: float) -> str:
+        """Calcule la recommandation de mise fractionnée Quarter Kelly."""
+        if not cote or cote <= 1.05:
+            return "1 U"
+        
+        b = cote - 1.0
+        p = proba
+        
+        # Fallback pour les passes/points si xgb_proba=0
+        if p == 0:
+            p = min((score / 15.0), 0.75)
+            
+        q = 1.0 - p
+        f = (p * b - q) / b
+        
+        if f > 0:
+            quarter_f = f / 4.0
+            units = round(quarter_f * 100 * 2) / 2 # arrondi à 0.5 près
+            units = max(0.5, min(units, 3.0)) # Borne entre 0.5 et 3.0
+            return f"{units} U"
+            
+        return "0.5 U" # Si Value négative mathématique, limitation de casse
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
         """Formats and sends the Telegram recap message with all markets."""
@@ -452,23 +487,26 @@ class NhlBot:
             if m_buts:
                 msg += "  🔥 <i>Buteurs :</i>\n"
                 for r in m_buts:
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']})\n"
-            
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'))}" if r.get('Cote') else ""
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']}){cote_str}\n"
+
             # PASSEURS
             m_ast = [r for r in assists if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
             if m_ast:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
                     label = r['Categorie'].replace("_PASSEUR", "")
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label})\n"
-            
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'))}" if r.get('Cote') else ""
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
+
             # POINTS
             m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
             if m_pts:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
                     label = r['Categorie'].replace("_POINTEUR", "")
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label})\n"
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'))}" if r.get('Cote') else ""
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
             
             if not m_buts and not m_ast and not m_pts:
                 msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"
@@ -495,7 +533,7 @@ class NhlBot:
                 "cf_pct": adv.get("CF_pct", 50), "hdca_g": adv.get("HDCA_G", 0),
                 "pk_pct": adv.get("PK%", 80), "rebounds": f.get("L10_Rebounds_G", 0),
                 "rush": f.get("L10_Rush_G", 0), "opp_b2b": adv.get("B2B", False),
-                "consec_goals": f.get("ConsecGoals", 0)
+                "consec_goals": f.get("ConsecGoals", 0), "cote": p.get("Cote")
             })
 
         for p in asts:
@@ -507,7 +545,7 @@ class NhlBot:
                 "atoi": f.get("ATOI", 0), "l10_a": f.get("L10_A_G", 0), "season_a": v5.get("A_GP", 0),
                 "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
                 "cf_pct": adv.get("CF_pct", 50), "pk_pct": adv.get("PK%", 80),
-                "opp_b2b": adv.get("B2B", False)
+                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote")
             })
 
         for p in pts:
@@ -519,7 +557,7 @@ class NhlBot:
                 "atoi": f.get("ATOI", 0), "l10_pts": f.get("L10_Pts_G", 0), "season_pts": v5.get("Pts_GP", 0),
                 "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
                 "cf_pct": adv.get("CF_pct", 50),
-                "opp_b2b": adv.get("B2B", False)
+                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote")
             })
 
         # Unified Player SQL Log
