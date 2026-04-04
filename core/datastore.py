@@ -50,7 +50,7 @@ class DataStore:
 
         self.known_players = list(set(list(self.form_data.keys()) + list(self.v5_data.keys()) + list(self.goalie_stats.keys())))
         
-        self.last_load_date = datetime.now().strftime("%Y-%m-%d")
+        self.last_load_date = (datetime.now() - timedelta(hours=14)).strftime("%Y-%m-%d")
         logger.info(f"Chargement RAM terminé. {len(self.known_players)} joueurs connus. Prêt pour l'analyse.")
 
     def refresh_if_needed(self) -> None:

@@ -96,6 +96,43 @@ class TelegramNotifier:
         except Exception as e:
             logger.error(f"Exception lors de l'envoi Telegram : {e}")
 
+    def send_crash_alert(self, error: Exception, context: str = "Bot Principal") -> None:
+        """
+        Sends an emergency crash notification via Telegram.
+        Uses raw requests (no retry decorator) to maximize delivery chance.
+
+        Args:
+            error: The exception that caused the crash.
+            context: Description of where the crash occurred.
+        """
+        if not self.enabled:
+            return
+
+        import traceback
+        tb = traceback.format_exc()
+        # Tronquer le traceback à 500 chars pour ne pas dépasser la limite Telegram
+        tb_short = tb[-500:] if len(tb) > 500 else tb
+
+        message = (
+            f"🚨 <b>CRASH — {context}</b>\n\n"
+            f"<b>Erreur:</b> {type(error).__name__}: {error}\n\n"
+            f"<pre>{tb_short}</pre>"
+        )
+
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+            payload = {
+                "chat_id": self.chat_id,
+                "text": message,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True
+            }
+            # Utilise requests directement, pas safe_post, pour éviter les dépendances circulaires
+            requests.post(url, json=payload, timeout=10)
+            logger.info("🚨 Alerte crash envoyée sur Telegram.")
+        except Exception as e:
+            logger.error(f"Impossible d'envoyer l'alerte crash Telegram : {e}")
+
 def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     """
     Factory to create the interactive telegram application with handlers.

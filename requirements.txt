@@ -10,3 +10,5 @@ xgboost
 streamlit
 plotly
 aiohttp
+beautifulsoup4
+pytest

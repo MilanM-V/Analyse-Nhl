@@ -168,6 +168,7 @@ def reset_db() -> None:
 def get_roi_stats(table: str = "picks", target_col: str = "but") -> str:
     """
     Calculates and returns ROI statistics for a specific market.
+    Uses actual odds (cote) for profit calculation when available.
 
     Args:
         table: The table to query.
@@ -179,39 +180,54 @@ def get_roi_stats(table: str = "picks", target_col: str = "but") -> str:
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute(f"SELECT COUNT(*), SUM({target_col}) FROM {table} WHERE {target_col} IS NOT NULL AND {target_col} != ''")
-    res = c.fetchone()
-    total_played = res[0] or 0
-    total_won = res[1] or 0
-
-    if total_played == 0:
-        conn.close()
-        return f"Pas assez de données pour {table}."
-
-    c.execute(f"SELECT verdict, COUNT(*), SUM({target_col}) FROM {table} WHERE {target_col} IS NOT NULL AND {target_col} != '' GROUP BY verdict")
-    cats = c.fetchall()
+    c.execute(f"SELECT {target_col}, cote, verdict FROM {table} WHERE {target_col} IS NOT NULL AND {target_col} != ''")
+    rows = c.fetchall()
     conn.close()
 
-    total_lost = total_played - total_won
-    global_units = total_won - total_lost
-    global_sign = "+" if global_units > 0 else ""
+    if not rows:
+        return f"Pas assez de données pour {table}."
 
+    # Calculer la cote moyenne pour les cotes manquantes
+    cotes_valides = [r[1] for r in rows if r[1] is not None and r[1] != '']
+    mean_cote = round(sum(cotes_valides) / len(cotes_valides), 2) if cotes_valides else 1.85
+
+    total_played = len(rows)
+    total_won = 0
+    global_units = 0.0
+    cat_stats = {}
+
+    for result, cote, verdict in rows:
+        result = int(result) if result else 0
+        cote = float(cote) if cote else mean_cote
+
+        unit = (cote - 1) if result > 0 else -1.0
+        if result > 0:
+            total_won += 1
+        global_units += unit
+
+        if verdict not in cat_stats:
+            cat_stats[verdict] = {"played": 0, "won": 0, "units": 0.0}
+        cat_stats[verdict]["played"] += 1
+        if result > 0:
+            cat_stats[verdict]["won"] += 1
+        cat_stats[verdict]["units"] += unit
+
+    global_units = round(global_units, 1)
+    global_sign = "+" if global_units > 0 else ""
     winrate_global = (total_won / total_played) * 100
-    msg = f"<b>📊 STATS {table.upper()} : {global_sign}{global_units} U</b>\n"
-    msg += f"{total_won}✅ / {total_played} ({winrate_global:.1f}%)\n"
+    roi_pct = round((global_units / total_played) * 100, 1)
+
+    msg = f"<b>📊 STATS {table.upper()} : {global_sign}{global_units} U (ROI {roi_pct}%)</b>\n"
+    msg += f"{total_won}✅ / {total_played} ({winrate_global:.1f}%) | Cote moy: {mean_cote}\n"
     msg += "──────────────────\n"
 
-    for row in sorted(cats, key=lambda x: x[0] or ""):
-        verdict = row[0]
-        nb_joues = row[1]
-        nb_gagnes = row[2]
-        nb_perdus = nb_joues - nb_gagnes
-
-        if nb_joues > 0:
-            units_cat = nb_gagnes - nb_perdus
+    for verdict in sorted(cat_stats.keys()):
+        s = cat_stats[verdict]
+        if s["played"] > 0:
+            units_cat = round(s["units"], 1)
             cat_sign = "+" if units_cat > 0 else ""
-            roi_cat = (nb_gagnes / nb_joues) * 100
-            msg += f"<b>{verdict} [{cat_sign}{units_cat} U]</b> : {nb_gagnes}✅ / {nb_joues} ({roi_cat:.1f}%)\n"
+            roi_cat = (s["won"] / s["played"]) * 100
+            msg += f"<b>{verdict} [{cat_sign}{units_cat} U]</b> : {s['won']}✅ / {s['played']} ({roi_cat:.1f}%)\n"
 
     return msg
 

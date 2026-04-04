@@ -236,7 +236,8 @@ class NhlBot:
 
             self.evaluate_waves(self.matches_du_jour)
         except Exception as e:
-            logger.error(f"ERREUR CRITIQUE lors du run_scan_cycle : {e}")
+            logger.error(f"ERREUR CRITIQUE lors du run_scan_cycle : {e}", exc_info=True)
+            self.telegram.send_crash_alert(e, context="run_scan_cycle")
         finally:
             self._is_scanning = False
 

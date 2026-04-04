@@ -66,7 +66,6 @@ def load_data(table_name="picks", target_col="but"):
                 df['unit'] = df['result'].apply(lambda x: 1 if x > 0 else -1)
                 
             df = df.sort_values('date')
-            # Le cumulative_units sera calculé dynamiquement plus bas selon le filtre de date
             df['market'] = table_name.replace('picks_', '').replace('picks', 'buts').upper()
         return df
     except Exception as e:
@@ -126,13 +125,15 @@ if df.empty:
     st.warning(f"⚠️ Aucune donnée disponible pour le marché {market_filter}.")
     st.stop()
 
-# ----- ROW 1: KPIs -----
+# ----- ROW 1: KPIs (2 lignes de 3) -----
 total_played = len(df)
 total_won = df['result'].sum()
-global_units = round(df['unit'].sum(),1)
+global_units = round(df['unit'].sum(), 1)
 winrate = (total_won / total_played * 100) if total_played > 0 else 0
+roi_pct = round((global_units / total_played) * 100, 1) if total_played > 0 else 0
+avg_cote = round(df['cote'].mean(), 2) if 'cote' in df.columns else "N/A"
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown(f'<div class="metric-container"><div class="metric-label">Profit Total</div><div class="metric-value" style="color:{"#4ADE80" if global_units >=0 else "#F87171"}">{global_units:+} U</div></div>', unsafe_allow_html=True)
@@ -143,7 +144,16 @@ with col2:
 with col3:
     st.markdown(f'<div class="metric-container"><div class="metric-label">Win Rate</div><div class="metric-value">{winrate:.1f}%</div></div>', unsafe_allow_html=True)
 
+col4, col5, col6 = st.columns(3)
+
 with col4:
+    roi_color = "#4ADE80" if roi_pct >= 0 else "#F87171"
+    st.markdown(f'<div class="metric-container"><div class="metric-label">ROI</div><div class="metric-value" style="color:{roi_color}">{roi_pct:+.1f}%</div></div>', unsafe_allow_html=True)
+
+with col5:
+    st.markdown(f'<div class="metric-container"><div class="metric-label">Cote Moyenne</div><div class="metric-value">{avg_cote}</div></div>', unsafe_allow_html=True)
+
+with col6:
     best_market = df.groupby('market')['unit'].sum().idxmax() if market_filter == "GLOBAL" else market_filter
     st.markdown(f'<div class="metric-container"><div class="metric-label">Top Marché</div><div class="metric-value">{best_market}</div></div>', unsafe_allow_html=True)
 
@@ -175,7 +185,35 @@ with c2:
     else:
         st.info("Sélectionnez 'GLOBAL' pour comparer les marchés.")
 
-# ----- ROW 3: Categories & Teams -----
+# ----- ROW 3: Profit par Jour -----
+st.markdown("---")
+st.subheader("📅 Profit par Jour")
+daily_df = df.groupby(df['date'].dt.date).agg(
+    Units=('unit', 'sum'),
+    Picks=('unit', 'count')
+).reset_index()
+daily_df.columns = ['Date', 'Units', 'Picks']
+daily_df['Units'] = daily_df['Units'].round(1)
+daily_df['Color'] = daily_df['Units'].apply(lambda x: '#4ADE80' if x >= 0 else '#F87171')
+
+fig_daily = go.Figure()
+fig_daily.add_trace(go.Bar(
+    x=daily_df['Date'], y=daily_df['Units'],
+    marker_color=daily_df['Color'],
+    text=daily_df['Units'].apply(lambda x: f"{x:+.1f}"),
+    textposition='outside',
+    hovertemplate='%{x}<br>Profit: %{y:.1f} U<br>Picks: %{customdata}<extra></extra>',
+    customdata=daily_df['Picks']
+))
+fig_daily.update_layout(
+    template='plotly_dark', showlegend=False, 
+    yaxis_title='Profit (Unités)', xaxis_title='',
+    height=350
+)
+fig_daily.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.2)")
+st.plotly_chart(fig_daily, use_container_width=True)
+
+# ----- ROW 4: Categories & Teams -----
 st.markdown("---")
 colA, colB = st.columns(2)
 
@@ -209,26 +247,41 @@ with colB:
     else:
         st.info("Données insuffisantes par équipe.")
 
-# ----- ROW 4: Best Players -----
+# ----- ROW 5: Top & Worst Players -----
 st.markdown("---")
-st.subheader("⭐ Top Performers (Joueurs)")
-player_df = df.groupby('joueur').agg(
-    Played=('unit', 'count'),
-    Units=('unit', 'sum')
-).reset_index()
-player_df = player_df[player_df['Units'] > 0].sort_values(by='Units', ascending=True).tail(10)
+pA, pB = st.columns(2)
 
-if not player_df.empty:
-    fig_top = px.bar(player_df, y='joueur', x='Units', orientation='h',
-                     color='Units', color_continuous_scale="Greens",
-                     text_auto='.1f', template="plotly_dark")
-    st.plotly_chart(fig_top, use_container_width=True)
-else:
-    st.info("Aucun joueur en profit pour le moment.")
+with pA:
+    st.subheader("⭐ Top Performers")
+    player_df = df.groupby('joueur').agg(
+        Played=('unit', 'count'),
+        Units=('unit', 'sum')
+    ).reset_index()
+    top_players = player_df[player_df['Units'] > 0].sort_values(by='Units', ascending=True).tail(10)
 
-# ----- ROW 5: Data Table -----
+    if not top_players.empty:
+        fig_top = px.bar(top_players, y='joueur', x='Units', orientation='h',
+                         color='Units', color_continuous_scale="Greens",
+                         text_auto='.1f', template="plotly_dark")
+        st.plotly_chart(fig_top, use_container_width=True)
+    else:
+        st.info("Aucun joueur en profit pour le moment.")
+
+with pB:
+    st.subheader("💀 Worst Performers")
+    worst_players = player_df[player_df['Units'] < 0].sort_values(by='Units', ascending=True).head(10)
+
+    if not worst_players.empty:
+        fig_worst = px.bar(worst_players, y='joueur', x='Units', orientation='h',
+                           color='Units', color_continuous_scale="Reds_r",
+                           text_auto='.1f', template="plotly_dark")
+        st.plotly_chart(fig_worst, use_container_width=True)
+    else:
+        st.info("Aucun joueur en perte pour le moment.")
+
+# ----- ROW 6: Data Table -----
 st.markdown("---")
 st.subheader("🗂️ Journal des Paris")
 st.dataframe(df.drop(columns=['id', 'result', 'unit', 'cumulative_units'], errors='ignore').sort_values(by='date', ascending=False), use_container_width=True)
 
-st.caption(f"Dashboard V14.1 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
+st.caption(f"Dashboard V14.3 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")

@@ -10,7 +10,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from datetime import datetime, timedelta
 from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
 
@@ -25,6 +24,23 @@ logger = logging.getLogger("NHL_Bot")
 BRAVE_PATH = os.getenv("BRAVE_PATH")
 
 TRASH_WORDS = ["NHL.TV", "BETCLIC", "CRYPTO.COM", "ARENA", ".FR", ".COM", ".TV", "NATIONWIDE", "CENTRE"]
+
+# Sélecteurs CSS Flashscore — centralisés pour maintenance facile
+FS_MATCH_SELECTOR = ".event__match"
+FS_TIME_SELECTOR = "event__time"
+FS_HOME_SELECTOR = "event__participant--home"
+FS_AWAY_SELECTOR = "event__participant--away"
+FS_HOME_PARTICIPANT = "event__homeParticipant"
+FS_AWAY_PARTICIPANT = "event__awayParticipant"
+FS_TAB_SELECTOR = '[data-testid="wcl-tab"]'
+# Sélecteur principal pour les noms de joueurs dans les compos
+FS_PLAYER_NAME_SELECTOR = '[data-testid="wcl-scores-simple-text-01"]'
+# Sélecteurs de fallback si le principal change
+FS_PLAYER_NAME_FALLBACK = [
+    '.lf__participantName',
+    '.lineups__participantName',
+    '[class*="lineupPlayer"]',
+]
 
 NHL_BASE = "https://api-web.nhle.com"
 
@@ -94,10 +110,19 @@ def get_driver(show_browser=False):
     return webdriver.Chrome(options=options, service=service)
 
 def is_valid_lineup(player_list):
+    """Validates a scraped lineup list for completeness and cleanliness."""
     if len(player_list) < 22:
         return False
     for name in player_list:
-        if any(trash in name.upper() for trash in TRASH_WORDS):
+        upper = name.upper()
+        # Vérifier les mots-clés de pub/sponsoring
+        if any(trash in upper for trash in TRASH_WORDS):
+            return False
+        # Rejeter les noms contenant des caractères suspects (URLs, symboles)
+        if any(c in name for c in ['@', '#', '€', '$', '/', '\\', 'http']):
+            return False
+        # Rejeter les noms purement numériques ou trop courts
+        if name.isdigit() or len(name.strip()) < 3:
             return False
     return True
 
@@ -276,7 +301,7 @@ def get_lineups(match_id, home="", away="", driver=None):
         wait = WebDriverWait(driver, 10)
 
         tabs = wait.until(EC.presence_of_all_elements_located(
-            (By.CSS_SELECTOR, '[data-testid="wcl-tab"]')))
+            (By.CSS_SELECTOR, FS_TAB_SELECTOR)))
         
         found_compos_tab = False
         for tab in tabs:
@@ -291,14 +316,27 @@ def get_lineups(match_id, home="", away="", driver=None):
 
         try:
             wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, '[data-testid="wcl-scores-simple-text-01"]')))
+                (By.CSS_SELECTOR, FS_PLAYER_NAME_SELECTOR)))
             time.sleep(2)
         except:
             time.sleep(3)                                                
 
         full_list = []
 
-        els = driver.find_elements(By.CSS_SELECTOR, '[data-testid="wcl-scores-simple-text-01"]')
+        # Sélecteur principal
+        els = driver.find_elements(By.CSS_SELECTOR, FS_PLAYER_NAME_SELECTOR)
+        
+        # Fallback si le sélecteur principal ne trouve rien
+        if not els:
+            for fallback_sel in FS_PLAYER_NAME_FALLBACK:
+                els = driver.find_elements(By.CSS_SELECTOR, fallback_sel)
+                if els:
+                    logger.info(f"[Scraper] Sélecteur principal cassé, fallback '{fallback_sel}' utilisé.")
+                    break
+            if not els:
+                logger.warning(f"[Scraper] AUCUN sélecteur CSS ne fonctionne pour les compos. Structure Flashscore modifiée ?")
+                return "compo pas dispo"
+
         for e in els:
             name = e.text.strip()
             if name and not name.startswith('(') and not name.isdigit() and name.upper() not in ["V", "D", "?", "P"]:
