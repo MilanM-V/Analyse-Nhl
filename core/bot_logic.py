@@ -441,13 +441,37 @@ class NhlBot:
             
         return cat
 
-    def _calculate_quarter_kelly(self, score: float, proba: float, cote: float) -> str:
-        """Calcule la recommandation de mise fractionnée Quarter Kelly."""
+    # Plafonds de mise par catégorie (Solution 4)
+    CATEGORY_CAPS = {
+        "ELITE": 3.0,
+        "SAFE": 2.5,
+        "DÉFENSEUR": 1.5,
+        "TIREUR": 1.5,
+        "ELITE_PASSEUR": 2.5,
+        "SAFE_PASSEUR": 2.0,
+        "ELITE_POINTEUR": 2.5,
+        "SAFE_POINTEUR": 2.0,
+    }
+
+    def _calculate_quarter_kelly(self, score: float, proba: float, cote: float, categorie: str = "") -> str:
+        """Calcule la recommandation de mise fractionnée Quarter Kelly.
+        
+        Args:
+            score: QS Score du joueur.
+            proba: Probabilité XGBoost.
+            cote: Cote du bookmaker.
+            categorie: Catégorie du pick (ELITE, SAFE, DÉFENSEUR, etc.).
+        """
         if not cote or cote <= 1.05:
             return "1 U"
         
         b = cote - 1.0
         p = proba
+        
+        # Pénalité IA pour les défenseurs : leur taux de conversion réel
+        # est bien inférieur à ce que l'XGBoost prédit (tirs lointains)
+        if categorie == "DÉFENSEUR":
+            p = p * 0.6
         
         # Fallback pour les passes/points si xgb_proba=0
         if p == 0:
@@ -456,13 +480,16 @@ class NhlBot:
         q = 1.0 - p
         f = (p * b - q) / b
         
+        # Plafond dynamique selon la catégorie
+        cap = self.CATEGORY_CAPS.get(categorie, 2.0)
+        
         if f > 0:
             quarter_f = f / 4.0
-            units = round(quarter_f * 100 * 2) / 2 # arrondi à 0.5 près
-            units = max(0.5, min(units, 3.0)) # Borne entre 0.5 et 3.0
+            units = round(quarter_f * 100 * 2) / 2  # arrondi à 0.5 près
+            units = max(0.5, min(units, cap))
             return f"{units} U"
             
-        return "0.5 U" # Si Value négative mathématique, limitation de casse
+        return "0.5 U"  # Si Value négative mathématique, limitation de casse
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
         """Formats and sends the Telegram recap message with all markets."""
@@ -487,7 +514,7 @@ class NhlBot:
             if m_buts:
                 msg += "  🔥 <i>Buteurs :</i>\n"
                 for r in m_buts:
-                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'))}" if r.get('Cote') else ""
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
                     msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']}){cote_str}\n"
 
             # PASSEURS
@@ -496,7 +523,7 @@ class NhlBot:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
                     label = r['Categorie'].replace("_PASSEUR", "")
-                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'))}" if r.get('Cote') else ""
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
                     msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
 
             # POINTS
@@ -505,7 +532,7 @@ class NhlBot:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
                     label = r['Categorie'].replace("_POINTEUR", "")
-                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'))}" if r.get('Cote') else ""
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
                     msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
             
             if not m_buts and not m_ast and not m_pts:
