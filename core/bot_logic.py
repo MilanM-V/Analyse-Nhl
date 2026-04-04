@@ -36,6 +36,7 @@ class NhlBot:
         self.matches_du_jour: List[Dict[str, Any]] = []
         self.compos_en_memoire: Dict[str, Dict[str, Any]] = {}
         self.vagues_envoyees: Set[str] = set()
+        self.matchs_envoyes: Set[str] = set()
         self._is_scanning: bool = False
 
         self.ecart_max_vague_min: int = 5
@@ -244,7 +245,12 @@ class NhlBot:
         if not self.compos_en_memoire:
             return
 
-        waves = self.build_waves(list(self.compos_en_memoire.keys()))
+        # Filtrer les matchs déjà envoyés pour éviter les doublons
+        pending_ids = [mid for mid in self.compos_en_memoire if mid not in self.matchs_envoyes]
+        if not pending_ids:
+            return
+
+        waves = self.build_waves(pending_ids)
         for wave in waves:
             wave_key = self.compos_en_memoire[wave[0]]["match_info"]["time"]
             if wave_key in self.vagues_envoyees:
@@ -257,10 +263,14 @@ class NhlBot:
                 logger.info(f"   Vague {wave_label} complète   ENVOI !")
                 self.run_analysis_and_send(wave, wave_label)
                 self.vagues_envoyees.add(wave_key)
+                for mid in wave:
+                    self.matchs_envoyes.add(mid)
             elif self.should_force_send(wave):
                 logger.info(f"   Vague {wave_label} forçage < {self.force_envoi_min_avant} min   ENVOI !")
                 self.run_analysis_and_send(wave, wave_label + " ⚠️forcé")
                 self.vagues_envoyees.add(wave_key)
+                for mid in wave:
+                    self.matchs_envoyes.add(mid)
 
     def run_analysis_and_send(self, wave_ids: List[str], wave_label: str) -> None:
         """Performs ML analysis on a wave of matches and sends results."""
@@ -649,4 +659,5 @@ class NhlBot:
             self.matchs_traites.clear()
             self.compos_en_memoire.clear()
             self.vagues_envoyees.clear()
+            self.matchs_envoyes.clear()
             logger.info("Nettoyage de fin de journée terminé.")
