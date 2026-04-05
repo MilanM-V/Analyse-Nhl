@@ -12,9 +12,30 @@ def get_connection() -> sqlite3.Connection:
     """Returns a connection to the SQLite database."""
     return sqlite3.connect(DB_PATH)
 
-def init_db() -> None:
-    """Initializes the SQL database schema if it doesn't exist."""
-    logger.info("Initialisation de la base SQLite V14...")
+# V14 : Ajout dynamique des colonnes XGBoost si elles n'existent pas
+def ensure_schema():
+    """Vérifie et met à jour le schéma si nécessaire."""
+    conn = get_connection()
+    c = conn.cursor()
+    for table in ["picks", "players"]:
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN is_home BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN opp_b2b BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN consec_goals INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    conn.close()
+
+def init_db():
+    """Initialise le schéma de la base de données SQL si elle n'existe pas."""
+    logger.info("Initialisation de la base SQLite...")
     conn = get_connection()
     c = conn.cursor()
 
@@ -74,40 +95,9 @@ def init_db() -> None:
 
     conn.commit()
     
-    # Upgrade existing tables if necessary (V14 Migration)
-    # On vérifie chaque table pour les colonnes manquantes
-    tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
-    
-    # Colonnes communes ajoutées en V14 et V14.2 (cote)
-    common_cols = [
-        ("is_home", "BOOLEAN DEFAULT 0"),
-        ("opp_b2b", "BOOLEAN DEFAULT 0"),
-        ("consec_goals", "INTEGER DEFAULT 0"),
-        ("cote", "REAL DEFAULT NULL")
-    ]
-    
-    for table in tables_to_fix:
-        for col_name, col_type in common_cols:
-            try:
-                c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table '{table}'.")
-            except sqlite3.OperationalError: pass
-
-    # Colonnes spécifiques à la table 'players' (Transition V12 -> V14)
-    player_cols = [
-        ("score_but", "REAL"), ("score_assist", "REAL"), ("score_point", "REAL"),
-        ("picked_but", "BOOLEAN"), ("picked_assist", "BOOLEAN"), ("picked_point", "BOOLEAN"),
-        ("l10_a", "REAL"), ("l10_pts", "REAL"), ("season_a", "REAL"), ("season_pts", "REAL"),
-        ("assist", "INTEGER DEFAULT NULL"), ("point", "INTEGER DEFAULT NULL")
-    ]
-    for col_name, col_type in player_cols:
-        try:
-            c.execute(f"ALTER TABLE players ADD COLUMN {col_name} {col_type}")
-            logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table 'players'.")
-        except sqlite3.OperationalError: pass
-    
     conn.commit()
     conn.close()
+    ensure_schema()
 
 def insert_pick(table: str, pick_data: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
     """
@@ -234,5 +224,4 @@ def get_roi_stats(table: str = "picks", target_col: str = "but") -> str:
 if not os.path.exists(DB_PATH):
     init_db()
 else:
-    # Trigger upgrade to V14 if tables missing
-    init_db()
+    ensure_schema()
