@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import os
 from datetime import datetime, timedelta
 st.set_page_config(
-    page_title="NHL Betting Bot | Dashboard V14.3",
+    page_title="NHL Betting Bot | Dashboard V14.7",
     page_icon="🏒",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -76,7 +76,7 @@ def load_data(table_name="picks", target_col="but"):
 
 # Sidebar
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
-st.sidebar.title("NHL Bot V14.3")
+st.sidebar.title("NHL Bot V14.7")
 market_filter = st.sidebar.radio("Marché à analyser :", ["GLOBAL", "BUTEURS", "PASSEURS", "POINTEURS"])
 time_filter = st.sidebar.selectbox("Période :", ["Tout (All Time)", "7 Derniers Jours", "30 Derniers Jours", "Saison Actuelle"])
 st.sidebar.markdown("---")
@@ -116,6 +116,13 @@ elif market_filter == "PASSEURS":
 else:
     df = df_pts.reset_index(drop=True)
     title_suffix = "Pointeurs"
+
+# ----- Filtre des Catégories -----
+if not df.empty and 'verdict' in df.columns:
+    available_cats = sorted(df['verdict'].dropna().unique().tolist())
+    selected_cats = st.sidebar.multiselect("Filtrer par Catégorie :", available_cats, default=available_cats)
+    if selected_cats:
+        df = df[df['verdict'].isin(selected_cats)].reset_index(drop=True)
 
 # Recalcul des unités cumulées pour la période filtrée
 if not df.empty:
@@ -288,5 +295,4 @@ with pB:
 st.markdown("---")
 st.subheader("🗂️ Journal des Paris")
 st.dataframe(df.drop(columns=['id', 'result', 'unit', 'cumulative_units'], errors='ignore').sort_values(by='date', ascending=False), use_container_width=True)
-
-st.caption(f"Dashboard V14.3 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
+st.caption(f"Dashboard V14.7 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
