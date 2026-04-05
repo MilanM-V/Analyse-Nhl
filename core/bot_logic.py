@@ -381,17 +381,17 @@ class NhlBot:
             season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
             season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
             
-            # Application d'un malus de -0.5 points de Qualité pour les matchs à l'extérieur
-            adj_qs_ast = qs_ast - 0.5 if not (team in home_teams) else qs_ast
-            adj_qs_pts = qs_pts - 0.5 if not (team in home_teams) else qs_pts
+            # Application d'un malus de -0.75 points de Qualité pour les matchs à l'extérieur
+            adj_qs_ast = qs_ast - 0.75 if not (team in home_teams) else qs_ast
+            adj_qs_pts = qs_pts - 0.75 if not (team in home_teams) else qs_pts
 
             cat_ast = None
-            if season_a >= 0.45:
-                cat_ast = "ELITE_PASSEUR" if adj_qs_ast >= 10.5 else "SAFE_PASSEUR" if adj_qs_ast >= 9.5 else None
+            if season_a >= 0.35:
+                cat_ast = "ELITE_PASSEUR" if adj_qs_ast >= 10.75 else "SAFE_PASSEUR" if adj_qs_ast >= 9.75 else None
             
             cat_pts = None
-            if season_pts >= 0.80:
-                cat_pts = "ELITE_POINTEUR" if adj_qs_pts >= 10.5 else "SAFE_POINTEUR" if adj_qs_pts >= 9.5 else None
+            if season_pts >= 0.65:
+                cat_pts = "ELITE_POINTEUR" if adj_qs_pts >= 10.75 else "SAFE_POINTEUR" if adj_qs_pts >= 9.75 else None
 
             # Construction des dicts de picks
             common_data = {
