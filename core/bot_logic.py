@@ -4,42 +4,75 @@ import logging
 from datetime import datetime, timedelta
 import subprocess
 import sys
+from typing import Dict, List, Any, Optional, Set, Tuple
 
+import core.loaders as loaders
 import core.scraper as scraper
-import core.predictor_v12 as predictor_v11  # On garde l'alias pour limiter les modifs internes
-from core.odds_api import enrich_picks_with_odds, get_api_usage
+import core.predictor_v14 as predictor_v14
+import core.odds_scraper as odds_scraper
+import asyncio
+from core.datastore import DataStore
+from core.services import TelegramNotifier
 
 logger = logging.getLogger("NHL_Bot")
 
 class NhlBot:
-    def __init__(self, datastore, telegram_notifier):
+    """
+    Main logic for the NHL Betting Bot.
+    Handles scanning, wave management, analysis, and notification.
+    """
+    def __init__(self, datastore: DataStore, telegram_notifier: TelegramNotifier) -> None:
+        """
+        Initializes the NhlBot.
+
+        Args:
+            datastore: The DataStore instance for in-memory data access.
+            telegram_notifier: The TelegramNotifier instance for sending alerts.
+        """
         self.datastore = datastore
         self.telegram = telegram_notifier
 
-        self.matchs_traites = set()
-        self.compos_en_memoire = {}
-        self.vagues_envoyees = set()
-        self._is_scanning = False
+        self.matchs_traites: Set[str] = set()
+        self.matches_du_jour: List[Dict[str, Any]] = []
+        self.compos_en_memoire: Dict[str, Dict[str, Any]] = {}
+        self.vagues_envoyees: Set[str] = set()
+        self.matchs_envoyes: Set[str] = set()
+        self._is_scanning: bool = False
 
-        self.ecart_max_vague_min = 5
-        self.force_envoi_min_avant = 17
-        self.log_path = './stats/picks_log.csv'
-        self.players_log_path = './stats/players_log.csv'
-        self.fichier_compos_temp = "compos_live.txt"
+        self.ecart_max_vague_min: int = 5
+        self.force_envoi_min_avant: int = 17
+        self.log_path: str = './stats/picks_log.csv'
+        self.players_log_path: str = './stats/players_log.csv'
+        self.fichier_compos_temp: str = "compos_live.txt"
 
     @staticmethod
-    def get_nhl_session_date():
-        """Retourne la date de la session NHL actuelle (J-1 si < 07h00)."""
-        # Utiliser un décalage de 14h pour couvrir les scans de fin de nuit/début de matinée.
+    def get_nhl_session_date() -> str:
+        """
+        Returns the current NHL session date (J-1 if before 07:00 AM).
+        
+        Returns:
+            Date string in YYYY-MM-DD format.
+        """
         return (datetime.now() - timedelta(hours=14)).strftime("%Y-%m-%d")
 
-    def is_active_hours(self):
+    def is_active_hours(self) -> bool:
+        """
+        Checks if the current time is within active scanning hours.
+
+        Returns:
+            True if active, False otherwise.
+        """
         now = datetime.now()
         hour = now.hour
         return (hour > 16 or (hour == 16 and datetime.now().minute >= 30)) or hour <= 4
 
-    def update_daily_stats(self):
-        """Force l'update des fichiers CSV si pas fait aujourd'hui."""
+    def update_daily_stats(self) -> bool:
+        """
+        Ensures daily CSV stats are updated and loaded into DataStore.
+
+        Returns:
+            True if successful, False otherwise.
+        """
         now = datetime.now()
         nhl_date = self.get_nhl_session_date()
 
@@ -52,7 +85,6 @@ class NhlBot:
                 logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR API NHL EN COURS...")
 
             try:
-                # Isoler le sous-processus sur Windows pour éviter qu'il reçoive les signaux (Ctrl+C dummy de telegram)
                 cflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
                 subprocess.run([sys.executable, "fichier.py"], check=True, creationflags=cflags)
                 ok2, ko2 = self._check_csv_integrity()
@@ -69,7 +101,13 @@ class NhlBot:
 
         return True
 
-    def _check_csv_integrity(self):
+    def _check_csv_integrity(self) -> Tuple[bool, List[str]]:
+        """
+        Checks if all required CSV files exist and have minimum required lines.
+
+        Returns:
+            A tuple (is_ok, list_of_errors).
+        """
         required_csv = {
             "last 10.csv": 50, "Player Season Totals.csv": 200, "team.csv": 10,
             "power play.csv": 50, "goalies.csv": 30, "on_ice.csv": 50, "pk.csv": 10,
@@ -89,17 +127,19 @@ class NhlBot:
                 ko.append(f"{filename} (erreur : {e})")
         return (len(ko) == 0, ko)
 
-    def parse_match_datetime(self, time_str):
+    def parse_match_datetime(self, time_str: str) -> Optional[datetime]:
+        """Parses Flashscore time string into a datetime object."""
         now = datetime.now()
         try:
             dt = datetime.strptime(f"{time_str} {now.year}", "%d.%m. %H:%M %Y")
             if dt < now - timedelta(hours=12):
                 dt += timedelta(days=1)
             return dt
-        except:
+        except Exception:
             return None
 
-    def purge_old_matches(self):
+    def purge_old_matches(self) -> None:
+        """Removes matches older than 5 minutes from memory."""
         now = datetime.now()
         a_supprimer = []
         for match_id, data in self.compos_en_memoire.items():
@@ -110,7 +150,8 @@ class NhlBot:
             del self.compos_en_memoire[m_id]
             logger.info(f"   Match {m_id} purgé de la mémoire.")
 
-    def build_waves(self, match_ids):
+    def build_waves(self, match_ids: List[str]) -> List[List[str]]:
+        """Groups matches into waves based on their start time proximity."""
         if not match_ids:
             return []
         sorted_matches = sorted(
@@ -133,7 +174,8 @@ class NhlBot:
         waves.append(curr_wave)
         return waves
 
-    def is_wave_complete(self, wave_ids, all_matches):
+    def is_wave_complete(self, wave_ids: List[str], all_matches: List[Dict[str, Any]]) -> bool:
+        """Checks if all matches in a time window have lineups available."""
         first_dt = self.parse_match_datetime(self.compos_en_memoire[wave_ids[0]]["match_info"]["time"])
         last_dt = self.parse_match_datetime(self.compos_en_memoire[wave_ids[-1]]["match_info"]["time"])
         if not first_dt or not last_dt: return True
@@ -148,25 +190,21 @@ class NhlBot:
                     return False
         return True
 
-    def should_force_send(self, wave_ids):
+    def should_force_send(self, wave_ids: List[str]) -> bool:
+        """Checks if a wave should be sent regardless of completeness due to time limit."""
         first_dt = self.parse_match_datetime(self.compos_en_memoire[wave_ids[0]]["match_info"]["time"])
         if not first_dt: return False
         mins_before = (first_dt - datetime.now()).total_seconds() / 60
         return mins_before <= self.force_envoi_min_avant
 
-    def run_scan_cycle(self):
-        """Fonction principale de scan appelée par le scheduler toutes les 15 minutes."""
+    def run_scan_cycle(self) -> None:
+        """Main periodic task: scans Flashscore, updates lineups, and triggers evaluation."""
         if self._is_scanning:
             logger.warning("Un scan est déjà en cours. Ignoré pour éviter les lancements multiples.")
             return
 
-        if not self.is_active_hours():
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Hors horaires (05h-17h). En veille...")
-            return
-
         self._is_scanning = True
         try:
-
             if not self.update_daily_stats():
                 logger.warning("Analyse suspendue — CSV invalides.")
                 return
@@ -175,9 +213,13 @@ class NhlBot:
             self.purge_old_matches()
 
             with scraper.ScraperDriverContext() as driver:
-                matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/", driver=driver)
+                self.matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/", driver=driver)
 
-                for m in matches_du_jour:
+                if not self.is_active_hours():
+                    logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Hors horaires (05h-17h). Scan des compos ignoré.")
+                    return
+
+                for m in self.matches_du_jour:
                     match_id = m['id']
                     if match_id in self.matchs_traites:
                         continue
@@ -192,17 +234,24 @@ class NhlBot:
                     else:
                         logger.info(f"   {compo} — On réessaiera au prochain cycle.")
 
-            self.evaluate_waves(matches_du_jour)
+            self.evaluate_waves(self.matches_du_jour)
         except Exception as e:
-            logger.error(f"ERREUR CRITIQUE lors du run_scan_cycle : {e}")
+            logger.error(f"ERREUR CRITIQUE lors du run_scan_cycle : {e}", exc_info=True)
+            self.telegram.send_crash_alert(e, context="run_scan_cycle")
         finally:
             self._is_scanning = False
 
-    def evaluate_waves(self, matches_du_jour):
+    def evaluate_waves(self, matches_du_jour: List[Dict[str, Any]]) -> None:
+        """Processes available lineups into waves and triggers analysis."""
         if not self.compos_en_memoire:
             return
 
-        waves = self.build_waves(list(self.compos_en_memoire.keys()))
+        # Filtrer les matchs déjà envoyés pour éviter les doublons
+        pending_ids = [mid for mid in self.compos_en_memoire if mid not in self.matchs_envoyes]
+        if not pending_ids:
+            return
+
+        waves = self.build_waves(pending_ids)
         for wave in waves:
             wave_key = self.compos_en_memoire[wave[0]]["match_info"]["time"]
             if wave_key in self.vagues_envoyees:
@@ -215,13 +264,17 @@ class NhlBot:
                 logger.info(f"   Vague {wave_label} complète   ENVOI !")
                 self.run_analysis_and_send(wave, wave_label)
                 self.vagues_envoyees.add(wave_key)
+                for mid in wave:
+                    self.matchs_envoyes.add(mid)
             elif self.should_force_send(wave):
                 logger.info(f"   Vague {wave_label} forçage < {self.force_envoi_min_avant} min   ENVOI !")
                 self.run_analysis_and_send(wave, wave_label + " ⚠️forcé")
                 self.vagues_envoyees.add(wave_key)
+                for mid in wave:
+                    self.matchs_envoyes.add(mid)
 
-    def run_analysis_and_send(self, wave_ids, wave_label):
-        """Réalise l'analyse algorithmique en se basant sur self.datastore au lieu de relire le disque."""
+    def run_analysis_and_send(self, wave_ids: List[str], wave_label: str) -> None:
+        """Performs ML analysis on a wave of matches and sends results."""
         logger.info(f"\n--- ANALYSE VAGUE {wave_label} ---")
 
         with open(self.fichier_compos_temp, "w", encoding="utf-8") as f:
@@ -238,12 +291,11 @@ class NhlBot:
         ds = self.datastore
         TODAY = datetime.now().strftime("%Y-%m-%d")
 
-        matches_soir, compos_brutes, goalies = predictor_v11.parse_flashscore_file(
+        matches_soir, compos_brutes, goalies = predictor_v14.parse_flashscore_file(
             self.fichier_compos_temp, ds.known_players, ds.form_data
         )
 
-        # --- Construire l'index des lignes pour la synergie ---
-        lines_index = {}  # {joueur: set(coéquipiers sur la même ligne)}
+        lines_index = {}
         try:
             with open(self.fichier_compos_temp, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -260,320 +312,341 @@ class NhlBot:
         opponents = {t1: t2 for t1, t2 in matches_soir}
         opponents.update({t2: t1 for t1, t2 in matches_soir})
 
-        b2b_teams = [t for t in predictor_v11.get_b2b_teams('./stats/match.csv', TODAY) if t in opponents]
-        pp1_players = predictor_v11.get_auto_pp1_players(ds.form_data, ds.pp_stats, opponents.keys())
+        b2b_teams = [t for t in predictor_v14.get_b2b_teams('./stats/match.csv', TODAY) if t in opponents]
+        pp1_players = set(predictor_v14.get_auto_pp1_players(ds.form_data, ds.pp_stats, list(opponents.keys())))
+        seen_players = set()
 
-        # --- Passe 1 : Calculer tous les scores bruts ---
-        results = []
+        final_picks_but = []
+        final_picks_ast = []
+        final_picks_pts = []
+        all_evaluated_players = []
+
         for player in compos_filtrees:
+            if player in seen_players:
+                continue
+            seen_players.add(player)
+
             p_form = ds.form_data[player]
-            team = predictor_v11.clean_team_name(p_form['Team'])
+            team = predictor_v14.clean_team_name(p_form['Team'])
             if p_form['ATOI'] < 13.0 or team not in opponents: continue
 
             adv = opponents[team]
             adv_stats = ds.matchups.get(adv)
-            is_backup = predictor_v11.check_if_backup_goalie(goalies.get(adv, ""), ds.goalie_stats)
+            is_backup = predictor_v14.check_if_backup_goalie(goalies.get(adv, ""), ds.goalie_stats)
 
-            qs = predictor_v11.calculate_base_qs(
+            # Analyse BUTS
+            qs_but = predictor_v14.calculate_base_qs(
                 ds.v5_data.get(player, {}), p_form, adv_stats,
                 player in pp1_players, team in home_teams,
                 False, is_backup, team in b2b_teams and adv not in b2b_teams
             )
 
-            sog_score = predictor_v11.calculate_sog_score(
-                p_form, adv_stats, player in pp1_players, team in home_teams
+            # Analyse ASSISTS
+            qs_ast = predictor_v14.calculate_assist_qs(
+                ds.v5_data.get(player, {}), p_form, adv_stats,
+                player in pp1_players, team in home_teams,
+                False, is_backup, team in b2b_teams and adv not in b2b_teams
             )
 
-            if qs >= 0 or sog_score >= 0:
-                pos = p_form.get('pos', ds.v5_data.get(player, {}).get('Position', ''))
-                xgb_proba = predictor_v11.evaluate_xgb_proba(
-                    ds.v5_data.get(player, {}), p_form, adv_stats,
-                    team in home_teams, team in b2b_teams, adv in b2b_teams, 
-                    player in pp1_players, qs
-                )
+            # Analyse POINTS
+            qs_pts = predictor_v14.calculate_points_qs(
+                ds.v5_data.get(player, {}), p_form, adv_stats,
+                player in pp1_players, team in home_teams,
+                False, is_backup, team in b2b_teams and adv not in b2b_teams
+            )
 
-                xgb_sog_proba = predictor_v11.evaluate_sog_proba(
-                    p_form, adv_stats, player in pp1_players, team in home_teams, sog_score
-                )
+            # XGBoost & Catégories
+            xgb_proba = predictor_v14.evaluate_xgb_proba(
+                ds.v5_data.get(player, {}), p_form, adv_stats,
+                team in home_teams, team in b2b_teams, adv in b2b_teams, 
+                player in pp1_players, qs_but
+            ) if qs_but > 0 else 0.0
 
-                results.append({
-                    "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
-                    "Score": round(qs, 1), "hdcf": round(p_form.get('L10_iHDCF_G', 0), 2),
-                    "Proba": xgb_proba, "Pos": pos,
-                    "SogScore": round(sog_score, 1), "ProbaSog": xgb_sog_proba,
-                    "Categorie": None,  # Sera assigné en Passe 2
-                    "ixg": p_form.get('L10_ixG_G', 0), "sog": p_form.get('L10_SOG_G', 0), "PP1": "⭐" if player in pp1_players else "",
-                    "Backup": is_backup,
-                    "B2B": team in b2b_teams and adv not in b2b_teams,
-                })
+            # Analyse SOG (Tirs)
+            sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
+            sog_proba = predictor_v14.evaluate_sog_proba(p_form, adv_stats, player in pp1_players, team in home_teams, sog_score)
 
-        # --- Passe 2 : Détecter la synergie et assigner les catégories ---
-        elite_players = {r["Joueur"] for r in results if r["Score"] >= 11.5 and r["Proba"] >= 0.50}
+            cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
+                                         ds.v5_data.get(player, {}).get('Position', ''), xgb_proba,
+                                         sog_score, sog_proba)
+            
+            # Catégories PASSEURS (Optimisé via simulation 716k opportunités)
+            cat_ast = "ELITE_PASSEUR" if qs_ast >= 11.5 else "SAFE_PASSEUR" if qs_ast >= 10.0 else None
+            
+            # Catégories POINTEURS (Optimisé via simulation 716k opportunités)
+            cat_pts = "ELITE_POINTEUR" if qs_pts >= 12.0 else "SAFE_POINTEUR" if qs_pts >= 11.0 else None
 
-        for r in results:
-            # Bonus synergie : +0.3 si un coéquipier ELITE est sur la même ligne
-            linemates = lines_index.get(r["Joueur"], set())
-            has_elite_linemate = bool(linemates & elite_players - {r["Joueur"]})
-            if has_elite_linemate:
-                r["Score"] = round(r["Score"] + 0.3, 1)
-                r["Synergie"] = True
-            else:
-                r["Synergie"] = False
+            # Construction des dicts de picks
+            common_data = {
+                "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
+                "Pos": ds.v5_data.get(player, {}).get('Position', ''),
+                "PP1": "⭐" if player in pp1_players else "",
+                "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
+                "Synergie": False
+            }
 
-            r["Categorie"] = self._get_categorie(r["Score"], r["hdcf"], r["Pos"], r["Proba"], r.get("SogScore", 0), r.get("ProbaSog", 0))
+            if cat_but:
+                p_but = common_data.copy()
+                p_but.update({"Score": qs_but, "Proba": xgb_proba, "Categorie": cat_but})
+                final_picks_but.append(p_but)
+            
+            if cat_ast:
+                p_ast = common_data.copy()
+                p_ast.update({"Score": qs_ast, "Categorie": cat_ast})
+                final_picks_ast.append(p_ast)
 
-        final_picks = [r for r in sorted(results, key=lambda x: x["Score"], reverse=True) if r["Categorie"]]
+            if cat_pts:
+                p_pts = common_data.copy()
+                p_pts.update({"Score": qs_pts, "Categorie": cat_pts})
+                final_picks_pts.append(p_pts)
 
-        # Enrichir les picks avec les cotes réelles (si API disponible)
-        for match_key in {(r['Equipe'] if r['IsHome'] else r['Adversaire'], r['Adversaire'] if r['IsHome'] else r['Equipe']) for r in final_picks}:
-            home_full = predictor_v11.REVERSE_TEAM_MAPPING.get(match_key[0], match_key[0])
-            away_full = predictor_v11.REVERSE_TEAM_MAPPING.get(match_key[1], match_key[1])
-            enrich_picks_with_odds(final_picks, home_full, away_full)
+            # Log global
+            all_evaluated_players.append({
+                "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
+                "Score_But": qs_but, "Score_Assist": qs_ast, "Score_Point": qs_pts,
+                "Picked_But": bool(cat_but), "Picked_Assist": bool(cat_ast), "Picked_Point": bool(cat_pts),
+                "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
+                "p_form": p_form, "p_v5": ds.v5_data.get(player, {}), "adv_stats": adv_stats
+            })
 
-        self._send_telegram_recap(final_picks, wave_label, wave_ids)
-        if final_picks:
-            self._log_picks_and_players(final_picks, compos_brutes, wave_label, ds, opponents)
-        else:
-            logger.info("Aucun joueur n'a passé les filtres pour cette vague.")
+        # Synergie (Elite Linemates)
+        elite_players = {r["Joueur"] for r in final_picks_but if r["Categorie"] == "ELITE"}
+        for picks_list in (final_picks_but, final_picks_ast, final_picks_pts):
+            for r in picks_list:
+                linemates = lines_index.get(r["Joueur"], set())
+                if bool(linemates & elite_players - {r["Joueur"]}):
+                    r["Score"] = round(r["Score"] + 0.3, 1)
+                    r["Synergie"] = True
 
-    def _get_categorie(self, score, hdcf, pos, xgb_proba, sog_score=0, proba_sog=0):
-        """Seuils V13.1 avec XGBoost + SOG."""
+        # Odds enrichment
+        players_to_fetch = list({r["Joueur"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list})
+        if players_to_fetch:
+            logger.info(f"   Récupération asynchrone des cotes BettingPros pour {len(players_to_fetch)} joueur(s)...")
+            odds_map = asyncio.run(odds_scraper.fetch_multiple_odds(players_to_fetch))
+            
+            for p in final_picks_but:
+                p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
+            for p in final_picks_ast:
+                p["Cote"] = odds_map.get(p["Joueur"], {}).get("ASSISTS")
+            for p in final_picks_pts:
+                p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
+
+        # Telegram Recap (Multi-marchés)
+        self._send_telegram_v14(final_picks_but, final_picks_ast, final_picks_pts, wave_label, wave_ids)
+        
+        # Logging unifié
+        self._log_v14(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, ds)
+
+    def _get_categorie(self, score: float, hdcf: float, pos: str, xgb_proba: float, sog_score: float = 0, proba_sog: float = 0) -> Optional[str]:
+        """Assigns a betting category based on various metrics."""
         cat = None
         if pos in ('D', 'LD', 'RD'):
             if score >= 9.5 and xgb_proba >= 0.35: cat = "DÉFENSEUR"
         else:
-            if score >= 11.5 and xgb_proba >= 0.50: cat = "ELITE"
-            elif score >= 10.5 and xgb_proba >= 0.55: cat = "SAFE"
-        
-        # SOG couche : si ni Elite ni Safe mais a un fort SOG
-        if not cat and sog_score >= 8.0 and proba_sog >= 0.55:
+            if score >= 9.75 and xgb_proba >= 0.65: cat = "ELITE"
+            elif score >= 6.72 and xgb_proba >= 0.585: cat = "SAFE"
+            
+        # Fallback TIREUR : gros volume de tirs sans être un buteur d'élite
+        if not cat and sog_score >= 8.5 and proba_sog >= 0.65:
             cat = "TIREUR"
             
         return cat
 
-    def _send_telegram_recap(self, picks, wave_label, wave_ids):
-        msg = f"<b>🏒 NHL V13.1 — VAGUE {wave_label}</b>\n\n"
+    # Plafonds de mise par catégorie (Solution 4)
+    CATEGORY_CAPS = {
+        "ELITE": 3.0,
+        "SAFE": 2.5,
+        "DÉFENSEUR": 1.5,
+        "TIREUR": 1.5,
+        "ELITE_PASSEUR": 2.5,
+        "SAFE_PASSEUR": 2.0,
+        "ELITE_POINTEUR": 2.5,
+        "SAFE_POINTEUR": 2.0,
+    }
+
+    def _calculate_quarter_kelly(self, score: float, proba: float, cote: float, categorie: str = "") -> str:
+        """Calcule la recommandation de mise fractionnée Quarter Kelly.
         
-        # Grouper les picks par match
-        picks_by_match = {}
-        for r in picks:
-            match_str = f"{r['Equipe']} vs {r['Adversaire']}" if r['IsHome'] else f"{r['Adversaire']} vs {r['Equipe']}"
-            picks_by_match.setdefault(match_str, []).append(r)
+        Args:
+            score: QS Score du joueur.
+            proba: Probabilité XGBoost.
+            cote: Cote du bookmaker.
+            categorie: Catégorie du pick (ELITE, SAFE, DÉFENSEUR, etc.).
+        """
+        if not cote or cote <= 1.05:
+            return "1 U"
+        
+        b = cote - 1.0
+        p = proba
+        
+        # Pénalité IA pour les défenseurs : leur taux de conversion réel
+        # est bien inférieur à ce que l'XGBoost prédit (tirs lointains)
+        if categorie == "DÉFENSEUR":
+            p = p * 0.6
+        
+        # Fallback pour les passes/points si xgb_proba=0
+        if p == 0:
+            p = min((score / 15.0), 0.75)
+            
+        q = 1.0 - p
+        f = (p * b - q) / b
+        
+        # Plafond dynamique selon la catégorie
+        cap = self.CATEGORY_CAPS.get(categorie, 2.0)
+        
+        if f > 0:
+            quarter_f = f / 4.0
+            units = round(quarter_f * 100 * 2) / 2  # arrondi à 0.5 près
+            units = max(0.5, min(units, cap))
+            return f"{units} U"
+            
+        return "0.5 U"  # Si Value négative mathématique, limitation de casse
 
-        cat_emoji = {"ELITE": "🚀 ", "SAFE": "✅ ", "DÉFENSEUR": "🛡️ ", "TIREUR": "🎯 "}
-
-        # Parcourir tous les matchs de la vague pour s'assurer que même ceux sans picks sont affichés
+    def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
+        """Formats and sends the Telegram recap message with all markets."""
+        msg = f"<b>🏒 NHL V14.1 — VAGUE {wave_label}</b>\n\n"
+        
         for mid in wave_ids:
             data = self.compos_en_memoire.get(mid)
             if not data: continue
             
             m = data["match_info"]
-            # Récupérer les noms complets pour l'affichage (si déjà complets, ça ne change rien)
-            t1_full = predictor_v11.REVERSE_TEAM_MAPPING.get(m['home'], m['home'])
-            t2_full = predictor_v11.REVERSE_TEAM_MAPPING.get(m['away'], m['away'])
+            t1_full = loaders.REVERSE_TEAM_MAPPING.get(m['home'], m['home'])
+            t2_full = loaders.REVERSE_TEAM_MAPPING.get(m['away'], m['away'])
             
-            # On cherche les picks correspondant à ce match (ID interne format "AbbrHome vs AbbrAway")
-            h_abbr = predictor_v11.TEAM_MAPPING.get(m['home'], m['home'])
-            a_abbr = predictor_v11.TEAM_MAPPING.get(m['away'], m['away'])
+            h_abbr = loaders.TEAM_MAPPING.get(m['home'], m['home'])
+            a_abbr = loaders.TEAM_MAPPING.get(m['away'], m['away'])
             match_key = f"{h_abbr} vs {a_abbr}"
-            match_picks = picks_by_match.get(match_key, [])
-
+            
             msg += f"<b>Match {t1_full} vs {t2_full} :</b>\n"
             
-            if not match_picks:
-                msg += "  <i>⚠️ Aucun joueur n'a passé les filtres.</i>\n"
-            else:
-                for r in match_picks:
-                    cat = r['Categorie']
-                    icon = cat_emoji.get(cat, "✅ ")
-                    side = "🏠" if r['IsHome'] else "✈️"
-                    
-                    stat_str = f"QS:{float(r['Score']):.1f} | P:{(r.get('Proba', 0)*100):.1f}%"
-                    if cat == "TIREUR":
-                        stat_str = f"SOG:{float(r.get('SogScore', 0)):.1f} | P:{(r.get('ProbaSog', 0)*100):.1f}%"
+            # BUTEURS
+            m_buts = [r for r in buts if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            if m_buts:
+                msg += "  🔥 <i>Buteurs :</i>\n"
+                for r in m_buts:
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']}){cote_str}\n"
 
-                    msg += f"  • {side} <b>{r['Joueur']}</b> {icon}{cat} ({stat_str})"
-                    if r.get('Synergie') and cat != "TIREUR":
-                        msg += " 🔗"
+            # PASSEURS
+            m_ast = [r for r in assists if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            if m_ast:
+                msg += "  🅰️ <i>Passeurs :</i>\n"
+                for r in m_ast:
+                    label = r['Categorie'].replace("_PASSEUR", "")
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
 
-                    # Affichage des cotes et Value Bet si disponibles
-                    if r.get('Cote') is not None:
-                        if r.get('ValueBet'):
-                            msg += f" | 💰 @{r['Cote']} VALUE ({r['Kelly']:.1f}%)"
-                        else:
-                            msg += f" | @{r['Cote']} ❌"
-                    msg += "\n"
+            # POINTS
+            m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            if m_pts:
+                msg += "  🏆 <i>Pointeurs :</i>\n"
+                for r in m_pts:
+                    label = r['Categorie'].replace("_POINTEUR", "")
+                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
+            
+            if not m_buts and not m_ast and not m_pts:
+                msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"
             msg += "\n"
-
-        # Ajout du compteur API en bas du message
-        try:
-            usage = get_api_usage()
-            msg += f"<i>📊 API Cotes : {usage}</i>\n"
-        except Exception:
-            pass
 
         self.telegram.send_message(msg)
 
-    def _log_picks_and_players(self, picks, compos_brutes, wave_label, ds, opponents):
+    def _log_v14(self, buts, asts, pts, all_players, wave_label, ds):
+        """Logs everything to SQL tables and CSV files."""
         from core.database import insert_pick, insert_player
+        import csv
+        TODAY = self.get_nhl_session_date()
 
-        def format_row_for_european_csv(row_dict):
-            formatted_row = {}
-            for key, value in row_dict.items():
-                if isinstance(value, float):
-                    formatted_row[key] = str(value).replace('.', ',')
-                else:
-                    formatted_row[key] = value
-            return formatted_row
+        # SQL Logging
+        for p in buts:
+            f, v5, adv = ds.form_data.get(p["Joueur"], {}), ds.v5_data.get(p["Joueur"], {}), ds.matchups.get(p["Adversaire"], {})
+            insert_pick("picks", {
+                "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
+                "adversaire": p["Adversaire"], "score": p["Score"], "verdict": p["Categorie"],
+                "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
+                "ixg": f.get("L10_ixG_G", 0), "hdcf": f.get("L10_iHDCF_G", 0), "sog": f.get("L10_SOG_G", 0),
+                "atoi": f.get("ATOI", 0), "l10_g": f.get("L10_G_G", 0), "season_g": v5.get("G_GP", 0),
+                "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
+                "cf_pct": adv.get("CF_pct", 50), "hdca_g": adv.get("HDCA_G", 0),
+                "pk_pct": adv.get("PK%", 80), "rebounds": f.get("L10_Rebounds_G", 0),
+                "rush": f.get("L10_Rush_G", 0), "opp_b2b": adv.get("B2B", False),
+                "consec_goals": f.get("ConsecGoals", 0), "cote": p.get("Cote")
+            })
 
-        TODAY_DATE = self.get_nhl_session_date()
+        for p in asts:
+            f, v5, adv = ds.form_data.get(p["Joueur"], {}), ds.v5_data.get(p["Joueur"], {}), ds.matchups.get(p["Adversaire"], {})
+            insert_pick("picks_assists", {
+                "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
+                "adversaire": p["Adversaire"], "score": p["Score"], "verdict": p["Categorie"],
+                "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
+                "atoi": f.get("ATOI", 0), "l10_a": f.get("L10_A_G", 0), "season_a": v5.get("A_GP", 0),
+                "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
+                "cf_pct": adv.get("CF_pct", 50), "pk_pct": adv.get("PK%", 80),
+                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote")
+            })
 
+        for p in pts:
+            f, v5, adv = ds.form_data.get(p["Joueur"], {}), ds.v5_data.get(p["Joueur"], {}), ds.matchups.get(p["Adversaire"], {})
+            insert_pick("picks_points", {
+                "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
+                "adversaire": p["Adversaire"], "score": p["Score"], "verdict": p["Categorie"],
+                "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
+                "atoi": f.get("ATOI", 0), "l10_pts": f.get("L10_Pts_G", 0), "season_pts": v5.get("Pts_GP", 0),
+                "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
+                "cf_pct": adv.get("CF_pct", 50),
+                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote")
+            })
+
+        # Unified Player SQL Log
+        for p in all_players:
+            f, v5, adv = p["p_form"], p["p_v5"], p["adv_stats"]
+            insert_player({
+                "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"], "adversaire": p["Adversaire"],
+                "score_but": p["Score_But"], "score_assist": p["Score_Assist"], "score_point": p["Score_Point"],
+                "picked_but": p["Picked_But"], "picked_assist": p["Picked_Assist"], "picked_point": p["Picked_Point"],
+                "pp1": "⭐" in f.get("PP1", ""), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
+                "ixg": f.get("L10_ixG_G", 0), "hdcf": f.get("L10_iHDCF_G", 0), "sog": f.get("L10_SOG_G", 0),
+                "atoi": f.get("ATOI", 0), "l10_g": f.get("L10_G_G", 0), "l10_a": f.get("L10_A_G", 0), "l10_pts": f.get("L10_Pts_G", 0),
+                "season_g": v5.get("G_GP", 0), "season_a": v5.get("A_GP", 0), "season_pts": v5.get("Pts_GP", 0),
+                "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0) if adv else 0,
+                "cf_pct": adv.get("CF_pct", 50) if adv else 50, "hdca_g": adv.get("HDCA_G", 0) if adv else 0,
+                "pk_pct": adv.get("PK%", 80) if adv else 80,
+                "consec_goals": f.get("ConsecGoals", 0)
+            })
+
+        # CSV Logging (Backward compatibility & Analysis)
+        def format_csv(val):
+            return str(val).replace('.', ',') if isinstance(val, float) else val
+
+        # Picks CSV
         file_exists = os.path.exists(self.log_path)
         try:
             with open(self.log_path, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=[
-                    'date', 'vague', 'joueur', 'equipe', 'adversaire',
-                    'score', 'verdict', 'pp1', 'backup', 'b2b',
-                    'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
-                    'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
-                    'rebounds', 'rush', 'is_home', 'opp_b2b', 'consec_goals', 'but'
-                ])
-                if not file_exists:
-                    writer.writeheader()
-                seen_picks = set()  
-                for r in picks:
-                    pick_key = (r['Joueur'], r['Equipe'])
-                    if pick_key in seen_picks:
-                        continue
-                    seen_picks.add(pick_key)
-
-                    p_form = ds.form_data.get(r['Joueur'], {})
-                    p_v5 = ds.v5_data.get(r['Joueur'], {})
-                    adv_stats = ds.matchups.get(r['Adversaire'], {})
-
-                    row_data = {
-                        'date':       TODAY_DATE,
-                        'vague':      wave_label,
-                        'joueur':     r['Joueur'],
-                        'equipe':     r['Equipe'],
-                        'adversaire': r['Adversaire'],
-                        'score':      r['Score'],
-                        'verdict':    r['Categorie'],
-                        'pp1':        '⭐' in r.get('PP1', ''),
-                        'backup':     r.get('Backup', False),
-                        'b2b':        r.get('B2B', False),
-                        'ixg':        r.get('ixg', 0),
-                        'hdcf':       r.get('hdcf', 0),
-                        'sog':        r.get('sog', 0),
-                        'atoi':       round(p_form.get('ATOI', 0.0), 1),
-                        'l10_g':      round(p_form.get('L10_G_G', 0.0), 3),
-                        'season_g':   round(p_v5.get('G_GP', 0.0), 3),
-                        'pdo':        round(p_v5.get('PDO', 100.0), 1),
-                        'ga_g':       round(adv_stats.get('GA_G', 0.0), 2),
-                        'cf_pct':     round(adv_stats.get('CF_pct', 50.0), 1),
-                        'hdca_g':     round(adv_stats.get('HDCA_G', 0.0), 2),
-                        'pk_pct':     round(adv_stats.get('PK%', 80.0), 1),
-                        'rebounds':   round(p_form.get('L10_Rebounds_G', 0.0), 2),
-                        'rush':       round(p_form.get('L10_Rush_G', 0.0), 2),
-                        'is_home':    r.get('IsHome', False),
-                        'opp_b2b':    adv_stats.get('B2B', False),
-                        'consec_goals': p_form.get('ConsecGoals', 0),
-                        'but':        None
-                    }
-
-                    try:
-                        insert_pick(row_data)
-                    except Exception as err:
-                        logger.error(f"SQL Insert Pick failed: {err}")
-
-                    row_data['but'] = ''                                         
-                    writer.writerow(format_row_for_european_csv(row_data))
+                writer = csv.DictWriter(f, fieldnames=['date', 'vague', 'joueur', 'type', 'score', 'cote', 'but'])
+                if not file_exists: writer.writeheader()
+                for p in buts:
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "BUT", "score": p["Score"], "cote": p.get("Cote", ""), "but": ""}.items()})
+                for p in asts:
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "ASSIST", "score": p["Score"], "cote": p.get("Cote", ""), "but": ""}.items()})
+                for p in pts:
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "POINT", "score": p["Score"], "cote": p.get("Cote", ""), "but": ""}.items()})
         except Exception as e:
-            logger.error(f"[WARN] Erreur écriture picks_log.csv : {e}")
+            logger.error(f"Error writing to picks_log.csv: {e}")
 
-        picked_names = {r['Joueur'] for r in picks}
-        results_index = {r['Joueur']: r for r in picks}                                                                           
-
+        # Players CSV
         pl_exists = os.path.exists(self.players_log_path)
         try:
             with open(self.players_log_path, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=[
-                    'date', 'vague', 'joueur', 'equipe', 'adversaire',
-                    'score', 'picked', 'pp1', 'backup', 'b2b',
-                    'ixg', 'hdcf', 'sog', 'atoi', 'l10_g', 'season_g',
-                    'pdo', 'ga_g', 'cf_pct', 'hdca_g', 'pk_pct',
-                    'rebounds', 'rush', 'is_home', 'opp_b2b', 'consec_goals', 'but'
-                ])
-                if not pl_exists:
-                    writer.writeheader()
-                seen_players = set()
-                n_logged = 0
-                pp1_set = set(predictor_v11.get_auto_pp1_players(ds.form_data, ds.pp_stats, opponents.keys()))
-                for player in compos_brutes:
-                    if player in seen_players:
-                        continue
-                    seen_players.add(player)
-
-                    p_form = ds.form_data.get(player, {})
-                    p_v5 = ds.v5_data.get(player, {})
-                    team = predictor_v11.clean_team_name(p_form.get('Team', '')) if p_form else ''
-                    adv = opponents.get(team, '')
-                    adv_stats = ds.matchups.get(adv, {})
-
-                    r = results_index.get(player, {})
-
-                    row_data = {
-                        'date':       TODAY_DATE,
-                        'vague':      wave_label,
-                        'joueur':     player,
-                        'equipe':     team,
-                        'adversaire': adv,
-                        'score':      r.get('Score', 0.0) if isinstance(r.get('Score'), (int, float)) else 0.0,
-                        'picked':     player in picked_names,
-                        'pp1':        player in pp1_set,
-                        'backup':     False,                  
-                        'b2b':        False,                  
-                        'ixg':        round(p_form.get('L10_ixG_G', 0.0), 3),
-                        'hdcf':       round(p_form.get('L10_iHDCF_G', 0.0), 2),
-                        'sog':        round(p_form.get('L10_SOG_G', 0.0), 2),
-                        'atoi':       round(p_form.get('ATOI', 0.0), 1),
-                        'l10_g':      round(p_form.get('L10_G_G', 0.0), 3),
-                        'season_g':   round(p_v5.get('G_GP', 0.0), 3) if p_v5 else 0.0,
-                        'pdo':        round(p_v5.get('PDO', 100.0), 1) if p_v5 else 0.0,
-                        'ga_g':       round(adv_stats.get('GA_G', 0.0), 2) if adv_stats else 0.0,
-                        'cf_pct':     round(adv_stats.get('CF_pct', 50.0), 1) if adv_stats else 0.0,
-                        'hdca_g':     round(adv_stats.get('HDCA_G', 0.0), 2) if adv_stats else 0.0,
-                        'pk_pct':     round(adv_stats.get('PK%', 80.0), 1) if adv_stats else 0.0,
-                        'rebounds':   round(p_form.get('L10_Rebounds_G', 0.0), 2),
-                        'rush':       round(p_form.get('L10_Rush_G', 0.0), 2),
-                        'is_home':    r.get('IsHome', False),
-                        'opp_b2b':    adv_stats.get('B2B', False) if adv_stats else False,
-                        'consec_goals': p_form.get('ConsecGoals', 0) if p_form else 0,
-                        'but':        None
-                    }
-
-                    try:
-                        insert_player(row_data)
-                    except Exception as err:
-                        logger.error(f"SQL Insert Player failed: {err}")
-
-                    row_data['score'] = r.get('Score', '')
-                    row_data['season_g'] = round(p_v5.get('G_GP', 0.0), 3) if p_v5 else ''
-                    row_data['pdo'] = round(p_v5.get('PDO', 100.0), 1) if p_v5 else ''
-                    row_data['ga_g'] = round(adv_stats.get('GA_G', 0.0), 2) if adv_stats else ''
-                    row_data['cf_pct'] = round(adv_stats.get('CF_pct', 50.0), 1) if adv_stats else ''
-                    row_data['hdca_g'] = round(adv_stats.get('HDCA_G', 0.0), 2) if adv_stats else ''
-                    row_data['pk_pct'] = round(adv_stats.get('PK%', 80.0), 1) if adv_stats else ''
-                    row_data['but'] = ''
-
-                    writer.writerow(format_row_for_european_csv(row_data))
-                    n_logged += 1
-            logger.info(f"[OK] players_log.csv : {n_logged} joueurs loggués ({len(picked_names)} picks)")
+                writer = csv.DictWriter(f, fieldnames=['date', 'vague', 'joueur', 'score_but', 'score_ast', 'score_pts'])
+                if not pl_exists: writer.writeheader()
+                for p in all_players:
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "score_but": p["Score_But"], "score_ast": p["Score_Assist"], "score_pts": p["Score_Point"]}.items()})
         except Exception as e:
-            logger.error(f"[WARN] Erreur écriture players_log.csv : {e}")
+            logger.error(f"Error writing to players_log.csv: {e}")
 
-    def end_of_day_cleanup(self):
-        """Action de fin de journée : résolution des scores et archivage."""
+    def end_of_day_cleanup(self) -> None:
+        """Resolves pending picks and cleans up session data."""
         try:
             from core.updater import update_pending_picks
             logger.info("🔄 Auto-résolution des résultats dans la DB avant le rapport final...")
@@ -587,4 +660,5 @@ class NhlBot:
             self.matchs_traites.clear()
             self.compos_en_memoire.clear()
             self.vagues_envoyees.clear()
+            self.matchs_envoyes.clear()
             logger.info("Nettoyage de fin de journée terminé.")

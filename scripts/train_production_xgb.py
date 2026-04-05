@@ -48,7 +48,7 @@ def main():
     
     print("\n[RÉSULTATS DE L'ÉTAPE 1 : XGBOOST PROD]")
     
-    # Benchmark V10 seul
+    # Benchmark V14.1 seul
     v10_safe = test_df[test_df['qs_v10'] >= 10.5]
     wr_base = v10_safe['scored'].mean() * 100
     n_base = len(v10_safe)
