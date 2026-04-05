@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import os
 from datetime import datetime, timedelta
 st.set_page_config(
-    page_title="NHL Betting Bot | Dashboard V14.7",
+    page_title="NHL Betting Bot | Dashboard V15.4",
     page_icon="🏒",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -76,7 +76,7 @@ def load_data(table_name="picks", target_col="but"):
 
 # Sidebar
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
-st.sidebar.title("NHL Bot V14.7")
+st.sidebar.title("NHL Bot V15.4")
 market_filter = st.sidebar.radio("Marché à analyser :", ["GLOBAL", "BUTEURS", "PASSEURS", "POINTEURS"])
 time_filter = st.sidebar.selectbox("Période :", ["Tout (All Time)", "7 Derniers Jours", "30 Derniers Jours", "Saison Actuelle"])
 st.sidebar.markdown("---")
@@ -295,4 +295,4 @@ with pB:
 st.markdown("---")
 st.subheader("🗂️ Journal des Paris")
 st.dataframe(df.drop(columns=['id', 'result', 'unit', 'cumulative_units'], errors='ignore').sort_values(by='date', ascending=False), use_container_width=True)
-st.caption(f"Dashboard V14.7 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
+st.caption(f"Dashboard V15.4 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
