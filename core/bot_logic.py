@@ -370,10 +370,10 @@ class NhlBot:
                                          ds.v5_data.get(player, {}).get('Position', ''), xgb_proba,
                                          sog_score, sog_proba)
             
-            # Catégories PASSEURS (Optimisé via simulation 716k opportunités)
+            # Catégories PASSEURS (Retour aux seuils V14 prouvés plus solides)
             cat_ast = "ELITE_PASSEUR" if qs_ast >= 11.5 else "SAFE_PASSEUR" if qs_ast >= 10.0 else None
             
-            # Catégories POINTEURS (Optimisé via simulation 716k opportunités)
+            # Catégories POINTEURS (Retour aux seuils V14 prouvés plus solides)
             cat_pts = "ELITE_POINTEUR" if qs_pts >= 12.0 else "SAFE_POINTEUR" if qs_pts >= 11.0 else None
 
             # Construction des dicts de picks
@@ -441,10 +441,12 @@ class NhlBot:
         """Assigns a betting category based on various metrics."""
         cat = None
         if pos in ('D', 'LD', 'RD'):
-            if score >= 9.5 and xgb_proba >= 0.35: cat = "DÉFENSEUR"
-        else:
-            if score >= 9.75 and xgb_proba >= 0.65: cat = "ELITE"
-            elif score >= 6.72 and xgb_proba >= 0.585: cat = "SAFE"
+            return None  # Blocage complet des défenseurs sur le marché des Buteurs (Suite analyse V14)
+            
+        if score >= 9.75 and xgb_proba >= 0.65: 
+            cat = "ELITE"
+        elif score >= 6.72 and xgb_proba >= 0.585: 
+            cat = "SAFE"
             
         # Fallback TIREUR : gros volume de tirs sans être un buteur d'élite
         if not cat and sog_score >= 8.5 and proba_sog >= 0.65:

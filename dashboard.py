@@ -57,10 +57,12 @@ def load_data(table_name="picks", target_col="but"):
             df['result'] = pd.to_numeric(df[target_col], errors='coerce').fillna(0).astype(int)
             # Calcul du profit avec la cote si disponible
             if 'cote' in df.columns:
-                df['cote'] = pd.to_numeric(df['cote'], errors='coerce')
-                mean_cote = round(df['cote'].mean(), 2)
+                df['real_cote'] = pd.to_numeric(df['cote'], errors='coerce')
+                
+                mean_cote = round(df['real_cote'].mean(), 2)
                 mean_cote = mean_cote if pd.notna(mean_cote) else 1.85
-                df['cote'] = df['cote'].fillna(mean_cote)
+                
+                df['cote'] = df['real_cote'].fillna(mean_cote)
                 df['unit'] = df.apply(lambda row: (row['cote'] - 1) if row['result'] > 0 else -1, axis=1)
             else:
                 df['unit'] = df['result'].apply(lambda x: 1 if x > 0 else -1)
@@ -131,7 +133,10 @@ total_won = df['result'].sum()
 global_units = round(df['unit'].sum(), 1)
 winrate = (total_won / total_played * 100) if total_played > 0 else 0
 roi_pct = round((global_units / total_played) * 100, 1) if total_played > 0 else 0
-avg_cote = round(df['cote'].mean(), 2) if 'cote' in df.columns else "N/A"
+if 'real_cote' in df.columns and pd.notna(df['real_cote'].mean()):
+    avg_cote = round(df['real_cote'].mean(), 2)
+else:
+    avg_cote = "N/A"
 
 col1, col2, col3 = st.columns(3)
 
