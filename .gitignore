@@ -4,4 +4,26 @@ watchdog.log
 stats/
 compos_live.txt
 analyse/
+tests/
 __pycache__/
+*.db
+*.sqlite
+*.sqlite3
+
+*.log
+*.txt
+!requirements.txt
+.context/
+# Infrastructure IA
+.antigravity/
+.clinerules
+.cursorrules
+conductor/
+.context/
+AGENTS.md
+CLAUDE.md
+CONTEXT.md  
+memory/
+artifacts/
+.github/
+.windsurfrules

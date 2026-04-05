@@ -1,6 +1,9 @@
 pandas
+numpy
 selenium
 python-dotenv
 requests
-undetected-chromedriver
 scikit-learn
+joblib
+python-telegram-bot[job-queue]
+xgboost
