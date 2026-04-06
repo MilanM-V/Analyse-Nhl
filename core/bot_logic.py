@@ -522,7 +522,18 @@ class NhlBot:
         return "0.5 U"  # Si Value négative mathématique, limitation de casse
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
-        """Formats and sends the Telegram recap message with all markets."""
+        """Formats and sends the Telegram recap message with all markets. 
+        Sorts the picks by Category (ELITE > SAFE > etc.) and then by QS Score."""
+        
+        def cat_priority(cat: str) -> int:
+            if not cat: return 99
+            c = cat.upper()
+            if 'ELITE' in c: return 1
+            if 'SAFE' in c: return 2
+            if 'TIREUR' in c: return 3
+            if 'DÉFENSEUR' in c: return 4
+            return 5
+            
         msg = f"<b>🏒 NHL V14.1 — VAGUE {wave_label}</b>\n\n"
         
         for mid in wave_ids:
@@ -541,6 +552,7 @@ class NhlBot:
             
             # BUTEURS
             m_buts = [r for r in buts if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            m_buts.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
             if m_buts:
                 msg += "  🔥 <i>Buteurs :</i>\n"
                 for r in m_buts:
@@ -549,6 +561,7 @@ class NhlBot:
 
             # PASSEURS
             m_ast = [r for r in assists if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            m_ast.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
             if m_ast:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
@@ -558,6 +571,7 @@ class NhlBot:
 
             # POINTS
             m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            m_pts.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
             if m_pts:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
@@ -570,6 +584,7 @@ class NhlBot:
             msg += "\n"
 
         self.telegram.send_message(msg)
+
 
     def _log_v14(self, buts, asts, pts, all_players, wave_label, ds):
         """Logs everything to SQL tables and CSV files."""
