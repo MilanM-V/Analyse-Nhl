@@ -1,0 +1,43 @@
+# ─── NHL Bot Configuration ───────────────────────────────────────────────────
+# Source unique pour tous les seuils et paramètres du bot.
+# Modifier ici au lieu de chercher dans le code.
+
+[thresholds.buteurs]
+elite_qs = 9.75
+elite_xgb = 0.65
+safe_qs = 6.72
+safe_xgb = 0.585
+season_g_min = 0.20
+l10_sog_min = 2.0
+
+[thresholds.passeurs]
+qs_min = 10.25
+season_a_min = 0.35
+away_malus = 1.0
+
+[thresholds.pointeurs]
+qs_min = 10.75
+season_pts_min = 0.65
+away_malus = 1.0
+
+[thresholds.general]
+atoi_min = 13.0
+
+[kelly]
+elite_cap = 3.0
+safe_cap = 2.5
+passeur_cap = 2.0
+pointeur_cap = 2.0
+
+[wave]
+ecart_max_min = 5
+force_envoi_min_avant = 17
+
+[csv]
+# Séparateur décimal pour les CSV de log ("," = format FR, "." = international)
+decimal_separator = ","
+
+[api]
+season_id = "20252026"
+game_type = "2"
+semaphore_limit = 20

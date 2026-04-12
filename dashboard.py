@@ -83,9 +83,9 @@ st.sidebar.markdown("---")
 st.sidebar.info("Connecté à `bot_database.db`")
 
 # Load all data
-df_buts = load_data("picks", "but")
-df_asts = load_data("picks_assists", "assist")
-df_pts = load_data("picks_points", "point")
+df_buts_raw = load_data("picks", "but")
+df_asts_raw = load_data("picks_assists", "assist")
+df_pts_raw = load_data("picks_points", "point")
 
 def apply_time_filter(data_df, time_selection):
     if data_df.empty: return data_df
@@ -99,9 +99,9 @@ def apply_time_filter(data_df, time_selection):
         return data_df[data_df['date'] >= pd.to_datetime(f'{season_start_year}-10-01')]
     return data_df
 
-df_buts = apply_time_filter(df_buts, time_filter)
-df_asts = apply_time_filter(df_asts, time_filter)
-df_pts = apply_time_filter(df_pts, time_filter)
+df_buts = apply_time_filter(df_buts_raw, time_filter)
+df_asts = apply_time_filter(df_asts_raw, time_filter)
+df_pts = apply_time_filter(df_pts_raw, time_filter)
 
 # Combine for global or filter
 if market_filter == "GLOBAL":
@@ -130,9 +130,85 @@ if not df.empty:
 
 st.title(f"📊 NHL Betting Bot — {title_suffix}")
 
-if df.empty:
-    st.warning(f"⚠️ Aucune donnée disponible pour le marché {market_filter}.")
-    st.stop()
+tab_general, tab_analyse = st.tabs(["📊 Vue Générale", "🔬 Analyse Avancée"])
+
+with tab_analyse:
+    st.subheader("🔬 Analyse Avancée (Multi-Marchés)")
+    
+    col_date, _ = st.columns([1, 3])
+    with col_date:
+        start_date = st.date_input("Date de commencement de l'analyse :", value=pd.to_datetime('2023-10-01').date())
+
+    try:
+        df_all_raw = pd.concat([df_buts_raw, df_asts_raw, df_pts_raw], ignore_index=True)
+    except NameError:
+        df_all_raw = pd.DataFrame()
+
+    if not df_all_raw.empty:
+        df_all_raw['date_just_date'] = df_all_raw['date'].dt.date
+        df_analyse = df_all_raw[df_all_raw['date_just_date'] >= start_date].copy()
+        
+        if not df_analyse.empty:
+            total_paris = len(df_analyse)
+            jours_uniques = df_analyse['date_just_date'].nunique()
+            pickrate_soir = total_paris / jours_uniques if jours_uniques > 0 else 0
+            winrate_global = (df_analyse['result'].sum() / total_paris * 100)
+            
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f'<div class="metric-container"><div class="metric-label">Pickrate / Soir</div><div class="metric-value">{pickrate_soir:.1f}</div></div>', unsafe_allow_html=True)
+            with c2:
+                st.markdown(f'<div class="metric-container"><div class="metric-label">Paris Totaux (Période)</div><div class="metric-value">{total_paris}</div></div>', unsafe_allow_html=True)
+            with c3:
+                st.markdown(f'<div class="metric-container"><div class="metric-label">Winrate Global</div><div class="metric-value">{winrate_global:.1f}%</div></div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            a1, a2 = st.columns(2)
+            with a1:
+                st.subheader("📊 Performances par Catégorie")
+                cat_stats = df_analyse.groupby('verdict').agg(
+                    Paris=('unit', 'count'),
+                    Victoires=('result', 'sum'),
+                    Unités=('unit', 'sum')
+                ).reset_index()
+                cat_stats['Winrate (%)'] = (cat_stats['Victoires'] / cat_stats['Paris'] * 100).round(1)
+                cat_stats['ROI (%)'] = (cat_stats['Unités'] / cat_stats['Paris'] * 100).round(1)
+                cat_stats = cat_stats.sort_values('Unités', ascending=False)
+                
+                # Render logic
+                st.dataframe(cat_stats, use_container_width=True, hide_index=True)
+                
+            with a2:
+                st.subheader("📈 Top Rentabilité")
+                fig_rent = px.bar(cat_stats, x='verdict', y='Unités', color='Winrate (%)', 
+                                  color_continuous_scale="RdYlGn", text_auto='.1f',
+                                  template='plotly_dark')
+                st.plotly_chart(fig_rent, use_container_width=True)
+
+            st.markdown("---")
+            
+            st.subheader("🚀 Évolution Cumulée du Profit par Marché")
+            daily_market = df_analyse.groupby(['date_just_date', 'market'])['unit'].sum().reset_index()
+            daily_market = daily_market.sort_values('date_just_date')
+            
+            # Use cumulative sum with groupby
+            daily_market['Profit Cumulé'] = daily_market.groupby('market')['unit'].cumsum()
+            
+            fig_roi = px.line(daily_market, x='date_just_date', y='Profit Cumulé', color='market',
+                              markers=True, line_shape="spline", template='plotly_dark',
+                              labels={'date_just_date': 'Date', 'Profit Cumulé': 'Profit Cumulé (U)'})
+            fig_roi.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.3)")
+            st.plotly_chart(fig_roi, use_container_width=True)
+        else:
+            st.info("Aucun pari trouvé sur la période sélectionnée.")
+    else:
+        st.info("La base de données est entièrement vide.")
+
+with tab_general:
+    if df.empty:
+        st.warning(f"⚠️ Aucune donnée disponible pour le marché {market_filter}.")
+        st.stop()
 
 # ----- ROW 1: KPIs (2 lignes de 3) -----
 total_played = len(df)

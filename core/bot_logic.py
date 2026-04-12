@@ -1,6 +1,7 @@
 import os
 import csv
 import logging
+import threading
 from datetime import datetime, timedelta
 import subprocess
 import sys
@@ -13,6 +14,7 @@ import core.odds_scraper as odds_scraper
 import asyncio
 from core.datastore import DataStore
 from core.services import TelegramNotifier
+from config.settings import cfg
 
 logger = logging.getLogger("NHL_Bot")
 
@@ -37,10 +39,10 @@ class NhlBot:
         self.compos_en_memoire: Dict[str, Dict[str, Any]] = {}
         self.vagues_envoyees: Set[str] = set()
         self.matchs_envoyes: Set[str] = set()
-        self._is_scanning: bool = False
+        self._scan_lock = threading.Lock()
 
-        self.ecart_max_vague_min: int = 5
-        self.force_envoi_min_avant: int = 17
+        self.ecart_max_vague_min: int = cfg.wave.ecart_max_min
+        self.force_envoi_min_avant: int = cfg.wave.force_envoi_min_avant
         self.log_path: str = './stats/picks_log.csv'
         self.players_log_path: str = './stats/players_log.csv'
         self.fichier_compos_temp: str = "compos_live.txt"
@@ -199,11 +201,9 @@ class NhlBot:
 
     def run_scan_cycle(self) -> None:
         """Main periodic task: scans Flashscore, updates lineups, and triggers evaluation."""
-        if self._is_scanning:
+        if not self._scan_lock.acquire(blocking=False):
             logger.warning("Un scan est déjà en cours. Ignoré pour éviter les lancements multiples.")
             return
-
-        self._is_scanning = True
         try:
             if not self.update_daily_stats():
                 logger.warning("Analyse suspendue — CSV invalides.")
@@ -239,7 +239,7 @@ class NhlBot:
             logger.error(f"ERREUR CRITIQUE lors du run_scan_cycle : {e}", exc_info=True)
             self.telegram.send_crash_alert(e, context="run_scan_cycle")
         finally:
-            self._is_scanning = False
+            self._scan_lock.release()
 
     def evaluate_waves(self, matches_du_jour: List[Dict[str, Any]]) -> None:
         """Processes available lineups into waves and triggers analysis."""
@@ -328,7 +328,7 @@ class NhlBot:
 
             p_form = ds.form_data[player]
             team = predictor_v14.clean_team_name(p_form['Team'])
-            if p_form['ATOI'] < 13.0 or team not in opponents: continue
+            if p_form['ATOI'] < cfg.thresholds.general.atoi_min or team not in opponents: continue
 
             adv = opponents[team]
             adv_stats = ds.matchups.get(adv)
@@ -372,26 +372,26 @@ class NhlBot:
             l10_sog = float(p_form.get('L10_SOG_G', 2.0))
             
             cat_but = None
-            if season_g >= 0.20 and l10_sog >= 2.0:
+            if season_g >= cfg.thresholds.buteurs.season_g_min and l10_sog >= cfg.thresholds.buteurs.l10_sog_min:
                 cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
                                              v5_p.get('Position', ''), xgb_proba,
                                              sog_score, sog_proba)
             
-            # Catégories PASSEURS & POINTEURS (Optimisées avec malus "Away" et filtre Superstar)
+            # Catégories PASSEURS & POINTEURS (Seuil unique + malus Away depuis config)
             season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
             season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
             
-            # Application d'un malus de -0.75 points de Qualité pour les matchs à l'extérieur
-            adj_qs_ast = qs_ast - 0.75 if not (team in home_teams) else qs_ast
-            adj_qs_pts = qs_pts - 0.75 if not (team in home_teams) else qs_pts
+            # Application du malus Away depuis la config
+            adj_qs_ast = qs_ast - cfg.thresholds.passeurs.away_malus if not (team in home_teams) else qs_ast
+            adj_qs_pts = qs_pts - cfg.thresholds.pointeurs.away_malus if not (team in home_teams) else qs_pts
 
             cat_ast = None
-            if season_a >= 0.35:
-                cat_ast = "ELITE_PASSEUR" if adj_qs_ast >= 10.75 else "SAFE_PASSEUR" if adj_qs_ast >= 9.75 else None
+            if season_a >= cfg.thresholds.passeurs.season_a_min:
+                cat_ast = "PASSEUR" if adj_qs_ast >= cfg.thresholds.passeurs.qs_min else None
             
             cat_pts = None
-            if season_pts >= 0.65:
-                cat_pts = "ELITE_POINTEUR" if adj_qs_pts >= 10.75 else "SAFE_POINTEUR" if adj_qs_pts >= 9.75 else None
+            if season_pts >= cfg.thresholds.pointeurs.season_pts_min:
+                cat_pts = "POINTEUR" if adj_qs_pts >= cfg.thresholds.pointeurs.qs_min else None
 
             # Construction des dicts de picks
             common_data = {
@@ -455,32 +455,27 @@ class NhlBot:
         self._log_v14(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, ds)
 
     def _get_categorie(self, score: float, hdcf: float, pos: str, xgb_proba: float, sog_score: float = 0, proba_sog: float = 0) -> Optional[str]:
-        """Assigns a betting category based on various metrics."""
-        cat = None
+        """Assigns a betting category based on various metrics.
+        
+        Returns:
+            'ELITE' for top-tier scorers, 'SAFE' for reliable picks, or None.
+        """
         if pos in ('D', 'LD', 'RD'):
             return None  # Blocage complet des défenseurs sur le marché des Buteurs (Suite analyse V14)
             
-        if score >= 9.75 and xgb_proba >= 0.65: 
-            cat = "ELITE"
-        elif score >= 6.72 and xgb_proba >= 0.585: 
-            cat = "SAFE"
+        if score >= cfg.thresholds.buteurs.elite_qs and xgb_proba >= cfg.thresholds.buteurs.elite_xgb: 
+            return "ELITE"
+        if score >= cfg.thresholds.buteurs.safe_qs and xgb_proba >= cfg.thresholds.buteurs.safe_xgb: 
+            return "SAFE"
             
-        # Fallback TIREUR : gros volume de tirs sans être un buteur d'élite
-        if not cat and sog_score >= 8.5 and proba_sog >= 0.65:
-            cat = "TIREUR"
-            
-        return cat
+        return None
 
-    # Plafonds de mise par catégorie (Solution 4)
+    # Plafonds de mise par catégorie (depuis config/settings.toml)
     CATEGORY_CAPS = {
-        "ELITE": 3.0,
-        "SAFE": 2.5,
-        "DÉFENSEUR": 1.5,
-        "TIREUR": 1.5,
-        "ELITE_PASSEUR": 2.5,
-        "SAFE_PASSEUR": 2.0,
-        "ELITE_POINTEUR": 2.5,
-        "SAFE_POINTEUR": 2.0,
+        "ELITE": cfg.kelly.elite_cap,
+        "SAFE": cfg.kelly.safe_cap,
+        "PASSEUR": cfg.kelly.passeur_cap,
+        "POINTEUR": cfg.kelly.pointeur_cap,
     }
 
     def _calculate_quarter_kelly(self, score: float, proba: float, cote: float, categorie: str = "") -> str:
@@ -530,8 +525,8 @@ class NhlBot:
             c = cat.upper()
             if 'ELITE' in c: return 1
             if 'SAFE' in c: return 2
-            if 'TIREUR' in c: return 3
-            if 'DÉFENSEUR' in c: return 4
+            if c == 'PASSEUR': return 3
+            if c == 'POINTEUR': return 4
             return 5
             
         msg = f"<b>🏒 NHL V14.1 — VAGUE {wave_label}</b>\n\n"
@@ -565,9 +560,8 @@ class NhlBot:
             if m_ast:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
-                    label = r['Categorie'].replace("_PASSEUR", "")
                     cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b>{cote_str}\n"
 
             # POINTS
             m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
@@ -575,9 +569,8 @@ class NhlBot:
             if m_pts:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
-                    label = r['Categorie'].replace("_POINTEUR", "")
                     cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({label}){cote_str}\n"
+                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b>{cote_str}\n"
             
             if not m_buts and not m_ast and not m_pts:
                 msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"
@@ -651,7 +644,7 @@ class NhlBot:
 
         # CSV Logging (Backward compatibility & Analysis)
         def format_csv(val):
-            return str(val).replace('.', ',') if isinstance(val, float) else val
+            return str(val).replace('.', cfg.csv.decimal_separator) if isinstance(val, float) else val
 
         # Picks CSV
         file_exists = os.path.exists(self.log_path)

@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timedelta
 import math
 import os
+import threading
 import logging
 import joblib
 import numpy as np
@@ -361,20 +362,24 @@ def calculate_points_qs(v5_stats: Dict[str, Any], p_form: Dict[str, Any], opp_st
     
     return qs
 
+_xgb_lock = threading.Lock()
 _xgb_prod_model = None
+
 def get_xgb_prod_model() -> Optional[Dict[str, Any]]:
-    """Lazy loads the production XGBoost model for goal prediction."""
+    """Lazy loads the production XGBoost model for goal prediction (thread-safe)."""
     global _xgb_prod_model
     if _xgb_prod_model is None:
-        try:
-            model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'prod_model_v5.pkl')
-            if os.path.exists(model_path):
-                _xgb_prod_model = joblib.load(model_path)
-            else:
-                logger.error(f"XGBoost model file not found at {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading XGBoost model: {e}")
-            return None
+        with _xgb_lock:
+            if _xgb_prod_model is None:
+                try:
+                    model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'prod_model_v5.pkl')
+                    if os.path.exists(model_path):
+                        _xgb_prod_model = joblib.load(model_path)
+                    else:
+                        logger.error(f"XGBoost model file not found at {model_path}")
+                except Exception as e:
+                    logger.error(f"Error loading XGBoost model: {e}")
+                    return None
     return _xgb_prod_model
 
 def evaluate_xgb_proba(v5_stats: Dict[str, Any], p_form: Dict[str, Any], opp_stats: Dict[str, float], 
@@ -451,20 +456,24 @@ def calculate_sog_score(p_form: Dict[str, Any], opp_stats: Dict[str, float], is_
 
     return score
 
+_sog_lock = threading.Lock()
 _sog_model = None
+
 def get_sog_model() -> Optional[Dict[str, Any]]:
-    """Lazy loads the SOG prediction XGBoost model."""
+    """Lazy loads the SOG prediction XGBoost model (thread-safe)."""
     global _sog_model
     if _sog_model is None:
-        try:
-            model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'sog_model_v1.pkl')
-            if os.path.exists(model_path):
-                _sog_model = joblib.load(model_path)
-            else:
-                logger.error(f"SOG model file not found at {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading SOG model: {e}")
-            return None
+        with _sog_lock:
+            if _sog_model is None:
+                try:
+                    model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'sog_model_v1.pkl')
+                    if os.path.exists(model_path):
+                        _sog_model = joblib.load(model_path)
+                    else:
+                        logger.error(f"SOG model file not found at {model_path}")
+                except Exception as e:
+                    logger.error(f"Error loading SOG model: {e}")
+                    return None
     return _sog_model
 
 def evaluate_sog_proba(p_form: Dict[str, Any], opp_stats: Dict[str, float], is_pp1: bool, is_home: bool, sog_score: float) -> float:
