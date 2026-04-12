@@ -162,7 +162,8 @@ def _extract_odds_from_data(data: dict) -> dict:
     book_map = {b.get('id'): b.get('name') for b in data.get('books', [])}
 
     for offer in data.get('offers', []):
-        nom_marche = market_map.get(offer.get('market_id'), "").lower()
+        val = market_map.get(offer.get('market_id'), "")
+        nom_marche = str(val if val is not None else "").lower()
         
         cat_key = None
         if "goalie" not in nom_marche:
@@ -177,13 +178,11 @@ def _extract_odds_from_data(data: dict) -> dict:
             for selection in offer.get('selections', []):
                 if selection.get('label') == "Over":
                     for b_data in selection.get('books', []):
-                        if book_map.get(b_data.get('id')) == "BettingPros Consensus":
-                            for line_info in b_data.get('lines', []):
-                                if line_info.get('line') == 0.5:
-                                    cote_fr = american_to_decimal(line_info.get('cost'))
-                                    if result[cat_key] is None or cote_fr > result[cat_key]:
-                                        result[cat_key] = cote_fr
-                                    break
+                        for line_info in b_data.get('lines', []):
+                            if line_info.get('line') == 0.5:
+                                cote_fr = american_to_decimal(line_info.get('cost'))
+                                if result[cat_key] is None or cote_fr > result[cat_key]:
+                                    result[cat_key] = cote_fr
     return result
 
 async def fetch_player_odds(session, player_name: str) -> dict:

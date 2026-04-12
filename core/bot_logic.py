@@ -440,9 +440,24 @@ class NhlBot:
 
         # Odds enrichment & +EV Filtering
         players_to_fetch = list({r["Joueur"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list})
+        odds_map = {}
         if players_to_fetch:
             logger.info(f"   Récupération asynchrone des cotes BettingPros pour {len(players_to_fetch)} joueur(s)...")
             odds_map = asyncio.run(odds_scraper.fetch_multiple_odds(players_to_fetch))
+            
+            # Vérification de panne totale du scraper de cotes
+            if odds_map:
+                # odds_map contient dicts avec 'player', 'BUTS', 'ASSISTS', 'POINTS'
+                # On vérifie s'il y a au moins une cote trouvée parmi tous les joueurs testés
+                any_odds_found = any(
+                    (data.get('BUTS') is not None) or 
+                    (data.get('ASSISTS') is not None) or 
+                    (data.get('POINTS') is not None)
+                    for data in odds_map.values()
+                )
+                if not any_odds_found:
+                    logger.error("ALERTE CRITIQUE : AUCUNE COTE TROUVÉE POUR AUCUN JOUEUR DE LA VAGUE !")
+                    self.telegram.send_message(f"🚨 <b>ALERTE CRITIQUE SCRAPER</b> 🚨\nLe scraper de cotes n'a trouvé absolument <b>aucune cote</b> pour l'ensemble des {len(players_to_fetch)} joueurs de la vague {wave_label}.\nBettingPros a probablement bloqué l'accès ou la structure HTML a changé.")
             
             for p in final_picks_but:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
@@ -457,7 +472,8 @@ class NhlBot:
         # On ne conserve que les paris rentables sur le long terme (marge > 2%)
         def is_ev_positive(p: dict) -> bool:
             if not p.get("Cote") or p["Cote"] <= 1.05:
-                return True # Si pas de cote, on bypass le filtre par sécurité
+                logger.debug(f"Pari Rejeté (Absence de Cote) : {p['Joueur']}")
+                return False # Si pas de cote, le joueur n'est PAS jouable !
             ev = (p["Proba"] * p["Cote"]) - 1.0
             if ev < 0.02:
                 logger.debug(f"Pari Rejeté (-EV) : {p['Joueur']} (EV: {ev*100:.1f}%)")
