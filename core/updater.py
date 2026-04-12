@@ -3,6 +3,7 @@ import logging
 import unicodedata
 from datetime import datetime
 from  core.database import get_connection
+from core.services import safe_get
 
 logger = logging.getLogger("NHL_Bot")
 
@@ -65,7 +66,13 @@ def update_pending_picks():
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute("SELECT DISTINCT date FROM picks WHERE but IS NULL OR but = ''")
+    c.execute("""
+        SELECT DISTINCT date FROM picks WHERE but IS NULL OR but = ''
+        UNION
+        SELECT DISTINCT date FROM picks_assists WHERE assist IS NULL OR assist = ''
+        UNION
+        SELECT DISTINCT date FROM picks_points WHERE point IS NULL OR point = ''
+    """)
     dates_to_check = [r[0] for r in c.fetchall()]
 
     if not dates_to_check:
@@ -79,8 +86,8 @@ def update_pending_picks():
 
     for date_str in dates_to_check:
         try:
-
-            sched = requests.get(f"https://api-web.nhle.com/v1/schedule/{date_str}", timeout=10).json()
+            sched_resp = safe_get(f"https://api-web.nhle.com/v1/schedule/{date_str}", timeout=10)
+            sched = sched_resp.json()
             games = []
             for gw in sched.get("gameWeek", []):
                 if gw["date"] == date_str:
@@ -94,7 +101,8 @@ def update_pending_picks():
 
                 gid = g["id"]
                 try:
-                    box = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{gid}/boxscore", timeout=10).json()
+                    box_resp = safe_get(f"https://api-web.nhle.com/v1/gamecenter/{gid}/boxscore", timeout=10)
+                    box = box_resp.json()
                 except:
                     continue
 
@@ -108,35 +116,63 @@ def update_pending_picks():
 
                     for p in all_players:
                         name = p.get('name', {}).get('default', '')
-                        g_scored = p.get('goals', 0)
-                        sog_scored = p.get('shots', 0)
-                        goals_map[team_abbrev][name] = {'goals': g_scored, 'shots': sog_scored}
+                        goals_map[team_abbrev][name] = {
+                            'goals': p.get('goals', 0),
+                            'assists': p.get('assists', 0),
+                            'points': p.get('points', 0),
+                            'shots': p.get('shots', 0)
+                        }
 
             if not goals_map:
                 logger.info(f"[Auto-ROI] Les matchs du {date_str} ne sont pas encore terminés ou indisponibles.")
                 continue
 
+            # 1. Update table 'picks' (BUTS)
             c.execute("SELECT id, joueur, equipe, verdict FROM picks WHERE date = ? AND (but IS NULL OR but = '')", (date_str,))
-            picks_to_check = c.fetchall()
-
-            for pick_id, joueur, equipe, verdict in picks_to_check:
+            for pick_id, joueur, equipe, verdict in c.fetchall():
                 api_team = TEAM_MAPPING_API.get(equipe, equipe)
-
                 if api_team in goals_map:
-                    found_stats = None
                     for api_name, stats in goals_map[api_team].items():
                         if match_player_name(joueur, api_name):
-                            found_stats = stats
+                            val = 1 if stats['goals'] > 0 else 0
+                            c.execute("UPDATE picks SET but = ? WHERE id = ?", (val, pick_id))
+                            resolved_count += 1
                             break
 
-                    if found_stats is not None:
-                        if verdict == "TIREUR":
-                            but_value = 1 if found_stats['shots'] >= 3 else 0
-                        else:
-                            but_value = 1 if found_stats['goals'] > 0 else 0
-                            
-                        c.execute("UPDATE picks SET but = ? WHERE id = ?", (but_value, pick_id))
-                        resolved_count += 1
+            # 2. Update table 'picks_assists'
+            c.execute("SELECT id, joueur, equipe FROM picks_assists WHERE date = ? AND (assist IS NULL OR assist = '')", (date_str,))
+            for pick_id, joueur, equipe in c.fetchall():
+                api_team = TEAM_MAPPING_API.get(equipe, equipe)
+                if api_team in goals_map:
+                    for api_name, stats in goals_map[api_team].items():
+                        if match_player_name(joueur, api_name):
+                            val = 1 if stats['assists'] > 0 else 0
+                            c.execute("UPDATE picks_assists SET assist = ? WHERE id = ?", (val, pick_id))
+                            resolved_count += 1
+                            break
+
+            # 3. Update table 'picks_points'
+            c.execute("SELECT id, joueur, equipe FROM picks_points WHERE date = ? AND (point IS NULL OR point = '')", (date_str,))
+            for pick_id, joueur, equipe in c.fetchall():
+                api_team = TEAM_MAPPING_API.get(equipe, equipe)
+                if api_team in goals_map:
+                    for api_name, stats in goals_map[api_team].items():
+                        if match_player_name(joueur, api_name):
+                            val = 1 if stats['points'] > 0 else 0
+                            c.execute("UPDATE picks_points SET point = ? WHERE id = ?", (val, pick_id))
+                            resolved_count += 1
+                            break
+
+            # 4. Update unified 'players' table
+            c.execute("SELECT id, joueur, equipe FROM players WHERE date = ? AND (but IS NULL OR but = '')", (date_str,))
+            for p_id, joueur, equipe in c.fetchall():
+                api_team = TEAM_MAPPING_API.get(equipe, equipe)
+                if api_team in goals_map:
+                    for api_name, stats in goals_map[api_team].items():
+                        if match_player_name(joueur, api_name):
+                            c.execute("UPDATE players SET but = ?, assist = ?, point = ? WHERE id = ?", 
+                                      (stats['goals'], stats['assists'], stats['points'], p_id))
+                            break
 
         except Exception as e:
             logger.error(f"[Auto-ROI] Erreur lors du fetch de la date {date_str} : {e}")

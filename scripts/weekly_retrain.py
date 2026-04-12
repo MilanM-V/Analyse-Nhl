@@ -27,7 +27,7 @@ def get_db_data():
     if df_db.empty:
         return pd.DataFrame()
 
-    # Mapping BDD -> Colonnes XGBoost
+    # Mapping BDD V14 -> Colonnes XGBoost
     mapping = {
         'ixg': 'ixg_l10',
         'hdcf': 'hdcf_l10',
@@ -36,7 +36,7 @@ def get_db_data():
         'season_g': 'season_g',
         'ga_g': 'ga_g',
         'hdca_g': 'hdca_g',
-        'score': 'qs_v10',
+        'score_but': 'qs_v10',
         'consec_goals': 'consec_goals'
     }
     df_db = df_db.rename(columns=mapping)
