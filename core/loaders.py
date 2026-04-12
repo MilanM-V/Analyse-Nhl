@@ -2,6 +2,10 @@ import pandas as pd
 import re
 import logging
 import os
+import sys
+
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Set, Tuple
 

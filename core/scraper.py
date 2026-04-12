@@ -1,8 +1,12 @@
 import time
 import os
 import sys
+import os
 import logging
 import requests
+
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -230,13 +234,37 @@ def _resolve_flashscore_id(nhl_game_id, home, away, driver=None):
         driver.get("https://www.flashscore.fr/hockey/usa/nhl/calendrier/")
         wait = WebDriverWait(driver, 15)
         wait.until(EC.presence_of_element_located((By.CLASS_NAME, "event__match")))
-        for row in driver.find_elements(By.CSS_SELECTOR, ".event__match"):
+        for row in driver.find_elements(By.CSS_SELECTOR, FS_MATCH_SELECTOR):
             try:
-                home_txt = row.find_element(
-                    By.CLASS_NAME, "event__homeParticipant").text.lower()
-                away_txt = row.find_element(
-                    By.CLASS_NAME, "event__awayParticipant").text.lower()
-                if home_kw and away_kw and home_kw in home_txt and away_kw in away_txt:
+                # Tentative avec plusieurs sélecteurs pour les participants (Gestion des MAJ Flashscore)
+                home_el = None
+                for sel in [FS_HOME_PARTICIPANT, FS_HOME_SELECTOR]:
+                    try:
+                        home_el = row.find_element(By.CLASS_NAME, sel)
+                        break
+                    except: continue
+                
+                away_el = None
+                for sel in [FS_AWAY_PARTICIPANT, FS_AWAY_SELECTOR]:
+                    try:
+                        away_el = row.find_element(By.CLASS_NAME, sel)
+                        break
+                    except: continue
+
+                if not home_el or not away_el:
+                    continue
+
+                home_txt = home_el.text.lower().replace(".", "").replace("-", " ")
+                away_txt = away_el.text.lower().replace(".", "").replace("-", " ")
+
+                # Nettoyage des mots clés pour le matching
+                def clean_kw(kw):
+                    return kw.replace(".", "").lower()
+
+                hk = clean_kw(home_kw)
+                ak = clean_kw(away_kw)
+
+                if hk and ak and hk in home_txt and ak in away_txt:
                     fs_id = row.get_attribute("id").replace("g_4_", "")
                     break
 

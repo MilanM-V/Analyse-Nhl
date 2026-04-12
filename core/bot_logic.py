@@ -7,6 +7,9 @@ import subprocess
 import sys
 from typing import Dict, List, Any, Optional, Set, Tuple
 
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import core.loaders as loaders
 import core.scraper as scraper
 import core.predictor_v14 as predictor_v14
@@ -435,7 +438,7 @@ class NhlBot:
                     r["Score"] = round(r["Score"] + 0.3, 1)
                     r["Synergie"] = True
 
-        # Odds enrichment
+        # Odds enrichment & +EV Filtering
         players_to_fetch = list({r["Joueur"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list})
         if players_to_fetch:
             logger.info(f"   Récupération asynchrone des cotes BettingPros pour {len(players_to_fetch)} joueur(s)...")
@@ -445,8 +448,25 @@ class NhlBot:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
             for p in final_picks_ast:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("ASSISTS")
+                p["Proba"] = min((p["Score"] / 15.0), 0.75) # Heuristique
             for p in final_picks_pts:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
+                p["Proba"] = min((p["Score"] / 15.0), 0.75) # Heuristique
+                
+        # 🛡️ FILTRE +EV (Expected Value)
+        # On ne conserve que les paris rentables sur le long terme (marge > 2%)
+        def is_ev_positive(p: dict) -> bool:
+            if not p.get("Cote") or p["Cote"] <= 1.05:
+                return True # Si pas de cote, on bypass le filtre par sécurité
+            ev = (p["Proba"] * p["Cote"]) - 1.0
+            if ev < 0.02:
+                logger.debug(f"Pari Rejeté (-EV) : {p['Joueur']} (EV: {ev*100:.1f}%)")
+                return False
+            return True
+
+        final_picks_but = [p for p in final_picks_but if is_ev_positive(p)]
+        final_picks_ast = [p for p in final_picks_ast if is_ev_positive(p)]
+        final_picks_pts = [p for p in final_picks_pts if is_ev_positive(p)]
 
         # Telegram Recap (Multi-marchés)
         self._send_telegram_v14(final_picks_but, final_picks_ast, final_picks_pts, wave_label, wave_ids)
@@ -483,7 +503,7 @@ class NhlBot:
         
         Args:
             score: QS Score du joueur.
-            proba: Probabilité XGBoost.
+            proba: Probabilité IA.
             cote: Cote du bookmaker.
             categorie: Catégorie du pick (ELITE, SAFE, DÉFENSEUR, etc.).
         """
@@ -497,10 +517,6 @@ class NhlBot:
         # est bien inférieur à ce que l'XGBoost prédit (tirs lointains)
         if categorie == "DÉFENSEUR":
             p = p * 0.6
-        
-        # Fallback pour les passes/points si xgb_proba=0
-        if p == 0:
-            p = min((score / 15.0), 0.75)
             
         q = 1.0 - p
         f = (p * b - q) / b
@@ -514,7 +530,7 @@ class NhlBot:
             units = max(0.5, min(units, cap))
             return f"{units} U"
             
-        return "0.5 U"  # Si Value négative mathématique, limitation de casse
+        return "0 U"  # Mathématiquement perdant. (Puisque filtré en amont, on ne devrait jamais l'atteindre)
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
         """Formats and sends the Telegram recap message with all markets. 
@@ -575,6 +591,42 @@ class NhlBot:
             if not m_buts and not m_ast and not m_pts:
                 msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"
             msg += "\n"
+
+        # --- SUGGESTION COMBINÉ (PARLAY) ---
+        all_picks = []
+        for cat_list in [buts, assists, points]:
+            for p in cat_list:
+                cote = p.get('Cote')
+                if cote and cote > 1.05 and p.get('Proba'):
+                    ev = (p['Proba'] * cote) - 1.0
+                    all_picks.append({
+                        'joueur': p['Joueur'], 
+                        'equipe': p['Equipe'], 
+                        'cote': cote, 
+                        'ev': ev,
+                        'cat': p.get('Categorie', 'Pick')
+                    })
+        
+        # Trier par EV la plus haute
+        all_picks.sort(key=lambda x: x['ev'], reverse=True)
+        
+        parlay_found = False
+        if len(all_picks) >= 2:
+            # Chercher deux joueurs d'équipes différentes
+            p1 = all_picks[0]
+            p2 = None
+            for p in all_picks[1:]:
+                if p['equipe'] != p1['equipe']:
+                    p2 = p
+                    break
+            
+            if p2:
+                cote_totale = round(p1['cote'] * p2['cote'], 2)
+                ev_totale = ((p1['ev']+1) * (p2['ev']+1)) - 1.0
+                msg += "<b>🎯 SUGGESTION COMBINÉ (+EV SÉCURISÉ) :</b>\n"
+                msg += f"  • {p1['joueur']} ({p1['cat']}) @{p1['cote']}\n"
+                msg += f"  • {p2['joueur']} ({p2['cat']}) @{p2['cote']}\n"
+                msg += f"  => <b>Cote Totale : @{cote_totale}</b> <i>(Edge: +{ev_totale*100:.1f}%)</i>\n\n"
 
         self.telegram.send_message(msg)
 

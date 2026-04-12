@@ -9,6 +9,10 @@ import json
 import logging
 import asyncio
 import aiohttp
+import sys
+
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 from collections import defaultdict
 from typing import Dict, List, Any, Set

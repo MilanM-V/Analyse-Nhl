@@ -1,7 +1,13 @@
 import requests
 import logging
 import unicodedata
+import os
+import sys
 from datetime import datetime
+
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from  core.database import get_connection
 from core.services import safe_get
 

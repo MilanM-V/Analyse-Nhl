@@ -6,6 +6,10 @@ import os
 import json
 import time
 import logging
+import sys
+
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger("NHL_Bot")
 

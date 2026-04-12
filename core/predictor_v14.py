@@ -10,6 +10,9 @@ import numpy as np
 import xgboost as xgb
 from typing import Dict, List, Any, Optional, Set, Tuple
 
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Import loaders
 from core.loaders import (
     TEAM_MAPPING, REVERSE_TEAM_MAPPING, TEAM_CLEANER, 
