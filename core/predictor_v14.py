@@ -6,6 +6,8 @@ import os
 import threading
 import logging
 import joblib
+import sys
+import os
 import numpy as np
 import xgboost as xgb
 from typing import Dict, List, Any, Optional, Set, Tuple
@@ -375,7 +377,9 @@ def get_xgb_prod_model() -> Optional[Dict[str, Any]]:
         with _xgb_lock:
             if _xgb_prod_model is None:
                 try:
-                    model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'prod_model_v5.pkl')
+                    # Fix: Use central xg_model.pkl instead of old prod_model_v5
+                    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    model_path = os.path.join(root_dir, 'models', 'xg_model.pkl')
                     if os.path.exists(model_path):
                         _xgb_prod_model = joblib.load(model_path)
                     else:

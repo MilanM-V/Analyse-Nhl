@@ -48,17 +48,17 @@ class XGModel:
     def _load_or_train(self):
         if os.path.exists(XG_MODEL_PATH):
             try:
-                with open(XG_MODEL_PATH, 'rb') as f:
-                    data = pickle.load(f)
+                # Utilise joblib.load pour charger le dictionnaire contenant le modèle XGBoost
+                data = joblib.load(XG_MODEL_PATH)
                 self.model   = data['model']
                 self.scaler  = data.get('scaler')
                 self.use_pkl = True
-                auc = data.get('auc_cv', 0)
-                n   = data.get('n_train', 0)
-                logger.info(f"[xG model] Chargé depuis pkl — AUC={auc:.4f}")
+                
+                version = data.get('version', 'unknown')
+                logger.info(f"[xG model] Modèle RÉEL chargé — Version: {version}")
                 return
             except Exception as e:
-                logger.warning(f"[xG model] Erreur chargement pkl: {e}")
+                logger.warning(f"[xG model] Erreur chargement joblib: {e}")
 
         logger.warning("⚠️ MODÈLE xG SYNTHÉTIQUE — Le vrai modèle (.pkl) n'a pas été trouvé. Un modèle factice est généré. Veillez à entraîner un vrai modèle !")
         self.use_pkl = False
