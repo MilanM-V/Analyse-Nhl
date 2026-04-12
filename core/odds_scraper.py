@@ -63,8 +63,9 @@ def _parse_html_odds(html: str) -> dict | None:
 
 def _parse_api_json(html: str) -> dict | None:
     """
-    Tente d'extraire les données depuis le __NEXT_DATA__ JSON embarqué.
-    C'est la méthode la plus stable car elle utilise le store Next.js natif.
+    Tente d'extraire les données JSON brutes embarquées dans la page HTML.
+    BettingPros a modifié sa structure : le __NEXT_DATA__ a disparu, et 
+    les données sont maintenant dans une balise <script> générique contenant un énorme JSON.
 
     Args:
         html: Le contenu HTML de la page BettingPros.
@@ -74,7 +75,7 @@ def _parse_api_json(html: str) -> dict | None:
     """
     soup = BeautifulSoup(html, 'html.parser')
     
-    # Méthode 1 : __NEXT_DATA__ (Next.js server-side props)
+    # Méthode 1 : __NEXT_DATA__ (Fallback au cas où)
     next_data_script = soup.find('script', id='__NEXT_DATA__')
     if next_data_script and next_data_script.string:
         try:
@@ -84,25 +85,64 @@ def _parse_api_json(html: str) -> dict | None:
                 return page_props
         except (json.JSONDecodeError, AttributeError):
             pass
+            
+    def _find_all_offers_and_markets(obj, acc_offers, acc_markets, acc_books):
+        if isinstance(obj, dict):
+            if 'offers' in obj and isinstance(obj['offers'], list):
+                acc_offers.extend([i for i in obj['offers'] if isinstance(i, dict)])
+            if 'markets' in obj and isinstance(obj['markets'], list):
+                acc_markets.extend([i for i in obj['markets'] if isinstance(i, dict)])
+            if 'books' in obj and isinstance(obj['books'], list):
+                acc_books.extend([i for i in obj['books'] if isinstance(i, dict)])
+            for v in obj.values():
+                _find_all_offers_and_markets(v, acc_offers, acc_markets, acc_books)
+        elif isinstance(obj, list):
+            for item in obj:
+                _find_all_offers_and_markets(item, acc_offers, acc_markets, acc_books)
     
-    # Méthode 2 : Tout script JSON contenant la structure attendue
+    # Méthode 2 : Analyser toutes les balises <script> pour trouver le payload JSON géant
     for script in soup.find_all('script'):
-        if not script.string:
+        text = script.string
+        if not text:
             continue
-        text = script.string.strip()
-        # Chercher des JSON embarqués dans des variables JS
-        for pattern in ['"offers":', '"markets":']:
-            if pattern in text:
-                # Extraire le JSON le plus large possible
-                for start_char in ['{', '[']:
-                    idx = text.find(start_char)
-                    if idx >= 0:
-                        try:
-                            candidate = json.loads(text[idx:])
-                            if isinstance(candidate, dict) and candidate.get('offers'):
-                                return candidate
-                        except json.JSONDecodeError:
-                            continue
+            
+        text = text.strip()
+        if len(text) > 10000 and '"offers"' in text and '"markets"' in text:
+            try:
+                candidate = json.loads(text)
+                
+                # Chercher récursivement partout dans le JSON
+                all_offers, all_markets, all_books = [], [], []
+                _find_all_offers_and_markets(candidate, all_offers, all_markets, all_books)
+                
+                if all_offers and all_markets:
+                     # On reconstitue un faux noeud avec tout le contenu agrégé
+                     return {
+                         "offers": all_offers,
+                         "markets": all_markets,
+                         "books": all_books
+                     }
+                    
+            except json.JSONDecodeError:
+                pass
+                
+            # Fallback : Chercher un objet JSON imbriqué dans une variable JS
+            for start_char in ['{', '[']:
+                idx = text.find(start_char)
+                if idx >= 0:
+                    try:
+                        candidate = json.loads(text[idx:])
+                        all_offers, all_markets, all_books = [], [], []
+                        _find_all_offers_and_markets(candidate, all_offers, all_markets, all_books)
+                        if all_offers and all_markets:
+                             return {
+                                 "offers": all_offers,
+                                 "markets": all_markets,
+                                 "books": all_books
+                             }
+                    except json.JSONDecodeError:
+                        continue
+                        
     return None
 
 def _extract_odds_from_data(data: dict) -> dict:

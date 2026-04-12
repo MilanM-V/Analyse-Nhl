@@ -116,8 +116,16 @@ def simulate_2weeks_10euro():
     res_df = pd.DataFrame(daily_stats)
     print(res_df.to_markdown(index=False))
     
+    total_sim_picks = res_df['Picks'].sum()
+    total_sim_wins = res_df['Wins'].sum()
+    sim_winrate = (total_sim_wins / total_sim_picks * 100) if total_sim_picks > 0 else 0
+    
     total_profit = bankroll - initial_bankroll
-    print(f"\nTotal Profit: {total_profit:.2f}€")
+    print(f"\n--- RÉSULTATS GLOBAUX DU NOUVEAU MOTEUR (BUTS) ---")
+    print(f"Total Picks: {total_sim_picks}")
+    print(f"Total Wins: {total_sim_wins}")
+    print(f"Winrate Simulé: {sim_winrate:.2f}%")
+    print(f"Total Profit: {total_profit:.2f}€")
     print(f"ROI Final: {(total_profit/initial_bankroll)*100:.2f}%")
 
 if __name__ == "__main__":
