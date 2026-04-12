@@ -11,8 +11,8 @@ import logging
 from datetime import datetime
 from typing import Optional, Any, Dict, List, Callable
 
-from telegram import Bot, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
+from telegram import Bot, Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application, CallbackQueryHandler
 import asyncio
 
 logger = logging.getLogger("NHL_Bot")
@@ -179,25 +179,41 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
 
     async def roi_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /roi command."""
+        keyboard = [
+            [
+                InlineKeyboardButton("1 Jour", callback_data='roi_1'),
+                InlineKeyboardButton("1 Semaine", callback_data='roi_7')
+            ],
+            [
+                InlineKeyboardButton("1 Mois", callback_data='roi_30'),
+                InlineKeyboardButton("All Time", callback_data='roi_all')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         if update.message:
-            await update.message.reply_text("⏳ Mise à jour de la base de données... Validation API en cours.")
+            await update.message.reply_text("⏳ Sélectionnez la période pour le calcul du ROI :", reply_markup=reply_markup)
+
+    async def roi_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        await query.answer()
+
+        days = query.data.split('_')[1] # '1', '7', '30', 'all'
+        label = f"{days} derniers jours" if days != "all" else "All Time"
+
+        await query.edit_message_text(text=f"⏳ Calcul du ROI ({label})... Validation API en cours.")
 
         from core.updater import update_pending_picks
         loop = asyncio.get_running_loop()
         n_resolved = await loop.run_in_executor(None, update_pending_picks)
 
-        if n_resolved > 0 and update.message:
-            await update.message.reply_text(f"✅ {n_resolved} résultat(s) récupéré(s) de la veille !")
-
         from core.database import get_roi_stats
         
-        msg = "💰 <b>ROI ACTUEL</b> :\n\n"
-        msg += get_roi_stats("picks", "but") + "\n"
-        msg += get_roi_stats("picks_assists", "assist") + "\n"
-        msg += get_roi_stats("picks_points", "point")
+        msg = f"💰 <b>ROI ({label})</b> :\n\n"
+        msg += get_roi_stats("picks", "but", days) + "\n"
+        msg += get_roi_stats("picks_assists", "assist", days) + "\n"
+        msg += get_roi_stats("picks_points", "point", days)
         
-        if update.message:
-            await update.message.reply_text(msg, parse_mode="HTML")
+        await query.edit_message_text(text=msg, parse_mode="HTML")
 
 
     async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -227,6 +243,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("force", force_cmd))
     app.add_handler(CommandHandler("roi", roi_cmd))
+    app.add_handler(CallbackQueryHandler(roi_callback, pattern='^roi_'))
     app.add_handler(CommandHandler("backup", backup_cmd))
     app.add_handler(CommandHandler("resetdb", resetdb_cmd))
 

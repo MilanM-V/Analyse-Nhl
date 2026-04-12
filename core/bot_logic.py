@@ -366,15 +366,32 @@ class NhlBot:
             sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
             sog_proba = predictor_v14.evaluate_sog_proba(p_form, adv_stats, player in pp1_players, team in home_teams, sog_score)
 
-            cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
-                                         ds.v5_data.get(player, {}).get('Position', ''), xgb_proba,
-                                         sog_score, sog_proba)
+            # Filtres stricts Validés par skaters_all NHL
+            v5_p = ds.v5_data.get(player, {})
+            season_g = float(v5_p.get('G_GP', 0)) if v5_p else 0.0
+            l10_sog = float(p_form.get('L10_SOG_G', 2.0))
             
-            # Catégories PASSEURS (Optimisé via simulation 716k opportunités)
-            cat_ast = "ELITE_PASSEUR" if qs_ast >= 11.5 else "SAFE_PASSEUR" if qs_ast >= 10.0 else None
+            cat_but = None
+            if season_g >= 0.20 and l10_sog >= 2.0:
+                cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
+                                             v5_p.get('Position', ''), xgb_proba,
+                                             sog_score, sog_proba)
             
-            # Catégories POINTEURS (Optimisé via simulation 716k opportunités)
-            cat_pts = "ELITE_POINTEUR" if qs_pts >= 12.0 else "SAFE_POINTEUR" if qs_pts >= 11.0 else None
+            # Catégories PASSEURS & POINTEURS (Optimisées avec malus "Away" et filtre Superstar)
+            season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
+            season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
+            
+            # Application d'un malus de -0.75 points de Qualité pour les matchs à l'extérieur
+            adj_qs_ast = qs_ast - 0.75 if not (team in home_teams) else qs_ast
+            adj_qs_pts = qs_pts - 0.75 if not (team in home_teams) else qs_pts
+
+            cat_ast = None
+            if season_a >= 0.35:
+                cat_ast = "ELITE_PASSEUR" if adj_qs_ast >= 10.75 else "SAFE_PASSEUR" if adj_qs_ast >= 9.75 else None
+            
+            cat_pts = None
+            if season_pts >= 0.65:
+                cat_pts = "ELITE_POINTEUR" if adj_qs_pts >= 10.75 else "SAFE_POINTEUR" if adj_qs_pts >= 9.75 else None
 
             # Construction des dicts de picks
             common_data = {
@@ -441,10 +458,12 @@ class NhlBot:
         """Assigns a betting category based on various metrics."""
         cat = None
         if pos in ('D', 'LD', 'RD'):
-            if score >= 9.5 and xgb_proba >= 0.35: cat = "DÉFENSEUR"
-        else:
-            if score >= 9.75 and xgb_proba >= 0.65: cat = "ELITE"
-            elif score >= 6.72 and xgb_proba >= 0.585: cat = "SAFE"
+            return None  # Blocage complet des défenseurs sur le marché des Buteurs (Suite analyse V14)
+            
+        if score >= 9.75 and xgb_proba >= 0.65: 
+            cat = "ELITE"
+        elif score >= 6.72 and xgb_proba >= 0.585: 
+            cat = "SAFE"
             
         # Fallback TIREUR : gros volume de tirs sans être un buteur d'élite
         if not cat and sog_score >= 8.5 and proba_sog >= 0.65:
@@ -503,7 +522,18 @@ class NhlBot:
         return "0.5 U"  # Si Value négative mathématique, limitation de casse
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
-        """Formats and sends the Telegram recap message with all markets."""
+        """Formats and sends the Telegram recap message with all markets. 
+        Sorts the picks by Category (ELITE > SAFE > etc.) and then by QS Score."""
+        
+        def cat_priority(cat: str) -> int:
+            if not cat: return 99
+            c = cat.upper()
+            if 'ELITE' in c: return 1
+            if 'SAFE' in c: return 2
+            if 'TIREUR' in c: return 3
+            if 'DÉFENSEUR' in c: return 4
+            return 5
+            
         msg = f"<b>🏒 NHL V14.1 — VAGUE {wave_label}</b>\n\n"
         
         for mid in wave_ids:
@@ -522,6 +552,7 @@ class NhlBot:
             
             # BUTEURS
             m_buts = [r for r in buts if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            m_buts.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
             if m_buts:
                 msg += "  🔥 <i>Buteurs :</i>\n"
                 for r in m_buts:
@@ -530,6 +561,7 @@ class NhlBot:
 
             # PASSEURS
             m_ast = [r for r in assists if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            m_ast.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
             if m_ast:
                 msg += "  🅰️ <i>Passeurs :</i>\n"
                 for r in m_ast:
@@ -539,6 +571,7 @@ class NhlBot:
 
             # POINTS
             m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
+            m_pts.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
             if m_pts:
                 msg += "  🏆 <i>Pointeurs :</i>\n"
                 for r in m_pts:
@@ -551,6 +584,7 @@ class NhlBot:
             msg += "\n"
 
         self.telegram.send_message(msg)
+
 
     def _log_v14(self, buts, asts, pts, all_players, wave_label, ds):
         """Logs everything to SQL tables and CSV files."""
