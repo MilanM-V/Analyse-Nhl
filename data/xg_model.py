@@ -10,6 +10,7 @@ import threading
 import logging
 import sys
 import numpy as np
+import joblib
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
@@ -25,7 +26,8 @@ SHOT_TYPE_ENCODE = {
 }
 
 # The path needs to be relative to the project root or absolute. Assuming run from root.
-XG_MODEL_PATH = "models/xg_model.pkl"
+# Nom unique pour le modèle de TIR (13 features) pour éviter conflit avec modèle JOUEUR (18 features)
+XG_MODEL_PATH = "models/xg_shot_model.pkl"
 
 def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True,
                   is_slot=False, is_rebound=False, is_rush=False, period=1):
@@ -48,19 +50,23 @@ class XGModel:
     def _load_or_train(self):
         if os.path.exists(XG_MODEL_PATH):
             try:
-                # Utilise joblib.load pour charger le dictionnaire contenant le modèle XGBoost
                 data = joblib.load(XG_MODEL_PATH)
                 self.model   = data['model']
                 self.scaler  = data.get('scaler')
-                self.use_pkl = True
                 
+                # Vérification de sécurité du nombre de features (V14.3.1)
+                expected_n = 13
+                if hasattr(self.model, 'n_features_in_') and self.model.n_features_in_ != expected_n:
+                    raise ValueError(f"Feature mismatch: attendu {expected_n}, trouvé {self.model.n_features_in_}")
+                
+                self.use_pkl = True
                 version = data.get('version', 'unknown')
-                logger.info(f"[xG model] Modèle RÉEL chargé — Version: {version}")
+                logger.info(f"[xG Shot model] Modèle RÉEL chargé — Version: {version}")
                 return
             except Exception as e:
-                logger.warning(f"[xG model] Erreur chargement joblib: {e}")
+                logger.warning(f"[xG Shot model] Erreur chargement joblib ({e}). Fallback synthétique.")
 
-        logger.warning("⚠️ MODÈLE xG SYNTHÉTIQUE — Le vrai modèle (.pkl) n'a pas été trouvé. Un modèle factice est généré. Veillez à entraîner un vrai modèle !")
+        logger.warning("⚠️ MODÈLE xG TIR SYNTHÉTIQUE — Fichier manquant ou invalide. Génération temporaire...")
         self.use_pkl = False
         self.scaler  = StandardScaler()
         np.random.seed(42)

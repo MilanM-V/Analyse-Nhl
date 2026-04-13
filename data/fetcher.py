@@ -293,9 +293,11 @@ async def build_team_stats(session: aiohttp.ClientSession, all_teams: List[str],
     return df
 
 async def prefetch_pbp_and_boxscores(session: aiohttp.ClientSession, all_teams: List[str]) -> Dict[str, List[str]]:
-    game_tasks = {team: get_last_n_game_ids(session, team, 10) for team in all_teams}
-    results = await asyncio.gather(*game_tasks.values())
-    game_ids_cache = dict(zip(game_tasks.keys(), results))
+    # Fix RuntimeWarning: Ensure all coroutines are gathered correctly
+    teams_list = list(all_teams)
+    tasks_ids = [get_last_n_game_ids(session, team, 10) for team in teams_list]
+    id_results = await asyncio.gather(*tasks_ids)
+    game_ids_cache = dict(zip(teams_list, id_results))
     
     unique_game_ids = set()
     for gids in game_ids_cache.values():

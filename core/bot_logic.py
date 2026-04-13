@@ -358,43 +358,60 @@ class NhlBot:
                 False, is_backup, team in b2b_teams and adv not in b2b_teams
             )
 
-            # XGBoost & Catégories
+            # XGBoost & Catégories (100% IA V14.3)
+            # Analyse BUTS
             xgb_proba = predictor_v14.evaluate_xgb_proba(
                 ds.v5_data.get(player, {}), p_form, adv_stats,
                 team in home_teams, team in b2b_teams, adv in b2b_teams, 
-                player in pp1_players, qs_but
+                player in pp1_players, qs_but, market='BUT'
             ) if qs_but > 0 else 0.0
+
+            # Analyse ASSISTS IA
+            xgb_proba_ast = predictor_v14.evaluate_xgb_proba(
+                ds.v5_data.get(player, {}), p_form, adv_stats,
+                team in home_teams, team in b2b_teams, adv in b2b_teams, 
+                player in pp1_players, qs_ast, market='ASSIST'
+            ) if qs_ast > 0 else 0.0
+
+            # Analyse POINTS IA
+            xgb_proba_pts = predictor_v14.evaluate_xgb_proba(
+                ds.v5_data.get(player, {}), p_form, adv_stats,
+                team in home_teams, team in b2b_teams, adv in b2b_teams, 
+                player in pp1_players, qs_pts, market='POINT'
+            ) if qs_pts > 0 else 0.0
 
             # Analyse SOG (Tirs)
             sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
             sog_proba = predictor_v14.evaluate_sog_proba(p_form, adv_stats, player in pp1_players, team in home_teams, sog_score)
 
-            # Filtres stricts Validés par skaters_all NHL
+            # Filtres stricts
             v5_p = ds.v5_data.get(player, {})
             season_g = float(v5_p.get('G_GP', 0)) if v5_p else 0.0
             l10_sog = float(p_form.get('L10_SOG_G', 2.0))
             
+            # Catégories PASSEURS & POINTEURS
+            season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
+            season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
+            adj_qs_ast = qs_ast - cfg.thresholds.passeurs.away_malus if not (team in home_teams) else qs_ast
+            adj_qs_pts = qs_pts - cfg.thresholds.pointeurs.away_malus if not (team in home_teams) else qs_pts
+
             cat_but = None
             if season_g >= cfg.thresholds.buteurs.season_g_min and l10_sog >= cfg.thresholds.buteurs.l10_sog_min:
                 cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
                                              v5_p.get('Position', ''), xgb_proba,
                                              sog_score, sog_proba)
             
-            # Catégories PASSEURS & POINTEURS (Seuil unique + malus Away depuis config)
-            season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
-            season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
-            
-            # Application du malus Away depuis la config
-            adj_qs_ast = qs_ast - cfg.thresholds.passeurs.away_malus if not (team in home_teams) else qs_ast
-            adj_qs_pts = qs_pts - cfg.thresholds.pointeurs.away_malus if not (team in home_teams) else qs_pts
-
             cat_ast = None
             if season_a >= cfg.thresholds.passeurs.season_a_min:
-                cat_ast = "PASSEUR" if adj_qs_ast >= cfg.thresholds.passeurs.qs_min else None
+                # Sniper V14.3 : Double validation QS + IA
+                if adj_qs_ast >= cfg.thresholds.passeurs.qs_min and xgb_proba_ast >= cfg.thresholds.passeurs.model_proba_min:
+                    cat_ast = "PASSEUR"
             
             cat_pts = None
             if season_pts >= cfg.thresholds.pointeurs.season_pts_min:
-                cat_pts = "POINTEUR" if adj_qs_pts >= cfg.thresholds.pointeurs.qs_min else None
+                # Sniper V14.3 : Double validation QS + IA
+                if adj_qs_pts >= cfg.thresholds.pointeurs.qs_min and xgb_proba_pts >= cfg.thresholds.pointeurs.model_proba_min:
+                    cat_pts = "POINTEUR"
 
             # Construction des dicts de picks
             common_data = {
@@ -463,10 +480,10 @@ class NhlBot:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
             for p in final_picks_ast:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("ASSISTS")
-                p["Proba"] = min((p["Score"] / 15.0), 0.75) # Heuristique
+                p["Proba"] = xgb_proba_ast # Utilisation IA réelle
             for p in final_picks_pts:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
-                p["Proba"] = min((p["Score"] / 15.0), 0.75) # Heuristique
+                p["Proba"] = xgb_proba_pts # Utilisation IA réelle
                 
         # 🛡️ FILTRE +EV (Expected Value)
         # On ne conserve que les paris rentables sur le long terme (marge > 2%)

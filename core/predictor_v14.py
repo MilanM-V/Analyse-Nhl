@@ -368,31 +368,46 @@ def calculate_points_qs(v5_stats: Dict[str, Any], p_form: Dict[str, Any], opp_st
     return qs
 
 _xgb_lock = threading.Lock()
-_xgb_prod_model = None
+_models = {}
 
-def get_xgb_prod_model() -> Optional[Dict[str, Any]]:
-    """Lazy loads the production XGBoost model for goal prediction (thread-safe)."""
-    global _xgb_prod_model
-    if _xgb_prod_model is None:
+def get_model(market_type: str) -> Optional[Dict[str, Any]]:
+    """Lazy loads a specialized XGBoost model (Goal, Assist, or Point)."""
+    global _models
+    
+    # Map market types to filenames
+    file_map = {
+        'BUT': 'xg_model_but.pkl',
+        'ASSIST': 'xg_model_assist.pkl',
+        'POINT': 'xg_model_point.pkl'
+    }
+    
+    filename = file_map.get(market_type.upper())
+    if not filename:
+        return None
+        
+    if filename not in _models:
         with _xgb_lock:
-            if _xgb_prod_model is None:
+            if filename not in _models:
                 try:
-                    # Fix: Use central xg_model.pkl instead of old prod_model_v5
                     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                    model_path = os.path.join(root_dir, 'models', 'xg_model.pkl')
+                    model_path = os.path.join(root_dir, 'models', filename)
+                    
                     if os.path.exists(model_path):
-                        _xgb_prod_model = joblib.load(model_path)
+                        _models[market_type] = joblib.load(model_path)
+                        v = _models[market_type].get('version', 'unknown')
+                        logger.info(f"[IA {market_type}] Modèle XGBoost chargé — Version: {v}")
                     else:
-                        logger.error(f"XGBoost model file not found at {model_path}")
+                        logger.error(f"[IA {market_type}] Fichier modèle introuvable à {model_path}")
                 except Exception as e:
-                    logger.error(f"Error loading XGBoost model: {e}")
+                    logger.error(f"Error loading XGBoost model {filename}: {e}")
                     return None
-    return _xgb_prod_model
+    return _models.get(market_type)
 
 def evaluate_xgb_proba(v5_stats: Dict[str, Any], p_form: Dict[str, Any], opp_stats: Dict[str, float], 
-                       is_home: bool, is_b2b: bool, opp_is_b2b: bool, is_pp1: bool, qs_v10: float) -> float:
-    """Predicts goal probability using the production XGBoost model."""
-    model_data = get_xgb_prod_model()
+                       is_home: bool, is_b2b: bool, opp_is_b2b: bool, is_pp1: bool, qs_v10: float,
+                       market: str = 'BUT') -> float:
+    """Predicts probability for a specific market using specialized XGBoost models."""
+    model_data = get_model(market)
     if not model_data or 'model' not in model_data:
         return 0.50 
 

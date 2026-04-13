@@ -3,22 +3,24 @@
 # Modifier ici au lieu de chercher dans le code.
 
 [thresholds.buteurs]
-elite_qs = 9.75
-elite_xgb = 0.65
-safe_qs = 6.72
-safe_xgb = 0.585
+elite_qs = 10.25
+elite_xgb = 0.70
+safe_qs = 7.50
+safe_xgb = 0.60
 season_g_min = 0.20
 l10_sog_min = 2.0
 
 [thresholds.passeurs]
-qs_min = 10.25
+qs_min = 10.75
 season_a_min = 0.35
-away_malus = 1.0
+away_malus = 0.5
+model_proba_min = 0.70
 
 [thresholds.pointeurs]
-qs_min = 10.75
+qs_min = 10.50
 season_pts_min = 0.65
-away_malus = 1.0
+away_malus = 0.5
+model_proba_min = 0.75
 
 [thresholds.general]
 atoi_min = 13.0
