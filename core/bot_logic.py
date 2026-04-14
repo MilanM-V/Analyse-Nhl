@@ -362,7 +362,7 @@ class NhlBot:
 
             # Analyse SOG (Tirs)
             sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
-            sog_proba = predictor_v14.evaluate_sog_proba(p_form, adv_stats, player in pp1_players, team in home_teams, sog_score)
+            sog_proba = 0.50 # Ancienne IA SOG retirée
 
             # Filtres stricts
             v5_p = ds.v5_data.get(player, {})

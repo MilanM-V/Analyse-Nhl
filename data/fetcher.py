@@ -19,7 +19,6 @@ from typing import Dict, List, Any, Set
 
 from config.settings import cfg
 from config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL
-from data.xg_model import get_xg_model, is_high_danger
 from data.cache import get_pbp, get_toi_from_boxscore, cleanup_pbp_cache, FOLDER_NAME
 
 logger = logging.getLogger("NHL_Bot")
@@ -313,9 +312,18 @@ async def prefetch_pbp_and_boxscores(session: aiohttp.ClientSession, all_teams: 
     await asyncio.gather(*tasks)
     return game_ids_cache
 
-def compute_last10_stats(all_teams: List[str], game_ids_cache: Dict[str, List[str]]):
-    xg_model = get_xg_model()
+def is_high_danger(x, y, zone, home_side, event_owner_id, home_team_id):
+    if zone != 'O': return False
+    return abs(x) >= 69 and abs(y) <= 22
 
+def estimate_xg(x, y, shot_type, is_rebound, is_rush):
+    xg = 0.05
+    if is_rebound: xg += 0.15
+    if is_rush: xg += 0.05
+    if abs(x) >= 69 and abs(y) <= 22: xg += 0.10
+    return min(xg, 0.99)
+
+def compute_last10_stats(all_teams: List[str], game_ids_cache: Dict[str, List[str]]):
     player_stats = defaultdict(lambda: {
         'name': '', 'team': '', 'pos': '', 'gp': 0, 'toi_sec': 0,
         'goals': 0, 'assists': 0, 'points': 0,
@@ -405,7 +413,7 @@ def compute_last10_stats(all_teams: List[str], game_ids_cache: Dict[str, List[st
                         if tj == 'shot-on-goal' and 0 < delta <= 3: is_rebound = True
                         if tj == 'takeaway' and 0 < delta <= 4: is_rush = True
 
-                    xg_val = xg_model.predict(x, y, shot_type, sit, is_rebound=is_rebound, is_rush=is_rush, period=per) if zone == 'O' else 0.0
+                    xg_val = estimate_xg(x, y, shot_type, is_rebound, is_rush) if zone == 'O' else 0.0
                     hd = is_high_danger(x, y, zone, home_side, owner, home_team_id)
                     sc = (math.sqrt((89 - abs(x))**2 + y**2) if zone == 'O' else 999) < 35
 
@@ -485,9 +493,6 @@ async def main_async():
     logger.info("=" * 55)
     t0 = time.time()
     
-    # Init xG model in thread
-    get_xg_model()
-
     async with aiohttp.ClientSession() as session:
         # Phase 1: Parallel general stats building
         tasks = [
