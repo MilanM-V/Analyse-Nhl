@@ -315,7 +315,7 @@ class NhlBot:
         opponents = {t1: t2 for t1, t2 in matches_soir}
         opponents.update({t2: t1 for t1, t2 in matches_soir})
 
-        b2b_teams = [t for t in predictor_v14.get_b2b_teams('./stats/match.csv', TODAY) if t in opponents]
+        b2b_teams = [t for t in loaders.get_b2b_teams('./stats/match.csv', TODAY) if t in opponents]
         pp1_players = set(predictor_v14.get_auto_pp1_players(ds.form_data, ds.pp_stats, list(opponents.keys())))
         seen_players = set()
 
@@ -330,7 +330,7 @@ class NhlBot:
             seen_players.add(player)
 
             p_form = ds.form_data[player]
-            team = predictor_v14.clean_team_name(p_form['Team'])
+            team = loaders.clean_team_name(p_form['Team'])
             if p_form['ATOI'] < cfg.thresholds.general.atoi_min or team not in opponents: continue
 
             adv = opponents[team]
@@ -360,10 +360,6 @@ class NhlBot:
 
             # L'ancien système XGBoost a été supprimé (remplacé par les filtres statiques V17).
 
-            # Analyse SOG (Tirs)
-            sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
-            sog_proba = 0.50 # Ancienne IA SOG retirée
-
             # Filtres stricts
             v5_p = ds.v5_data.get(player, {})
             season_g = float(v5_p.get('G_GP', 0)) if v5_p else 0.0
@@ -375,8 +371,6 @@ class NhlBot:
             # Catégories PASSEURS & POINTEURS
             season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
             season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
-            adj_qs_ast = qs_ast - cfg.thresholds.passeurs.away_malus if not is_home else qs_ast
-            adj_qs_pts = qs_pts - cfg.thresholds.pointeurs.away_malus if not is_home else qs_pts
 
             # V17 Buteurs — Filtres validés sur 16K combinaisons (39% WR, +27.7% ROI)
             # Conditions: HOME + QS>=10.5 + SG>=0.30 + SOG>=2.0 + HDCF>=2.0 + pas défenseur
@@ -474,10 +468,8 @@ class NhlBot:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
             for p in final_picks_ast:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("ASSISTS")
-                p["Proba"] = xgb_proba_ast # Utilisation IA réelle
             for p in final_picks_pts:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
-                p["Proba"] = xgb_proba_pts # Utilisation IA réelle
                 
         # 🛡️ FILTRE +EV (Expected Value)
         # On ne conserve que les paris rentables sur le long terme (marge > 2%)
