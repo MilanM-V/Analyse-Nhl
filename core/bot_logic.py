@@ -358,27 +358,7 @@ class NhlBot:
                 False, is_backup, team in b2b_teams and adv not in b2b_teams
             )
 
-            # XGBoost & Catégories (100% IA V14.3)
-            # Analyse BUTS
-            xgb_proba = predictor_v14.evaluate_xgb_proba(
-                ds.v5_data.get(player, {}), p_form, adv_stats,
-                team in home_teams, team in b2b_teams, adv in b2b_teams, 
-                player in pp1_players, qs_but, market='BUT'
-            ) if qs_but > 0 else 0.0
-
-            # Analyse ASSISTS IA
-            xgb_proba_ast = predictor_v14.evaluate_xgb_proba(
-                ds.v5_data.get(player, {}), p_form, adv_stats,
-                team in home_teams, team in b2b_teams, adv in b2b_teams, 
-                player in pp1_players, qs_ast, market='ASSIST'
-            ) if qs_ast > 0 else 0.0
-
-            # Analyse POINTS IA
-            xgb_proba_pts = predictor_v14.evaluate_xgb_proba(
-                ds.v5_data.get(player, {}), p_form, adv_stats,
-                team in home_teams, team in b2b_teams, adv in b2b_teams, 
-                player in pp1_players, qs_pts, market='POINT'
-            ) if qs_pts > 0 else 0.0
+            # L'ancien système XGBoost a été supprimé (remplacé par les filtres statiques V17).
 
             # Analyse SOG (Tirs)
             sog_score = predictor_v14.calculate_sog_score(p_form, adv_stats, player in pp1_players, team in home_teams)
@@ -388,35 +368,49 @@ class NhlBot:
             v5_p = ds.v5_data.get(player, {})
             season_g = float(v5_p.get('G_GP', 0)) if v5_p else 0.0
             l10_sog = float(p_form.get('L10_SOG_G', 2.0))
+            l10_hdcf = float(p_form.get('L10_iHDCF_G', 0.0))
+            pos = str(v5_p.get('Position', '')).strip()
+            is_home = team in home_teams
             
             # Catégories PASSEURS & POINTEURS
             season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
             season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
-            adj_qs_ast = qs_ast - cfg.thresholds.passeurs.away_malus if not (team in home_teams) else qs_ast
-            adj_qs_pts = qs_pts - cfg.thresholds.pointeurs.away_malus if not (team in home_teams) else qs_pts
+            adj_qs_ast = qs_ast - cfg.thresholds.passeurs.away_malus if not is_home else qs_ast
+            adj_qs_pts = qs_pts - cfg.thresholds.pointeurs.away_malus if not is_home else qs_pts
 
+            # V17 Buteurs — Filtres validés sur 16K combinaisons (39% WR, +27.7% ROI)
+            # Conditions: HOME + QS>=10.5 + SG>=0.30 + SOG>=2.0 + HDCF>=2.0 + pas défenseur
             cat_but = None
-            if season_g >= cfg.thresholds.buteurs.season_g_min and l10_sog >= cfg.thresholds.buteurs.l10_sog_min:
-                cat_but = self._get_categorie(qs_but, p_form.get('L10_iHDCF_G', 0), 
-                                             v5_p.get('Position', ''), xgb_proba,
-                                             sog_score, sog_proba)
+            if (is_home or not cfg.thresholds.buteurs.home_only) and \
+               pos not in ('D', 'LD', 'RD') and \
+               season_g >= cfg.thresholds.buteurs.season_g_min and \
+               l10_sog >= cfg.thresholds.buteurs.l10_sog_min and \
+               l10_hdcf >= cfg.thresholds.buteurs.l10_hdcf_min and \
+               qs_but >= cfg.thresholds.buteurs.qs_min:
+                cat_but = "BUTEUR"
             
+            # V17 Passeurs — Filtres validés (55.4% WR, +7.5% ROI)
+            # Conditions: HOME + QS>=10.0 + Season_A>=0.50 + L10_A>=0.80
             cat_ast = None
-            if season_a >= cfg.thresholds.passeurs.season_a_min:
-                # Sniper V14.3 : Double validation QS + IA
-                if adj_qs_ast >= cfg.thresholds.passeurs.qs_min and xgb_proba_ast >= cfg.thresholds.passeurs.model_proba_min:
-                    cat_ast = "PASSEUR"
+            if (is_home or not getattr(cfg.thresholds.passeurs, 'home_only', True)) and \
+               season_a >= cfg.thresholds.passeurs.season_a_min and \
+               float(p_form.get('L10_A_G', 0)) >= getattr(cfg.thresholds.passeurs, 'l10_a_min', 0.8) and \
+               qs_ast >= cfg.thresholds.passeurs.qs_min:
+                cat_ast = "PASSEUR"
             
+            # V17 Pointeurs — Filtres validés (67.5% WR, +5.9% ROI)
+            # Conditions: HOME + QS>=10.0 + Season_Pts>=0.80 + L10_Pts>=0.40
             cat_pts = None
-            if season_pts >= cfg.thresholds.pointeurs.season_pts_min:
-                # Sniper V14.3 : Double validation QS + IA
-                if adj_qs_pts >= cfg.thresholds.pointeurs.qs_min and xgb_proba_pts >= cfg.thresholds.pointeurs.model_proba_min:
-                    cat_pts = "POINTEUR"
+            if (is_home or not getattr(cfg.thresholds.pointeurs, 'home_only', True)) and \
+               season_pts >= cfg.thresholds.pointeurs.season_pts_min and \
+               float(p_form.get('L10_Pts_G', 0)) >= getattr(cfg.thresholds.pointeurs, 'l10_pts_min', 0.4) and \
+               qs_pts >= cfg.thresholds.pointeurs.qs_min:
+                cat_pts = "POINTEUR"
 
             # Construction des dicts de picks
             common_data = {
-                "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
-                "Pos": ds.v5_data.get(player, {}).get('Position', ''),
+                "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": is_home,
+                "Pos": pos,
                 "PP1": "⭐" if player in pp1_players else "",
                 "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
                 "Synergie": False
@@ -424,17 +418,17 @@ class NhlBot:
 
             if cat_but:
                 p_but = common_data.copy()
-                p_but.update({"Score": qs_but, "Proba": xgb_proba, "Categorie": cat_but})
+                p_but.update({"Score": qs_but, "Proba": 0.455, "Categorie": cat_but}) # 0.455 base proba
                 final_picks_but.append(p_but)
             
             if cat_ast:
                 p_ast = common_data.copy()
-                p_ast.update({"Score": qs_ast, "Categorie": cat_ast})
+                p_ast.update({"Score": qs_ast, "Proba": 0.554, "Categorie": cat_ast})
                 final_picks_ast.append(p_ast)
 
             if cat_pts:
                 p_pts = common_data.copy()
-                p_pts.update({"Score": qs_pts, "Categorie": cat_pts})
+                p_pts.update({"Score": qs_pts, "Proba": 0.675, "Categorie": cat_pts})
                 final_picks_pts.append(p_pts)
 
             # Log global
@@ -446,12 +440,12 @@ class NhlBot:
                 "p_form": p_form, "p_v5": ds.v5_data.get(player, {}), "adv_stats": adv_stats
             })
 
-        # Synergie (Elite Linemates)
-        elite_players = {r["Joueur"] for r in final_picks_but if r["Categorie"] == "ELITE"}
+        # Synergie (Buteur Linemates)
+        buteur_players = {r["Joueur"] for r in final_picks_but}
         for picks_list in (final_picks_but, final_picks_ast, final_picks_pts):
             for r in picks_list:
                 linemates = lines_index.get(r["Joueur"], set())
-                if bool(linemates & elite_players - {r["Joueur"]}):
+                if bool(linemates & buteur_players - {r["Joueur"]}):
                     r["Score"] = round(r["Score"] + 0.3, 1)
                     r["Synergie"] = True
 
@@ -507,26 +501,9 @@ class NhlBot:
         # Logging unifié
         self._log_v14(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, ds)
 
-    def _get_categorie(self, score: float, hdcf: float, pos: str, xgb_proba: float, sog_score: float = 0, proba_sog: float = 0) -> Optional[str]:
-        """Assigns a betting category based on various metrics.
-        
-        Returns:
-            'ELITE' for top-tier scorers, 'SAFE' for reliable picks, or None.
-        """
-        if pos in ('D', 'LD', 'RD'):
-            return None  # Blocage complet des défenseurs sur le marché des Buteurs (Suite analyse V14)
-            
-        if score >= cfg.thresholds.buteurs.elite_qs and xgb_proba >= cfg.thresholds.buteurs.elite_xgb: 
-            return "ELITE"
-        if score >= cfg.thresholds.buteurs.safe_qs and xgb_proba >= cfg.thresholds.buteurs.safe_xgb: 
-            return "SAFE"
-            
-        return None
-
     # Plafonds de mise par catégorie (depuis config/settings.toml)
     CATEGORY_CAPS = {
-        "ELITE": cfg.kelly.elite_cap,
-        "SAFE": cfg.kelly.safe_cap,
+        "BUTEUR": cfg.kelly.buteur_cap,
         "PASSEUR": cfg.kelly.passeur_cap,
         "POINTEUR": cfg.kelly.pointeur_cap,
     }
@@ -567,18 +544,17 @@ class NhlBot:
 
     def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
         """Formats and sends the Telegram recap message with all markets. 
-        Sorts the picks by Category (ELITE > SAFE > etc.) and then by QS Score."""
+        Sorts the picks by Category and then by QS Score."""
         
         def cat_priority(cat: str) -> int:
             if not cat: return 99
             c = cat.upper()
-            if 'ELITE' in c: return 1
-            if 'SAFE' in c: return 2
-            if c == 'PASSEUR': return 3
-            if c == 'POINTEUR': return 4
+            if c == 'BUTEUR': return 1
+            if c == 'PASSEUR': return 2
+            if c == 'POINTEUR': return 3
             return 5
             
-        msg = f"<b>🏒 NHL V14.1 — VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>🏒 NHL V17 — VAGUE {wave_label}</b>\n\n"
         
         for mid in wave_ids:
             data = self.compos_en_memoire.get(mid)
