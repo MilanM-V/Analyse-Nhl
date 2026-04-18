@@ -90,7 +90,19 @@ class NhlBot:
 
             try:
                 cflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-                subprocess.run([sys.executable, "fichier.py"], check=True, creationflags=cflags)
+                result = subprocess.run(
+                    [sys.executable, "fichier.py"], 
+                    check=False,  # On gère manuellement le retour
+                    capture_output=True,
+                    text=True,
+                    creationflags=cflags
+                )
+                
+                if result.returncode != 0:
+                    logger.error(f"ÉCHEC CRITIQUE fichier.py (Code {result.returncode})")
+                    logger.error(f"Traceback du script :\n{result.stderr}")
+                    return False
+
                 ok2, ko2 = self._check_csv_integrity()
                 if ok2:
                     self.datastore.force_refresh()
@@ -100,7 +112,7 @@ class NhlBot:
                     logger.warning(f"CSV toujours KO après extraction : {', '.join(ko2)}")
                     return False
             except Exception as e:
-                logger.warning(f"Erreur fichier.py : {e}")
+                logger.warning(f"Exception système lors du lancement de fichier.py : {e}")
                 return False
 
         return True

@@ -15,8 +15,11 @@ from typing import Any, Dict
 _CONFIG_PATH = Path(__file__).parent / "settings.toml"
 
 
-def _to_namespace(d: Dict[str, Any]) -> SimpleNamespace:
+def _to_namespace(d: Any) -> Any:
     """Convertit récursivement un dict en SimpleNamespace pour un accès par attribut."""
+    if not isinstance(d, dict):
+        return d
+        
     for k, v in d.items():
         if isinstance(v, dict):
             d[k] = _to_namespace(v)
