@@ -249,7 +249,10 @@ def load_pk_stats(filepath: str) -> Dict[str, float]:
                 val = float(row.get('PK%', 80.0))
                 if val < 2.0: val *= 100
                 pk_dict[team_abbr] = round(val, 1)
-        return pk_dict
+    except Exception as e:
+        from core.bot_logic import logger
+        logger.warning(f"load_pk_stats error: {e}")
+        return {}
 
 def get_auto_pp1_players(form_data: Dict[str, Dict[str, Any]], pp_stats: Dict[str, float], teams_playing: List[str]) -> List[str]:
     """Identifies potential PP1 players for a list of teams based on their average PP TOI."""
