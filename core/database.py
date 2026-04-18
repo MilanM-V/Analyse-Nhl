@@ -72,18 +72,30 @@ def init_db() -> None:
         )
     ''')
 
+    # Table des paris combinés (V18.2)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS picks_parlays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT, vague TEXT, type_combo TEXT,
+            leg1_joueur TEXT, leg2_joueur TEXT, leg3_joueur TEXT,
+            cote_totale REAL, mise REAL, resultat INTEGER DEFAULT NULL
+        )
+    ''')
+
     conn.commit()
     
     # Upgrade existing tables if necessary (V14 Migration)
     # On vérifie chaque table pour les colonnes manquantes
     tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
     
-    # Colonnes communes ajoutées en V14 et V14.2 (cote)
+    # Colonnes communes ajoutées en V14, V14.2 (cote), V18 (mise) et V18.2 (closing_cote)
     common_cols = [
         ("is_home", "BOOLEAN DEFAULT 0"),
         ("opp_b2b", "BOOLEAN DEFAULT 0"),
         ("consec_goals", "INTEGER DEFAULT 0"),
-        ("cote", "REAL DEFAULT NULL")
+        ("cote", "REAL DEFAULT NULL"),
+        ("mise", "REAL DEFAULT NULL"),
+        ("closing_cote", "REAL DEFAULT NULL"),
     ]
     
     for table in tables_to_fix:
@@ -151,6 +163,25 @@ def insert_player(player_data: Dict[str, Any], conn: Optional[sqlite3.Connection
 
     sql = f'INSERT INTO players ({cols}) VALUES ({placeholders})'
     c.execute(sql, list(player_data.values()))
+
+    if auto_close:
+        conn.commit()
+        conn.close()
+
+def insert_parlay(parlay_data: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
+    """
+    Inserts a generated parlay (combiné) into the picks_parlays table.
+    """
+    auto_close = conn is None
+    if auto_close:
+        conn = get_connection()
+    c = conn.cursor()
+
+    cols = ', '.join(parlay_data.keys())
+    placeholders = ', '.join(['?'] * len(parlay_data))
+
+    sql = f'INSERT INTO picks_parlays ({cols}) VALUES ({placeholders})'
+    c.execute(sql, list(parlay_data.values()))
 
     if auto_close:
         conn.commit()

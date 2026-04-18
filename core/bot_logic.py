@@ -12,7 +12,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core.loaders as loaders
 import core.scraper as scraper
-import core.predictor_v14 as predictor_v14
 import core.odds_scraper as odds_scraper
 import asyncio
 from core.datastore import DataStore
@@ -294,7 +293,7 @@ class NhlBot:
         ds = self.datastore
         TODAY = datetime.now().strftime("%Y-%m-%d")
 
-        matches_soir, compos_brutes, goalies = predictor_v14.parse_flashscore_file(
+        matches_soir, compos_brutes, goalies = loaders.parse_flashscore_file(
             self.fichier_compos_temp, ds.known_players, ds.form_data
         )
 
@@ -316,8 +315,25 @@ class NhlBot:
         opponents.update({t2: t1 for t1, t2 in matches_soir})
 
         b2b_teams = [t for t in loaders.get_b2b_teams('./stats/match.csv', TODAY) if t in opponents]
-        pp1_players = set(predictor_v14.get_auto_pp1_players(ds.form_data, ds.pp_stats, list(opponents.keys())))
+        pp1_players = set(loaders.get_auto_pp1_players(ds.form_data, ds.pp_stats, list(opponents.keys())))
         seen_players = set()
+
+        # Charger les probas dynamiques (V18)
+        probas = {"buteurs": 0.35, "passeurs": 0.50, "pointeurs": 0.65}  # Defaults conservateurs
+        try:
+            import json
+            probas_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "probas.json")
+            if os.path.exists(probas_path):
+                with open(probas_path, "r") as pf:
+                    data = json.load(pf)
+                for key in probas:
+                    if key in data and "proba" in data[key]:
+                        probas[key] = data[key]["proba"]
+                logger.info(f"Probas dynamiques chargées : B={probas['buteurs']:.3f} A={probas['passeurs']:.3f} P={probas['pointeurs']:.3f}")
+            else:
+                logger.info("config/probas.json non trouvé, utilisation des probas par défaut.")
+        except Exception as e:
+            logger.warning(f"Erreur chargement probas.json : {e}")
 
         final_picks_but = []
         final_picks_ast = []
@@ -356,49 +372,52 @@ class NhlBot:
                 ds.v5_data.get(player, {}), p_form, adv_stats,
                 player in pp1_players, team in home_teams,
                 False, is_backup, team in b2b_teams and adv not in b2b_teams
-            )
+            
+            is_backup = loaders.check_if_backup_goalie(goalies.get(adv, ""), ds.goalie_stats)
 
-            # L'ancien système XGBoost a été supprimé (remplacé par les filtres statiques V17).
-
-            # Filtres stricts
-            v5_p = ds.v5_data.get(player, {})
+            # Extractions de métriques
             season_g = float(v5_p.get('G_GP', 0)) if v5_p else 0.0
-            l10_sog = float(p_form.get('L10_SOG_G', 2.0))
-            l10_hdcf = float(p_form.get('L10_iHDCF_G', 0.0))
-            pos = str(v5_p.get('Position', '')).strip()
-            is_home = team in home_teams
+            l10_sog = float(p_form.get('L10_SOG_G', 0))
+            l10_hdcf = float(p_form.get('L10_iHDCF_G', 0))
             
             # Catégories PASSEURS & POINTEURS
             season_a = float(v5_p.get('A_GP', 0)) if v5_p else 0.0
             season_pts = float(v5_p.get('Pts_GP', 0)) if v5_p else 0.0
 
-            # V17 Buteurs — Filtres validés sur 16K combinaisons (39% WR, +27.7% ROI)
-            # Conditions: HOME + QS>=10.5 + SG>=0.30 + SOG>=2.0 + HDCF>=2.0 + pas défenseur
+            opp_ga = float(adv_stats.get('GA_G', 0)) if adv_stats else 0.0
+            l10_a = float(p_form.get('L10_A_G', 0))
+            l10_pts = float(p_form.get('L10_Pts_G', 0))
+            p_atoi = float(p_form.get('ATOI', 0))
+            pos = str(v5_p.get('Position', '')).strip() if v5_p else ""
+            is_home = team in home_teams
+
+            # V18 Buteurs — Filtres stats simples (44.7% WR, +43% ROI)
+            # QS n'est PLUS un filtre, seulement une métrique de tri
             cat_but = None
             if (is_home or not cfg.thresholds.buteurs.home_only) and \
                pos not in ('D', 'LD', 'RD') and \
                season_g >= cfg.thresholds.buteurs.season_g_min and \
                l10_sog >= cfg.thresholds.buteurs.l10_sog_min and \
                l10_hdcf >= cfg.thresholds.buteurs.l10_hdcf_min and \
-               qs_but >= cfg.thresholds.buteurs.qs_min:
+               opp_ga >= cfg.thresholds.buteurs.opp_ga_min:
                 cat_but = "BUTEUR"
             
-            # V17 Passeurs — Filtres validés (55.4% WR, +7.5% ROI)
-            # Conditions: HOME + QS>=10.0 + Season_A>=0.50 + L10_A>=0.80
+            # V18 Passeurs — Filtres optimisés (58.5% WR, +13.6% ROI)
             cat_ast = None
-            if (is_home or not getattr(cfg.thresholds.passeurs, 'home_only', True)) and \
+            if (is_home or not cfg.thresholds.passeurs.home_only) and \
                season_a >= cfg.thresholds.passeurs.season_a_min and \
-               float(p_form.get('L10_A_G', 0)) >= getattr(cfg.thresholds.passeurs, 'l10_a_min', 0.8) and \
-               qs_ast >= cfg.thresholds.passeurs.qs_min:
+               l10_a >= cfg.thresholds.passeurs.l10_a_min and \
+               p_atoi >= cfg.thresholds.passeurs.atoi_min and \
+               opp_ga >= cfg.thresholds.passeurs.opp_ga_min:
                 cat_ast = "PASSEUR"
             
-            # V17 Pointeurs — Filtres validés (67.5% WR, +5.9% ROI)
-            # Conditions: HOME + QS>=10.0 + Season_Pts>=0.80 + L10_Pts>=0.40
+            # V18 Pointeurs — Filtres optimisés (69.6% WR, +13.8% ROI combo)
             cat_pts = None
-            if (is_home or not getattr(cfg.thresholds.pointeurs, 'home_only', True)) and \
+            if (is_home or not cfg.thresholds.pointeurs.home_only) and \
                season_pts >= cfg.thresholds.pointeurs.season_pts_min and \
-               float(p_form.get('L10_Pts_G', 0)) >= getattr(cfg.thresholds.pointeurs, 'l10_pts_min', 0.4) and \
-               qs_pts >= cfg.thresholds.pointeurs.qs_min:
+               l10_pts >= cfg.thresholds.pointeurs.l10_pts_min and \
+               p_atoi >= cfg.thresholds.pointeurs.atoi_min and \
+               opp_ga >= cfg.thresholds.pointeurs.opp_ga_min:
                 cat_pts = "POINTEUR"
 
             # Construction des dicts de picks
@@ -412,36 +431,27 @@ class NhlBot:
 
             if cat_but:
                 p_but = common_data.copy()
-                p_but.update({"Score": qs_but, "Proba": 0.455, "Categorie": cat_but}) # 0.455 base proba
+                p_but.update({"Proba": probas["buteurs"], "Categorie": cat_but})
                 final_picks_but.append(p_but)
             
             if cat_ast:
                 p_ast = common_data.copy()
-                p_ast.update({"Score": qs_ast, "Proba": 0.554, "Categorie": cat_ast})
+                p_ast.update({"Proba": probas["passeurs"], "Categorie": cat_ast})
                 final_picks_ast.append(p_ast)
 
             if cat_pts:
                 p_pts = common_data.copy()
-                p_pts.update({"Score": qs_pts, "Proba": 0.675, "Categorie": cat_pts})
+                p_pts.update({"Proba": probas["pointeurs"], "Categorie": cat_pts})
                 final_picks_pts.append(p_pts)
 
             # Log global
             all_evaluated_players.append({
                 "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": team in home_teams,
-                "Score_But": qs_but, "Score_Assist": qs_ast, "Score_Point": qs_pts,
+                "Score_But": probas["buteurs"], "Score_Assist": probas["passeurs"], "Score_Point": probas["pointeurs"],
                 "Picked_But": bool(cat_but), "Picked_Assist": bool(cat_ast), "Picked_Point": bool(cat_pts),
                 "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
                 "p_form": p_form, "p_v5": ds.v5_data.get(player, {}), "adv_stats": adv_stats
             })
-
-        # Synergie (Buteur Linemates)
-        buteur_players = {r["Joueur"] for r in final_picks_but}
-        for picks_list in (final_picks_but, final_picks_ast, final_picks_pts):
-            for r in picks_list:
-                linemates = lines_index.get(r["Joueur"], set())
-                if bool(linemates & buteur_players - {r["Joueur"]}):
-                    r["Score"] = round(r["Score"] + 0.3, 1)
-                    r["Synergie"] = True
 
         # Odds enrichment & +EV Filtering
         players_to_fetch = list({r["Joueur"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list})
@@ -471,27 +481,46 @@ class NhlBot:
             for p in final_picks_pts:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
                 
-        # 🛡️ FILTRE +EV (Expected Value)
-        # On ne conserve que les paris rentables sur le long terme (marge > 2%)
-        def is_ev_positive(p: dict) -> bool:
+        # 🛡️ FILTRE COTE MINIMUM + EV (V18)
+        # Reject les paris dont la cote est trop basse pour être rentable
+        def is_cote_valid(p: dict, cote_min: float) -> bool:
+            """Vérifie que la cote existe et dépasse le minimum du marché."""
             if not p.get("Cote") or p["Cote"] <= 1.05:
                 logger.debug(f"Pari Rejeté (Absence de Cote) : {p['Joueur']}")
-                return False # Si pas de cote, le joueur n'est PAS jouable !
+                return False
+            if cote_min > 0 and p["Cote"] < cote_min:
+                logger.debug(f"Pari Rejeté (Cote {p['Cote']:.2f} < min {cote_min:.2f}) : {p['Joueur']}")
+                return False
             ev = (p["Proba"] * p["Cote"]) - 1.0
             if ev < 0.02:
                 logger.debug(f"Pari Rejeté (-EV) : {p['Joueur']} (EV: {ev*100:.1f}%)")
                 return False
             return True
 
-        final_picks_but = [p for p in final_picks_but if is_ev_positive(p)]
-        final_picks_ast = [p for p in final_picks_ast if is_ev_positive(p)]
-        final_picks_pts = [p for p in final_picks_pts if is_ev_positive(p)]
+        final_picks_but = [p for p in final_picks_but if is_cote_valid(p, cfg.thresholds.buteurs.cote_min)]
+        final_picks_ast = [p for p in final_picks_ast if is_cote_valid(p, cfg.thresholds.passeurs.cote_min)]
+        # Points : pas de filtre cote_min (rentable en combiné)
+        final_picks_pts = [p for p in final_picks_pts if is_cote_valid(p, cfg.thresholds.pointeurs.cote_min)]
+
+        # Calculer la mise (Kelly) pour chaque pick AVANT envoi Telegram et DB
+        for picks_list in [final_picks_but, final_picks_ast, final_picks_pts]:
+            for p in picks_list:
+                mise_str = self._calculate_quarter_kelly(
+                    p.get('Proba', 0),
+                    p.get('Cote'), p.get('Categorie', '')
+                )
+                p["Mise"] = mise_str
+                # Extraire la valeur numérique pour la DB (ex: "1.5 U" -> 1.5)
+                try:
+                    p["MiseNum"] = float(mise_str.replace(" U", ""))
+                except (ValueError, AttributeError):
+                    p["MiseNum"] = 1.0
 
         # Telegram Recap (Multi-marchés)
-        self._send_telegram_v14(final_picks_but, final_picks_ast, final_picks_pts, wave_label, wave_ids)
+        self._send_telegram_v18(final_picks_but, final_picks_ast, final_picks_pts, wave_label, wave_ids)
         
         # Logging unifié
-        self._log_v14(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, ds)
+        self._log_v18(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, ds)
 
     # Plafonds de mise par catégorie (depuis config/settings.toml)
     CATEGORY_CAPS = {
@@ -500,14 +529,13 @@ class NhlBot:
         "POINTEUR": cfg.kelly.pointeur_cap,
     }
 
-    def _calculate_quarter_kelly(self, score: float, proba: float, cote: float, categorie: str = "") -> str:
+    def _calculate_quarter_kelly(self, proba: float, cote: float, categorie: str = "") -> str:
         """Calcule la recommandation de mise fractionnée Quarter Kelly.
         
         Args:
-            score: QS Score du joueur.
-            proba: Probabilité IA.
+            proba: Probabilité IA calculée.
             cote: Cote du bookmaker.
-            categorie: Catégorie du pick (ELITE, SAFE, DÉFENSEUR, etc.).
+            categorie: Catégorie du pick (BUTEUR, PASSEUR, POINTEUR).
         """
         if not cote or cote <= 1.05:
             return "1 U"
@@ -534,19 +562,10 @@ class NhlBot:
             
         return "0 U"  # Mathématiquement perdant. (Puisque filtré en amont, on ne devrait jamais l'atteindre)
 
-    def _send_telegram_v14(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
-        """Formats and sends the Telegram recap message with all markets. 
-        Sorts the picks by Category and then by QS Score."""
-        
-        def cat_priority(cat: str) -> int:
-            if not cat: return 99
-            c = cat.upper()
-            if c == 'BUTEUR': return 1
-            if c == 'PASSEUR': return 2
-            if c == 'POINTEUR': return 3
-            return 5
+    def _send_telegram_v18(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
+        """Formats and sends the V18 Telegram recap with pre-calculated mise and smart parlays."""
             
-        msg = f"<b>🏒 NHL V17 — VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>\U0001f3d2 NHL V18 \u2014 VAGUE {wave_label}</b>\n\n"
         
         for mid in wave_ids:
             data = self.compos_en_memoire.get(mid)
@@ -558,82 +577,81 @@ class NhlBot:
             
             h_abbr = loaders.TEAM_MAPPING.get(m['home'], m['home'])
             a_abbr = loaders.TEAM_MAPPING.get(m['away'], m['away'])
-            match_key = f"{h_abbr} vs {a_abbr}"
             
             msg += f"<b>Match {t1_full} vs {t2_full} :</b>\n"
             
-            # BUTEURS
-            m_buts = [r for r in buts if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
-            m_buts.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
-            if m_buts:
-                msg += "  🔥 <i>Buteurs :</i>\n"
-                for r in m_buts:
-                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b> ({r['Categorie']}){cote_str}\n"
+            for emoji, label, picks_list in [
+                ("\U0001f525", "Buteurs", buts), ("\U0001f170\ufe0f", "Passeurs", assists),
+                ("\U0001f3c6", "Pointeurs", points)
+            ]:
+                m_picks = [r for r in picks_list if r['Equipe'] in (h_abbr, a_abbr)]
+                # On trie maintenant par Valeur Attendue (EV) : (Proba * Cote - 1)
+                m_picks.sort(key=lambda x: (x.get('Proba', 0) * (x.get('Cote') or 0)) - 1.0, reverse=True)
+                if m_picks:
+                    msg += f"  {emoji} <i>{label} :</i>\n"
+                    for r in m_picks:
+                        home_icon = '\U0001f3e0' if r['IsHome'] else '\u2708\ufe0f'
+                        cote_str = f" @{r['Cote']} | Edge: {((r.get('Proba', 0) * (r.get('Cote', 1) or 1)) - 1)*100:.1f}% | Mise: {r.get('Mise', '1 U')}" if r.get('Cote') else ""
+                        msg += f"  \u2022 {home_icon} <b>{r['Joueur']}</b>{cote_str}\n"
 
-            # PASSEURS
-            m_ast = [r for r in assists if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
-            m_ast.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
-            if m_ast:
-                msg += "  🅰️ <i>Passeurs :</i>\n"
-                for r in m_ast:
-                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b>{cote_str}\n"
-
-            # POINTS
-            m_pts = [r for r in points if (r['Equipe'] == h_abbr or r['Equipe'] == a_abbr)]
-            m_pts.sort(key=lambda x: (cat_priority(x.get('Categorie', '')), -x.get('Score', 0)))
-            if m_pts:
-                msg += "  🏆 <i>Pointeurs :</i>\n"
-                for r in m_pts:
-                    cote_str = f" @{r['Cote']} | Mise: {self._calculate_quarter_kelly(r.get('Score',0), r.get('Proba',0), r.get('Cote'), r.get('Categorie',''))}" if r.get('Cote') else ""
-                    msg += f"  • {'🏠' if r['IsHome'] else '✈️'} <b>{r['Joueur']}</b>{cote_str}\n"
-            
-            if not m_buts and not m_ast and not m_pts:
-                msg += "  <i>⚠️ Aucun pick sur ce match.</i>\n"
+            m_all = [r for picks_list in [buts, assists, points]
+                     for r in picks_list if r['Equipe'] in (h_abbr, a_abbr)]
+            if not m_all:
+                msg += "  <i>\u26a0\ufe0f Aucun pick sur ce match.</i>\n"
             msg += "\n"
 
-        # --- SUGGESTION COMBINÉ (PARLAY) ---
-        all_picks = []
-        for cat_list in [buts, assists, points]:
-            for p in cat_list:
-                cote = p.get('Cote')
-                if cote and cote > 1.05 and p.get('Proba'):
-                    ev = (p['Proba'] * cote) - 1.0
-                    all_picks.append({
-                        'joueur': p['Joueur'], 
-                        'equipe': p['Equipe'], 
-                        'cote': cote, 
-                        'ev': ev,
-                        'cat': p.get('Categorie', 'Pick')
-                    })
-        
-        # Trier par EV la plus haute
-        all_picks.sort(key=lambda x: x['ev'], reverse=True)
-        
-        parlay_found = False
-        if len(all_picks) >= 2:
-            # Chercher deux joueurs d'équipes différentes
-            p1 = all_picks[0]
-            p2 = None
-            for p in all_picks[1:]:
-                if p['equipe'] != p1['equipe']:
-                    p2 = p
-                    break
+        # --- COMBINÉS INTELLIGENTS (V18) ---
+        # Regrouper les picks POINTS par match pour combinés multi-matchs
+        pts_by_match = {}
+        for p in points:
+            if p.get('Cote') and p['Cote'] > 1.05:
+                match_key = f"{p['Equipe']}-{p.get('Adversaire', '')}"
+                if match_key not in pts_by_match or (p.get('Proba', 0) * p['Cote']) > (pts_by_match[match_key].get('Proba', 0) * pts_by_match[match_key].get('Cote', 1)):
+                    pts_by_match[match_key] = p
+
+        match_bests = list(pts_by_match.values())
+        if len(match_bests) >= 2:
+            # Trier par score décroissant, prendre les 2-3 meilleurs
+            match_bests.sort(key=lambda x: -x.get('Score', 0))
             
-            if p2:
-                cote_totale = round(p1['cote'] * p2['cote'], 2)
-                ev_totale = ((p1['ev']+1) * (p2['ev']+1)) - 1.0
-                msg += "<b>🎯 SUGGESTION COMBINÉ (+EV SÉCURISÉ) :</b>\n"
-                msg += f"  • {p1['joueur']} ({p1['cat']}) @{p1['cote']}\n"
-                msg += f"  • {p2['joueur']} ({p2['cat']}) @{p2['cote']}\n"
-                msg += f"  => <b>Cote Totale : @{cote_totale}</b> <i>(Edge: +{ev_totale*100:.1f}%)</i>\n\n"
+            from core.database import insert_parlay
+            from datetime import datetime
+            today_str = datetime.now().strftime("%Y-%m-%d")
+
+            # Combiné double
+            legs_2 = match_bests[:2]
+            cote_2 = round(legs_2[0]['Cote'] * legs_2[1]['Cote'], 2)
+            msg += "<b>\U0001f3af COMBINE DOUBLE (Points) :</b>\n"
+            for leg in legs_2:
+                msg += f"  \u2022 {leg['Joueur']} @{leg['Cote']}\n"
+            msg += f"  => <b>Cote Combo : @{cote_2}</b> | Mise: 0.5 U\n\n"
+            
+            insert_parlay({
+                "date": today_str, "vague": wave_label, "type_combo": "DOUBLE_POINTS",
+                "leg1_joueur": legs_2[0]['Joueur'], "leg2_joueur": legs_2[1]['Joueur'], "leg3_joueur": None,
+                "cote_totale": cote_2, "mise": 0.5
+            })
+            
+            # Combiné triple si 3+ matchs
+            if len(match_bests) >= 3:
+                legs_3 = match_bests[:3]
+                cote_3 = round(legs_3[0]['Cote'] * legs_3[1]['Cote'] * legs_3[2]['Cote'], 2)
+                msg += "<b>\U0001f680 COMBINE TRIPLE (Points) :</b>\n"
+                for leg in legs_3:
+                    msg += f"  \u2022 {leg['Joueur']} @{leg['Cote']}\n"
+                msg += f"  => <b>Cote Combo : @{cote_3}</b> | Mise: 0.3 U\n\n"
+
+                insert_parlay({
+                    "date": today_str, "vague": wave_label, "type_combo": "TRIPLE_POINTS",
+                    "leg1_joueur": legs_3[0]['Joueur'], "leg2_joueur": legs_3[1]['Joueur'], "leg3_joueur": legs_3[2]['Joueur'],
+                    "cote_totale": cote_3, "mise": 0.3
+                })
 
         self.telegram.send_message(msg)
 
 
-    def _log_v14(self, buts, asts, pts, all_players, wave_label, ds):
-        """Logs everything to SQL tables and CSV files."""
+    def _log_v18(self, buts, asts, pts, all_players, wave_label, ds):
+        """Logs everything to SQL tables and CSV files (V18 with mise)."""
         from core.database import insert_pick, insert_player
         import csv
         TODAY = self.get_nhl_session_date()
@@ -643,7 +661,7 @@ class NhlBot:
             f, v5, adv = ds.form_data.get(p["Joueur"], {}), ds.v5_data.get(p["Joueur"], {}), ds.matchups.get(p["Adversaire"], {})
             insert_pick("picks", {
                 "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
-                "adversaire": p["Adversaire"], "score": p["Score"], "verdict": p["Categorie"],
+                "adversaire": p["Adversaire"], "score": p.get("Proba", 0), "verdict": p["Categorie"],
                 "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
                 "ixg": f.get("L10_ixG_G", 0), "hdcf": f.get("L10_iHDCF_G", 0), "sog": f.get("L10_SOG_G", 0),
                 "atoi": f.get("ATOI", 0), "l10_g": f.get("L10_G_G", 0), "season_g": v5.get("G_GP", 0),
@@ -651,31 +669,34 @@ class NhlBot:
                 "cf_pct": adv.get("CF_pct", 50), "hdca_g": adv.get("HDCA_G", 0),
                 "pk_pct": adv.get("PK%", 80), "rebounds": f.get("L10_Rebounds_G", 0),
                 "rush": f.get("L10_Rush_G", 0), "opp_b2b": adv.get("B2B", False),
-                "consec_goals": f.get("ConsecGoals", 0), "cote": p.get("Cote")
+                "consec_goals": f.get("ConsecGoals", 0), "cote": p.get("Cote"),
+                "mise": p.get("MiseNum")
             })
 
         for p in asts:
             f, v5, adv = ds.form_data.get(p["Joueur"], {}), ds.v5_data.get(p["Joueur"], {}), ds.matchups.get(p["Adversaire"], {})
             insert_pick("picks_assists", {
                 "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
-                "adversaire": p["Adversaire"], "score": p["Score"], "verdict": p["Categorie"],
+                "adversaire": p["Adversaire"], "score": p.get("Proba", 0), "verdict": p["Categorie"],
                 "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
                 "atoi": f.get("ATOI", 0), "l10_a": f.get("L10_A_G", 0), "season_a": v5.get("A_GP", 0),
                 "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
                 "cf_pct": adv.get("CF_pct", 50), "pk_pct": adv.get("PK%", 80),
-                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote")
+                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote"),
+                "mise": p.get("MiseNum")
             })
 
         for p in pts:
             f, v5, adv = ds.form_data.get(p["Joueur"], {}), ds.v5_data.get(p["Joueur"], {}), ds.matchups.get(p["Adversaire"], {})
             insert_pick("picks_points", {
                 "date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
-                "adversaire": p["Adversaire"], "score": p["Score"], "verdict": p["Categorie"],
+                "adversaire": p["Adversaire"], "score": p.get("Proba", 0), "verdict": p["Categorie"],
                 "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
                 "atoi": f.get("ATOI", 0), "l10_pts": f.get("L10_Pts_G", 0), "season_pts": v5.get("Pts_GP", 0),
                 "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
                 "cf_pct": adv.get("CF_pct", 50),
-                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote")
+                "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote"),
+                "mise": p.get("MiseNum")
             })
 
         # Unified Player SQL Log
@@ -706,11 +727,11 @@ class NhlBot:
                 writer = csv.DictWriter(f, fieldnames=['date', 'vague', 'joueur', 'type', 'score', 'cote', 'but'])
                 if not file_exists: writer.writeheader()
                 for p in buts:
-                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "BUT", "score": p["Score"], "cote": p.get("Cote", ""), "but": ""}.items()})
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "BUT", "score": p.get("Proba", 0), "cote": p.get("Cote", ""), "but": ""}.items()})
                 for p in asts:
-                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "ASSIST", "score": p["Score"], "cote": p.get("Cote", ""), "but": ""}.items()})
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "ASSIST", "score": p.get("Proba", 0), "cote": p.get("Cote", ""), "but": ""}.items()})
                 for p in pts:
-                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "POINT", "score": p["Score"], "cote": p.get("Cote", ""), "but": ""}.items()})
+                    writer.writerow({k: format_csv(v) for k, v in {"date": TODAY, "vague": wave_label, "joueur": p["Joueur"], "type": "POINT", "score": p.get("Proba", 0), "cote": p.get("Cote", ""), "but": ""}.items()})
         except Exception as e:
             logger.error(f"Error writing to picks_log.csv: {e}")
 

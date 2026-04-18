@@ -27,9 +27,13 @@ if hasattr(time, 'tzset'):
     time.tzset()
 
 def main():
-    # Initialisation minimale avant le try global pour pouvoir envoyer l'alerte
+    # Initialisation minimale avant le try global
+    from core.database import init_db
+    init_db()  # Auto-migration de la BDD lors du push serveur
+    
     if not os.path.exists("./stats"):
         os.makedirs("./stats")
+        
     datastore = DataStore()
     telegram = TelegramNotifier()
 
