@@ -120,7 +120,8 @@ def load_and_simulate(unit_value_euro: float):
                     gain_u = (cote * mise - mise) if res_but else -mise
                     results.append({"date": row['date'], "joueur": joueur, "categorie": "BUTEUR",
                                    "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
-                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro})
+                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
+                                   "won": res_but, "equipe": row['equipe'], "adv": row['adversaire']})
 
         # Simulation PASSEUR
         af = cfg["thresholds"].get("passeurs", {})
@@ -143,7 +144,8 @@ def load_and_simulate(unit_value_euro: float):
                     gain_u = (cote * mise - mise) if res_ast else -mise
                     results.append({"date": row['date'], "joueur": joueur, "categorie": "PASSEUR",
                                    "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
-                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro})
+                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
+                                   "won": res_ast, "equipe": row['equipe'], "adv": row['adversaire']})
 
         # Simulation POINTEUR
         pf = cfg["thresholds"].get("pointeurs", {})
@@ -166,7 +168,78 @@ def load_and_simulate(unit_value_euro: float):
                     gain_u = (cote * mise - mise) if res_pts else -mise
                     results.append({"date": row['date'], "joueur": joueur, "categorie": "POINTEUR",
                                    "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
-                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro})
+                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
+                                   "won": res_pts, "equipe": row['equipe'], "adv": row['adversaire']})
+
+    # ----- SIMULATION DES COMBINÉS V18.3 -----
+    def get_best_per_match(picks_list):
+        best = {}
+        for p in picks_list:
+            m_key = f"{p['equipe']}-{p['adv']}"
+            if m_key not in best or (p['edge_pct']) > (best[m_key]['edge_pct']):
+                best[m_key] = p
+        return list(best.values())
+        
+    def find_cross_duo(list1, list2):
+        for p1 in list1:
+            g1 = set([p1['equipe'], p1['adv']])
+            for p2 in list2:
+                if p1['joueur'] == p2['joueur']: continue
+                g2 = set([p2['equipe'], p2['adv']])
+                if not g1.intersection(g2):
+                    return (p1, p2)
+        return None
+
+    # Group by date
+    by_date = {}
+    for r in results:
+        d = r['date']
+        if d not in by_date: by_date[d] = []
+        by_date[d].append(r)
+        
+    parlay_results = []
+    
+    for d, day_picks in by_date.items():
+        buts = [p for p in day_picks if p['categorie'] == "BUTEUR"]
+        asts = [p for p in day_picks if p['categorie'] == "PASSEUR"]
+        pts = [p for p in day_picks if p['categorie'] == "POINTEUR"]
+        
+        best_pts = get_best_per_match(pts)
+        best_ast = get_best_per_match(asts)
+        best_but = get_best_per_match(buts)
+        
+        best_pts.sort(key=lambda x: -x['edge_pct'])
+        best_ast.sort(key=lambda x: -x['edge_pct'])
+        best_but.sort(key=lambda x: -x['edge_pct'])
+        
+        def add_combo(p1, p2, cat_name, mise_u):
+            c_tot = p1['cote'] * p2['cote']
+            won = p1['won'] and p2['won']
+            gain_u = (c_tot * mise_u - mise_u) if won else -mise_u
+            parlay_results.append({
+                "date": d, "joueur": f"{p1['joueur']} + {p2['joueur']}", 
+                "categorie": cat_name, "cote": c_tot, "mise_u": mise_u, "edge_pct": 0,
+                "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
+                "won": won, "equipe": "COMBO", "adv": "COMBO"
+            })
+            
+        # Double Points
+        if len(best_pts) >= 2:
+            add_combo(best_pts[0], best_pts[1], "COMBO DOUBLE PTS", 0.5)
+            
+        # Duo Booster
+        booster = find_cross_duo(best_ast, best_pts)
+        if booster: add_combo(booster[0], booster[1], "COMBO DUO BOOSTER", 0.5)
+            
+        # Duo Offensif
+        offensif = find_cross_duo(best_but, best_pts)
+        if offensif: add_combo(offensif[0], offensif[1], "COMBO DUO OFFENSIF", 0.5)
+            
+        # Double Buteur
+        dbut = find_cross_duo(best_but, best_but)
+        if dbut: add_combo(dbut[0], dbut[1], "COMBO DOUBLE BUTEUR", 0.3)
+        
+    results.extend(parlay_results)
 
     sim_df = pd.DataFrame(results)
     if not sim_df.empty:
@@ -178,15 +251,15 @@ def load_and_simulate(unit_value_euro: float):
 
 # ----- INTERFACE -----
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
-st.sidebar.title("Simulateur Quant V18")
+st.sidebar.title("Simulateur Quant V18.3")
 
 unit_euro = st.sidebar.number_input("💵 Valeur d'1 Unité (en €)", min_value=1.0, max_value=500.0, value=10.0, step=5.0)
 
 st.sidebar.markdown("---")
-st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur V18 actuel**, génère les sélections V18 et calcule les gains réels.")
+st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur V18.3 actuel** (Singles & Combinés)")
 
-st.title(f"🚀 Dashboard Simulateur V18")
-st.markdown(f"Si l'algorithme V18 actuel avait tourné depuis le début de la récolte de Data, avec **1 Unité = {unit_euro} €** :")
+st.title(f"🚀 Dashboard Simulateur V18.3")
+st.markdown(f"Si l'algorithme V18.3 actuel avait tourné depuis le début de la récolte de Data, avec **1 Unité = {unit_euro} €** :")
 
 df_sim, probas_actuelles = load_and_simulate(unit_euro)
 

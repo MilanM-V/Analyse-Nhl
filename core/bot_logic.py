@@ -350,30 +350,9 @@ class NhlBot:
             if p_form['ATOI'] < cfg.thresholds.general.atoi_min or team not in opponents: continue
 
             adv = opponents[team]
-            adv_stats = ds.matchups.get(adv)
-            is_backup = predictor_v14.check_if_backup_goalie(goalies.get(adv, ""), ds.goalie_stats)
-
-            # Analyse BUTS
-            qs_but = predictor_v14.calculate_base_qs(
-                ds.v5_data.get(player, {}), p_form, adv_stats,
-                player in pp1_players, team in home_teams,
-                False, is_backup, team in b2b_teams and adv not in b2b_teams
-            )
-
-            # Analyse ASSISTS
-            qs_ast = predictor_v14.calculate_assist_qs(
-                ds.v5_data.get(player, {}), p_form, adv_stats,
-                player in pp1_players, team in home_teams,
-                False, is_backup, team in b2b_teams and adv not in b2b_teams
-            )
-
-            # Analyse POINTS
-            qs_pts = predictor_v14.calculate_points_qs(
-                ds.v5_data.get(player, {}), p_form, adv_stats,
-                player in pp1_players, team in home_teams,
-                False, is_backup, team in b2b_teams and adv not in b2b_teams
-            
+            adv_stats = ds.matchups.get(adv) or {}
             is_backup = loaders.check_if_backup_goalie(goalies.get(adv, ""), ds.goalie_stats)
+            v5_p = ds.v5_data.get(player, {})
 
             # Extractions de métriques
             season_g = float(v5_p.get('G_GP', 0)) if v5_p else 0.0
@@ -563,9 +542,9 @@ class NhlBot:
         return "0 U"  # Mathématiquement perdant. (Puisque filtré en amont, on ne devrait jamais l'atteindre)
 
     def _send_telegram_v18(self, buts: List[Dict[str, Any]], assists: List[Dict[str, Any]], points: List[Dict[str, Any]], wave_label: str, wave_ids: List[str]) -> None:
-        """Formats and sends the V18 Telegram recap with pre-calculated mise and smart parlays."""
+        """Formats and sends the V18.3 Telegram recap with pre-calculated mise and smart parlays."""
             
-        msg = f"<b>\U0001f3d2 NHL V18 \u2014 VAGUE {wave_label}</b>\n\n"
+        msg = f"<b>\U0001f3d2 NHL V18.3 \u2014 VAGUE {wave_label}</b>\n\n"
         
         for mid in wave_ids:
             data = self.compos_en_memoire.get(mid)
@@ -600,52 +579,98 @@ class NhlBot:
                 msg += "  <i>\u26a0\ufe0f Aucun pick sur ce match.</i>\n"
             msg += "\n"
 
-        # --- COMBINÉS INTELLIGENTS (V18) ---
-        # Regrouper les picks POINTS par match pour combinés multi-matchs
-        pts_by_match = {}
-        for p in points:
-            if p.get('Cote') and p['Cote'] > 1.05:
-                match_key = f"{p['Equipe']}-{p.get('Adversaire', '')}"
-                if match_key not in pts_by_match or (p.get('Proba', 0) * p['Cote']) > (pts_by_match[match_key].get('Proba', 0) * pts_by_match[match_key].get('Cote', 1)):
-                    pts_by_match[match_key] = p
+        # --- COMBINÉS INTELLIGENTS (V18.3) ---
+        def get_best_per_match(picks_list):
+            best = {}
+            for p in picks_list:
+                if p.get('Cote') and p['Cote'] > 1.05:
+                    m_key = f"{p['Equipe']}-{p.get('Adversaire', '')}"
+                    if m_key not in best or (p.get('Proba', 0) * p['Cote']) > (best[m_key].get('Proba', 0) * best[m_key].get('Cote', 1)):
+                        best[m_key] = p
+            return list(best.values())
 
-        match_bests = list(pts_by_match.values())
-        if len(match_bests) >= 2:
-            # Trier par score décroissant, prendre les 2-3 meilleurs
-            match_bests.sort(key=lambda x: -x.get('Score', 0))
-            
-            from core.database import insert_parlay
-            from datetime import datetime
-            today_str = datetime.now().strftime("%Y-%m-%d")
+        best_pts = get_best_per_match(points)
+        best_ast = get_best_per_match(assists)
+        best_but = get_best_per_match(buts)
+        
+        # Sort by EV décroissante
+        best_pts.sort(key=lambda x: -((x.get('Proba', 0) * x.get('Cote', 1)) - 1.0))
+        best_ast.sort(key=lambda x: -((x.get('Proba', 0) * x.get('Cote', 1)) - 1.0))
+        best_but.sort(key=lambda x: -((x.get('Proba', 0) * x.get('Cote', 1)) - 1.0))
 
-            # Combiné double
-            legs_2 = match_bests[:2]
-            cote_2 = round(legs_2[0]['Cote'] * legs_2[1]['Cote'], 2)
-            msg += "<b>\U0001f3af COMBINE DOUBLE (Points) :</b>\n"
-            for leg in legs_2:
-                msg += f"  \u2022 {leg['Joueur']} @{leg['Cote']}\n"
-            msg += f"  => <b>Cote Combo : @{cote_2}</b> | Mise: 0.5 U\n\n"
-            
-            insert_parlay({
-                "date": today_str, "vague": wave_label, "type_combo": "DOUBLE_POINTS",
-                "leg1_joueur": legs_2[0]['Joueur'], "leg2_joueur": legs_2[1]['Joueur'], "leg3_joueur": None,
-                "cote_totale": cote_2, "mise": 0.5
-            })
-            
-            # Combiné triple si 3+ matchs
-            if len(match_bests) >= 3:
-                legs_3 = match_bests[:3]
-                cote_3 = round(legs_3[0]['Cote'] * legs_3[1]['Cote'] * legs_3[2]['Cote'], 2)
-                msg += "<b>\U0001f680 COMBINE TRIPLE (Points) :</b>\n"
-                for leg in legs_3:
-                    msg += f"  \u2022 {leg['Joueur']} @{leg['Cote']}\n"
-                msg += f"  => <b>Cote Combo : @{cote_3}</b> | Mise: 0.3 U\n\n"
+        from core.database import insert_parlay
+        from datetime import datetime
+        today_str = datetime.now().strftime("%Y-%m-%d")
 
-                insert_parlay({
-                    "date": today_str, "vague": wave_label, "type_combo": "TRIPLE_POINTS",
-                    "leg1_joueur": legs_3[0]['Joueur'], "leg2_joueur": legs_3[1]['Joueur'], "leg3_joueur": legs_3[2]['Joueur'],
-                    "cote_totale": cote_3, "mise": 0.3
-                })
+        def find_cross_duo(list1, list2):
+            for p1 in list1:
+                g1 = set([p1['Equipe'], p1.get('Adversaire', '')])
+                for p2 in list2:
+                    if p1['Joueur'] == p2['Joueur']: continue # Pas le même joueur
+                    g2 = set([p2['Equipe'], p2.get('Adversaire', '')])
+                    if not g1.intersection(g2): # Pas de même match
+                        return (p1, p2)
+            return None
+
+        # Double Points & Triple Points
+        if len(best_pts) >= 2:
+            l1, l2 = best_pts[0], best_pts[1]
+            c2 = round(l1['Cote'] * l2['Cote'], 2)
+            msg += "<b>\U0001f3af DOUBLE POINTS :</b>\n"
+            msg += f"  \u2022 {l1['Joueur']} @{l1['Cote']}\n"
+            msg += f"  \u2022 {l2['Joueur']} @{l2['Cote']}\n"
+            msg += f"  => <b>Cote Combo : @{c2}</b> | Mise: 0.5 U\n\n"
+            insert_parlay({"date": today_str, "vague": wave_label, "type_combo": "DOUBLE_POINTS",
+                           "leg1_joueur": l1['Joueur'], "leg2_joueur": l2['Joueur'], "leg3_joueur": None,
+                           "cote_totale": c2, "mise": 0.5})
+            
+            if len(best_pts) >= 3:
+                l3 = best_pts[2]
+                c3 = round(l1['Cote'] * l2['Cote'] * l3['Cote'], 2)
+                msg += "<b>\U0001f680 TRIPLE POINTS :</b>\n"
+                msg += f"  \u2022 {l1['Joueur']} @{l1['Cote']}\n"
+                msg += f"  \u2022 {l2['Joueur']} @{l2['Cote']}\n"
+                msg += f"  \u2022 {l3['Joueur']} @{l3['Cote']}\n"
+                msg += f"  => <b>Cote Combo : @{c3}</b> | Mise: 0.3 U\n\n"
+                insert_parlay({"date": today_str, "vague": wave_label, "type_combo": "TRIPLE_POINTS",
+                               "leg1_joueur": l1['Joueur'], "leg2_joueur": l2['Joueur'], "leg3_joueur": l3['Joueur'],
+                               "cote_totale": c3, "mise": 0.3})
+
+        # Duo Booster (Ast + Pts)
+        booster = find_cross_duo(best_ast, best_pts)
+        if booster:
+            c2 = round(booster[0]['Cote'] * booster[1]['Cote'], 2)
+            msg += "<b>\U0001f525 DUO BOOSTER (Passeur + Pointeur) :</b>\n"
+            msg += f"  \u2022 {booster[0]['Joueur']} (Passes) @{booster[0]['Cote']}\n"
+            msg += f"  \u2022 {booster[1]['Joueur']} (Points) @{booster[1]['Cote']}\n"
+            msg += f"  => <b>Cote Combo : @{c2}</b> | Mise: 0.5 U\n\n"
+            insert_parlay({"date": today_str, "vague": wave_label, "type_combo": "PASSEUR_POINTEUR",
+                           "leg1_joueur": booster[0]['Joueur'], "leg2_joueur": booster[1]['Joueur'], "leg3_joueur": None,
+                           "cote_totale": c2, "mise": 0.5})
+
+        # Duo Offensif (But + Pts)
+        offensif = find_cross_duo(best_but, best_pts)
+        if offensif:
+            c2 = round(offensif[0]['Cote'] * offensif[1]['Cote'], 2)
+            msg += "<b>\U0001f4a3 DUO OFFENSIF (Buteur + Pointeur) :</b>\n"
+            msg += f"  \u2022 {offensif[0]['Joueur']} (Buteur) @{offensif[0]['Cote']}\n"
+            msg += f"  \u2022 {offensif[1]['Joueur']} (Points) @{offensif[1]['Cote']}\n"
+            msg += f"  => <b>Cote Combo : @{c2}</b> | Mise: 0.5 U\n\n"
+            insert_parlay({"date": today_str, "vague": wave_label, "type_combo": "BUTEUR_POINTEUR",
+                           "leg1_joueur": offensif[0]['Joueur'], "leg2_joueur": offensif[1]['Joueur'], "leg3_joueur": None,
+                           "cote_totale": c2, "mise": 0.5})
+
+        # Double Buteur (But + But)
+        dbut = find_cross_duo(best_but, best_but)
+        if dbut:
+            c2 = round(dbut[0]['Cote'] * dbut[1]['Cote'], 2)
+            msg += "<b>\u2694\ufe0f DOUBLE BUTEUR :</b>\n"
+            msg += f"  \u2022 {dbut[0]['Joueur']} @{dbut[0]['Cote']}\n"
+            msg += f"  \u2022 {dbut[1]['Joueur']} @{dbut[1]['Cote']}\n"
+            msg += f"  => <b>Cote Combo : @{c2}</b> | Mise: 0.3 U\n\n"
+            insert_parlay({"date": today_str, "vague": wave_label, "type_combo": "DOUBLE_BUTEUR",
+                           "leg1_joueur": dbut[0]['Joueur'], "leg2_joueur": dbut[1]['Joueur'], "leg3_joueur": None,
+                           "cote_totale": c2, "mise": 0.3})
 
         self.telegram.send_message(msg)
 
