@@ -257,11 +257,38 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, nhl_bot.end_of_day_cleanup)
 
+    async def job_log_closing_lines(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Tracks the closing lines (CLV) before evening matches start."""
+        from core.updater import log_closing_lines
+        await log_closing_lines()
+
+    async def job_recalc_probas(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Recalcule les probabilités de picks statiques tous les lundis matin."""
+        import datetime as dt
+        import subprocess
+        import sys
+        if dt.datetime.now(dt.timezone.utc).weekday() == 0:  # Lundi = 0
+            logger.info("Lancement du script de recalcul des probabilités (Lundi).")
+            try:
+                subprocess.run([sys.executable, "scripts/recalc_probas.py"], check=False)
+                nhl_bot.telegram.send_alert("✅ [Bilan Hebdo] Les probabilités bayésiennes du bot ont été recalculées automatiquement pour cette semaine.")
+            except Exception as e:
+                logger.error(f"Échec du recalcul des probabilités : {e}")
+
     app.job_queue.run_repeating(job_scan_cycle, interval=900, first=10)
 
     import datetime as dt
-    target_time = dt.time(hour=5, minute=0, tzinfo=dt.timezone.utc) 
-    app.job_queue.run_daily(job_end_of_day, time=target_time)
+    # EOD Cleanup at 5:00 UTC (morning)
+    target_time_eod = dt.time(hour=5, minute=0, tzinfo=dt.timezone.utc) 
+    app.job_queue.run_daily(job_end_of_day, time=target_time_eod)
+    
+    # CLV Tracking around midnight UTC (before most matches)
+    target_time_clv = dt.time(hour=23, minute=30, tzinfo=dt.timezone.utc)
+    app.job_queue.run_daily(job_log_closing_lines, time=target_time_clv)
+
+    # Recalcul hebdomadaire des probabilités à 6:00 UTC
+    target_time_probas = dt.time(hour=6, minute=0, tzinfo=dt.timezone.utc)
+    app.job_queue.run_daily(job_recalc_probas, time=target_time_probas)
 
     return app
 

@@ -138,17 +138,25 @@ async def build_on_ice(session: aiohttp.ClientSession):
 
 async def build_power_play(session: aiohttp.ClientSession):
     logger.info("  power play.csv...")
-    summary = await fetch_all(session, "skater/summary")
+    # L'API NHL offre le endpoint timeonice qui contient ppTimeOnIcePerGame directement
+    time_data = await fetch_all(session, "skater/timeonice")
+    
     rows = []
-    for r in summary:
+    for r in time_data:
         gp = r.get('gamesPlayed', 0)
         if gp == 0: continue
+        
+        # ppTimeOnIcePerGame est renvoyé en secondes par l'API
+        pp_toi_sec = float(r.get('ppTimeOnIcePerGame', 0))
+        pp_toi_min = round(pp_toi_sec / 60.0, 2)
+        
         rows.append({
             'Player': r.get('skaterFullName', ''),
             'Team':   r.get('teamAbbrevs', ''),
             'GP':     gp,
-            'TOI':    float(r.get('ppPoints', 0) or 0) * 2.0,
+            'TOI':    pp_toi_min,
         })
+        
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(FOLDER_NAME, 'power play.csv'), index=False, encoding='utf-8-sig')
     return df
@@ -314,13 +322,35 @@ async def prefetch_pbp_and_boxscores(session: aiohttp.ClientSession, all_teams: 
 
 def is_high_danger(x, y, zone, home_side, event_owner_id, home_team_id):
     if zone != 'O': return False
-    return abs(x) >= 69 and abs(y) <= 22
+    abs_x = abs(x)
+    # High danger area is the "home plate" in front of the net:
+    # 1. Must be in front of the goal line (abs_x <= 89)
+    # 2. Must be within the slot distance (abs_x >= 65 is roughly 24 feet from goal line)
+    # 3. Y must correspond to the slot width (between the faceoff dots).
+    if abs_x > 89: return False
+    dist = math.sqrt((89 - abs_x)**2 + y**2)
+    return dist <= 26 and abs(y) <= 22
 
 def estimate_xg(x, y, shot_type, is_rebound, is_rush):
-    xg = 0.05
-    if is_rebound: xg += 0.15
-    if is_rush: xg += 0.05
-    if abs(x) >= 69 and abs(y) <= 22: xg += 0.10
+    abs_x = abs(x)
+    if abs_x > 89:
+        xg = 0.01 # Behind the net
+    else:
+        dist = math.sqrt((89 - abs_x)**2 + y**2)
+        if dist <= 15:
+            xg = 0.18
+        elif dist <= 30:
+            xg = 0.08
+        elif dist <= 45:
+            xg = 0.04
+        else:
+            xg = 0.015
+
+    if is_rebound: xg += 0.25
+    if is_rush: xg += 0.10
+    if shot_type in ('deflected', 'tip-in'): xg += 0.12
+    if shot_type == 'slap': xg += 0.03
+
     return min(xg, 0.99)
 
 def compute_last10_stats(all_teams: List[str], game_ids_cache: Dict[str, List[str]]):

@@ -6,6 +6,11 @@ import plotly.graph_objects as go
 import os
 import sys
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from config.settings import cfg
+from core.market_filter import evaluate_player_markets, load_dynamic_probas
+from core.kelly import calculate_quarter_kelly, CATEGORY_CAPS
+
 # Compatibilité r/w TOML
 try:
     import tomllib
@@ -43,15 +48,8 @@ def load_and_simulate(unit_value_euro: float):
     if not os.path.exists(DB_PATH) or not os.path.exists(SETTINGS_PATH):
         return pd.DataFrame(), {}
 
-    # Charger les configurations V18 actuelles
-    with open(SETTINGS_PATH, "rb") as f:
-        cfg = tomllib.load(f)
-    try:
-        import json
-        with open(PROBAS_PATH, "r") as f:
-            probas = json.load(f)
-    except:
-        probas = {"buteurs": 0.23, "passeurs": 0.35, "pointeurs": 0.50}
+    # La config est chargée globalement via 'from config.settings import cfg'
+    # 'probas' est chargé dynamiquement via import. On peut s'en passer ici.
 
     # Connexion DB : On charge TOUS les joueurs évalués
     conn = sqlite3.connect(DB_PATH)
@@ -75,7 +73,17 @@ def load_and_simulate(unit_value_euro: float):
     cotes_ast_dict = cotes_df_ast.set_index(['date', 'joueur'])['cote'].to_dict()
     cotes_pts_dict = cotes_df_pts.set_index(['date', 'joueur'])['cote'].to_dict()
 
+    # Calcul des cotes par défaut dynamiques (Moyenne historique réelle)
+    avg_but = float(cotes_df_but['cote'].mean()) if not cotes_df_but.empty else 3.20
+    avg_ast = float(cotes_df_ast['cote'].mean()) if not cotes_df_ast.empty else 2.40
+    avg_pts = float(cotes_df_pts['cote'].mean()) if not cotes_df_pts.empty else 1.90
+    avg_but = round(avg_but, 2)
+    avg_ast = round(avg_ast, 2)
+    avg_pts = round(avg_pts, 2)
+
     results = []
+    
+    probas = load_dynamic_probas()
 
     # Moteur V18 manuel (Backtesting)
     for idx, row in df.iterrows():
@@ -98,78 +106,60 @@ def load_and_simulate(unit_value_euro: float):
         res_ast = int(row['assist']) > 0
         res_pts = int(row['point']) > 0
 
-        # Simulation BUTEUR
-        bf = cfg["thresholds"].get("buteurs", {})
-        if (hdcf >= bf.get("l10_hdcf_min", 0) and 
-            atoi >= bf.get("atoi_min", cfg["thresholds"]["general"].get("atoi_min", 0)) and 
-            opp_ga >= bf.get("opp_ga_min", 0) and 
-            season_g >= bf.get("season_g_min", 0)):
-            
-            cote = cotes_but_dict.get(key)
-            if not cote: cote = 3.20 # Cote médiane buteur estimée
-            
-            if cote >= bf.get("cote_min", 2.50):
-                p_val = probas.get("buteurs", {})
-                b_prob = p_val.get("proba", 0.23) if isinstance(p_val, dict) else p_val
-                edge = (b_prob * cote) - 1.0
-                if edge > 0:
-                    quarter_f = (edge / (cote - 1)) * 0.25
-                    mise = round(quarter_f * 100 * 2) / 2
-                    mise = min(max(mise, 0.5), cfg["kelly"].get("buteur_cap", 3.0))
-                    
-                    gain_u = (cote * mise - mise) if res_but else -mise
-                    results.append({"date": row['date'], "joueur": joueur, "categorie": "BUTEUR",
-                                   "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
-                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
-                                   "won": res_but, "equipe": row['equipe'], "adv": row['adversaire']})
+        p_form = {
+            "L10_SOG_G": row.get('sog', 0) if pd.notna(row.get('sog', 0)) else 0,
+            "L10_iHDCF_G": hdcf,
+            "L10_A_G": row.get('l10_a', 0) if pd.notna(row.get('l10_a', 0)) else 0,
+            "L10_Pts_G": row.get('l10_pts', 0) if pd.notna(row.get('l10_pts', 0)) else 0,
+            "ATOI": atoi
+        }
+        v5_p = {
+            "G_GP": season_g,
+            "A_GP": season_a,
+            "Pts_GP": season_pts,
+            "Position": "F"  # Position is usually not fully available in player hist, assuming F
+        }
+        adv_stats = {"GA_G": opp_ga}
+        
+        cat_but, cat_ast, cat_pts = evaluate_player_markets(joueur, p_form, v5_p, adv_stats, is_home)
 
-        # Simulation PASSEUR
-        af = cfg["thresholds"].get("passeurs", {})
-        if (atoi >= af.get("atoi_min", 0) and 
-            opp_ga >= af.get("opp_ga_min", 0) and 
-            season_a >= af.get("season_a_min", 0)):
+        # Helper pour générer un résultat
+        def add_result(cat_name, cote_dict, cote_reel_defaut, cote_simu_defaut, cf_min, prob_key, res_won):
+            cote_reel_scrap = cote_dict.get(key)
             
-            cote = cotes_ast_dict.get(key)
-            if not cote: cote = 2.40
+            # La VRAIE cote pour calculer l'argent gagné (Moyenne réelle si non scrapé)
+            cote = cote_reel_scrap if cote_reel_scrap else cote_reel_defaut
             
-            if cote >= af.get("cote_min", 2.00):
-                p_val = probas.get("passeurs", {})
-                a_prob = p_val.get("proba", 0.35) if isinstance(p_val, dict) else p_val
-                edge = (a_prob * cote) - 1.0
+            # La FAUSSE cote utilisée par le bot historiquement pour autoriser le pari
+            cote_simu = cote_reel_scrap if cote_reel_scrap else cote_simu_defaut
+            
+            thresh_group = getattr(cfg.thresholds, prob_key, None)
+            cote_mini = getattr(thresh_group, "cote_min", cf_min) if thresh_group else cf_min
+            
+            if cote_simu >= cote_mini:
+                prob = probas.get(prob_key, 0.30)
+                edge = (prob * cote_simu) - 1.0
                 if edge > 0:
-                    quarter_f = (edge / (cote - 1)) * 0.25
-                    mise = round(quarter_f * 100 * 2) / 2
-                    mise = min(max(mise, 0.5), cfg["kelly"].get("passeur_cap", 2.0))
-                    
-                    gain_u = (cote * mise - mise) if res_ast else -mise
-                    results.append({"date": row['date'], "joueur": joueur, "categorie": "PASSEUR",
-                                   "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
-                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
-                                   "won": res_ast, "equipe": row['equipe'], "adv": row['adversaire']})
+                    mise_str = calculate_quarter_kelly(prob, cote_simu, cat_name)
+                    mise = float(mise_str.replace(" U", "")) if mise_str != "0 U" else 0.0
+                    if mise > 0:
+                        gain_u = (cote * mise - mise) if res_won else -mise
+                        results.append({"date": row['date'], "joueur": joueur, "categorie": cat_name,
+                                       "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
+                                       "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
+                                       "won": res_won, "equipe": row['equipe'], "adv": row['adversaire']})
 
-        # Simulation POINTEUR
-        pf = cfg["thresholds"].get("pointeurs", {})
-        if (atoi >= pf.get("atoi_min", 0) and 
-            opp_ga >= pf.get("opp_ga_min", 0) and 
-            season_pts >= pf.get("season_pts_min", 0)):
+        # Buteur
+        if cat_but:
+            add_result("BUTEUR", cotes_but_dict, avg_but, 3.20, 2.50, "buteurs", res_but)
             
-            cote = cotes_pts_dict.get(key)
-            if not cote: cote = 1.90
+        # Passeur
+        if cat_ast:
+            add_result("PASSEUR", cotes_ast_dict, avg_ast, 2.40, 2.00, "passeurs", res_ast)
             
-            if cote >= pf.get("cote_min", 1.50):
-                p_val = probas.get("pointeurs", {})
-                p_prob = p_val.get("proba", 0.50) if isinstance(p_val, dict) else p_val
-                edge = (p_prob * cote) - 1.0
-                if edge > 0:
-                    quarter_f = (edge / (cote - 1)) * 0.25
-                    mise = round(quarter_f * 100 * 2) / 2
-                    mise = min(max(mise, 0.5), cfg["kelly"].get("pointeur_cap", 2.0))
-                    
-                    gain_u = (cote * mise - mise) if res_pts else -mise
-                    results.append({"date": row['date'], "joueur": joueur, "categorie": "POINTEUR",
-                                   "cote": cote, "mise_u": mise, "edge_pct": edge*100, 
-                                   "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
-                                   "won": res_pts, "equipe": row['equipe'], "adv": row['adversaire']})
+        # Pointeur
+        if cat_pts:
+            add_result("POINTEUR", cotes_pts_dict, avg_pts, 1.90, 1.50, "pointeurs", res_pts)
 
     # ----- SIMULATION DES COMBINÉS V18.3 -----
     def get_best_per_match(picks_list):
@@ -253,7 +243,7 @@ def load_and_simulate(unit_value_euro: float):
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
 st.sidebar.title("Simulateur Quant V18.3")
 
-unit_euro = st.sidebar.number_input("💵 Valeur d'1 Unité (en €)", min_value=1.0, max_value=500.0, value=10.0, step=5.0)
+unit_euro = st.sidebar.number_input("💵 Valeur d'1 Unité (en €)", min_value=0.1, max_value=500.0, value=10.0, step=5.0)
 
 st.sidebar.markdown("---")
 st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur V18.3 actuel** (Singles & Combinés)")

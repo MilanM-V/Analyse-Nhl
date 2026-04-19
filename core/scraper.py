@@ -1,7 +1,6 @@
 import time
 import os
 import sys
-import os
 import logging
 import requests
 

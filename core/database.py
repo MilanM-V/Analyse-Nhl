@@ -10,7 +10,7 @@ DB_PATH = "./bot_database.db"
 
 def get_connection() -> sqlite3.Connection:
     """Returns a connection to the SQLite database."""
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15.0)
 
 def init_db() -> None:
     """Initializes the SQL database schema if it doesn't exist."""
