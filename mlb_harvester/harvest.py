@@ -3,10 +3,23 @@ import sqlite3
 import datetime
 import time
 import os
+import logging
+import sys
+
+# ==========================================
+# LOGGING CONFIGURATION
+# ==========================================
+logger = logging.getLogger("MLB-Harvester")
+logger.setLevel(logging.INFO)
+fmt = logging.Formatter('%(asctime)s - HARVESTER - %(levelname)s - %(message)s')
+sh = logging.StreamHandler(sys.stdout)
+sh.setFormatter(fmt)
+logger.addHandler(sh)
 
 DB_PATH = "mlb_database.db"
 
 def init_db():
+    logger.info("Vérification et initialisation de la base de données (mlb_database.db)...")
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.executescript("""
@@ -57,7 +70,7 @@ def fetch_mlb_day(date_str: str):
     Récupère les scores et stats individuelles (Boxscore) d'une journée précise.
     date_str format: YYYY-MM-DD
     """
-    print(f"\n[+] Scraping MLB API pour la date : {date_str}")
+    logger.info(f"Début du scraping MLB API pour la date : {date_str}")
     url_sched = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}"
     
     try:
@@ -65,18 +78,18 @@ def fetch_mlb_day(date_str: str):
         r.raise_for_status()
         data = r.json()
     except Exception as e:
-        print(f"Erreur téléchargement schedule: {e}")
+        logger.error(f"Erreur lors du téléchargement du schedule MLB : {e}")
         return
 
     if data["totalGames"] == 0:
-        print("Aucun match trouvé pour cette date.")
+        logger.info(f"Aucun match trouvé pour la date du {date_str}.")
         return
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     games = data["dates"][0]["games"]
-    print(f"-> {len(games)} matchs trouvés.")
+    logger.info(f"-> {len(games)} matchs trouvés pour cette date.")
 
     for g in games:
         game_pk = g["gamePk"]
@@ -144,7 +157,8 @@ def fetch_mlb_day(date_str: str):
 
     conn.commit()
     conn.close()
-    print(f"[OK] Données MLB du {date_str} sauvegardées !")
+    logger.info(f"Données MLB du {date_str} sauvegardées avec succès !")
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     init_db()
@@ -153,25 +167,30 @@ if __name__ == "__main__":
 
     def job():
         yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Lancement du téléchargement MLB quotidien...")
-        fetch_mlb_day(yesterday)
+        logger.info(f"Déclenchement automatique de la tâche MLB quotidienne du {yesterday}...")
+        try:
+            fetch_mlb_day(yesterday)
+        except Exception as e:
+            logger.error(f"Erreur inattendue pendant la tâche quotidienne : {e}")
 
     # Planification automatique locale tous les jours à 16h30 (Heure de ton PC)
     schedule.every().day.at("16:30").do(job)
 
-    print("=====================================================")
-    print(" ⚾ MLB Harvester activé (Daemon)")
-    print(" L'extracteur est en attente. Prochain scan à 16:30.")
-    print(" Laisse cette console ouverte en arrière-plan.")
-    print("=====================================================")
+    logger.info("=====================================================")
+    logger.info("   ⚾ MLB Harvester activé (Daemon) ")
+    logger.info("   L'extracteur est démarré et surveille l'heure.")
+    logger.info("   Démarrage initial réussi, prochain scan à 16:30.")
+    logger.info("=====================================================")
+    sys.stdout.flush()
 
     while True:
         try:
             schedule.run_pending()
             time.sleep(60)
         except KeyboardInterrupt:
-            print("\nArrêt manuel du Harvester MLB.")
+            logger.info("Arrêt manuel du Harvester MLB.")
             break
         except Exception as e:
-            print(f"Erreur inattendue dans la boucle : {e}")
+            logger.error(f"Erreur inattendue dans la boucle : {e}")
+            sys.stdout.flush()
             time.sleep(60)
