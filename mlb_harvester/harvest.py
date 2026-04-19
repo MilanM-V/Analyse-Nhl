@@ -131,10 +131,10 @@ def fetch_mlb_day(date_str: str):
                             bstats.get("atBats", 0), bstats.get("runs", 0), bstats.get("hits", 0),
                             bstats.get("homeRuns", 0), bstats.get("rbi", 0), bstats.get("baseOnBalls", 0),
                             bstats.get("strikeOuts", 0),
-                            stats.get("seasonStats", {}).get("batting", {}).get("avg", "0.000"),
-                            stats.get("seasonStats", {}).get("batting", {}).get("obp", "0.000"),
-                            stats.get("seasonStats", {}).get("batting", {}).get("slg", "0.000"),
-                            stats.get("seasonStats", {}).get("batting", {}).get("ops", "0.000")
+                            p_data.get("seasonStats", {}).get("batting", {}).get("avg", "0.000"),
+                            p_data.get("seasonStats", {}).get("batting", {}).get("obp", "0.000"),
+                            p_data.get("seasonStats", {}).get("batting", {}).get("slg", "0.000"),
+                            p_data.get("seasonStats", {}).get("batting", {}).get("ops", "0.000")
                         ))
 
                 # 2. Pitching Stats (Cibles: Strikeouts, ERA)
@@ -151,8 +151,8 @@ def fetch_mlb_day(date_str: str):
                             str(pstats.get("inningsPitched", "0.0")),
                             pstats.get("hits", 0), pstats.get("runs", 0), pstats.get("earnedRuns", 0),
                             pstats.get("baseOnBalls", 0), pstats.get("strikeOuts", 0), pstats.get("homeRuns", 0),
-                            stats.get("seasonStats", {}).get("pitching", {}).get("era", "0.00"),
-                            stats.get("seasonStats", {}).get("pitching", {}).get("whip", "0.00")
+                            p_data.get("seasonStats", {}).get("pitching", {}).get("era", "0.00"),
+                            p_data.get("seasonStats", {}).get("pitching", {}).get("whip", "0.00")
                         ))
 
     conn.commit()

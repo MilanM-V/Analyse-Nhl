@@ -6,7 +6,7 @@ compos_live.txt
 analyse/
 tests/
 __pycache__/
-bot_database.db
+*.db
 *.sqlite
 *.sqlite3
 
