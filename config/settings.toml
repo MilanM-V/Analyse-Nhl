@@ -48,6 +48,7 @@ force_envoi_min_avant = 17
 decimal_separator = ","
 
 [api]
+mode = "playoff"        # "regular" ou "playoff"
 season_id = "20252026"
-game_type = "2"
+game_type = "2"         # Ne pas toucher manuellement en mode playoff
 semaphore_limit = 20

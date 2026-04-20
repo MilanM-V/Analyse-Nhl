@@ -215,7 +215,8 @@ class NhlBot:
                 logger.warning("Analyse suspendue — CSV invalides.")
                 return
 
-            logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] Lancement du scan Flashscore...")
+            mode_icon = "🏆" if cfg.api.mode == "playoff" else "🏒"
+            logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] {mode_icon} Lancement du scan Flashscore (Mode: {cfg.api.mode})...")
             self.purge_old_matches()
 
             with scraper.ScraperDriverContext() as driver:

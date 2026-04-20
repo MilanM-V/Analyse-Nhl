@@ -38,8 +38,9 @@ def main():
     telegram = TelegramNotifier()
 
     try:
+        mode_str = "PLAYOFF 🏆" if cfg.api.mode == "playoff" else "Saison Régulière 🏒"
         logger.info("=====================================================")
-        logger.info("  DÉMARRAGE DU ROBOT NHL VALUE BETS V14 (ASYNC)   ")
+        logger.info(f"  DÉMARRAGE DU ROBOT NHL V18 — MODE: {mode_str}")
         logger.info("  Architecture refactorisée (DataStore SQLite+RAM ) ")
         logger.info("=====================================================")
 

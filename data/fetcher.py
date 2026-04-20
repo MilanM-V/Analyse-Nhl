@@ -84,7 +84,9 @@ async def get_last_n_game_ids(session: aiohttp.ClientSession, team_abbr: str, n:
     data = await api_get(session, url)
     if not data: return []
     games = data.get('games', [])
-    finished = [g for g in games if g.get('gameState') == 'OFF' and g.get('gameType') == 2]
+    # En mode playoff, on accepte les types 2 (Saison) et 3 (Playoffs) pour assurer la continuité des stats L10
+    allowed_types = [2, 3] if cfg.api.mode == "playoff" else [2]
+    finished = [g for g in games if g.get('gameState') == 'OFF' and g.get('gameType') in allowed_types]
     finished.sort(key=lambda g: g.get('gameDate', ''), reverse=True)
     return [str(g['id']) for g in finished[:n]]
 
@@ -208,7 +210,10 @@ async def build_match_history(session: aiohttp.ClientSession):
         if not data: return []
         res = []
         for g in data.get('games', []):
-            if g.get('gameState') != 'OFF' or g.get('gameType') != int(cfg.api.game_type): continue
+            g_type = g.get('gameType')
+            # On accepte le type configuré OU le type 3 si on est en mode playoff
+            is_valid_type = (g_type == int(cfg.api.game_type)) or (cfg.api.mode == "playoff" and g_type == 3)
+            if g.get('gameState') != 'OFF' or not is_valid_type: continue
             res.append({
                 'Game': f"{g.get('gameDate', '')} - Game {g.get('id', '')} {full_name} Limited Report",
                 'Team': full_name,
