@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from core.datastore import DataStore
 from core.services import TelegramNotifier, create_telegram_app
 from core.bot_logic import NhlBot
+from config.settings import cfg
 
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
