@@ -26,10 +26,14 @@ logger = logging.getLogger("NHL_Bot")
 BASE      = "https://api.nhle.com/stats/rest/en"
 BASE_WEB  = "https://api-web.nhle.com"
 
-SEMAPHORE = asyncio.Semaphore(cfg.api.semaphore_limit)
+SEMAPHORE = None
 
 async def api_get(session: aiohttp.ClientSession, url: str, retries: int = 5) -> Any:
     """Requête GET asynchrone avec gestion du rate limiting (HTTP 429)."""
+    global SEMAPHORE
+    if SEMAPHORE is None:
+        SEMAPHORE = asyncio.Semaphore(cfg.api.semaphore_limit)
+        
     async with SEMAPHORE:
         for i in range(retries):
             try:
@@ -550,6 +554,8 @@ async def main_async():
 
 def update_all_stats_sync():
     """Point d'entrée principal pour compatibilité avec bot_logic.py."""
+    global SEMAPHORE
+    SEMAPHORE = None  # Reset pour la nouvelle boucle asyncio
     cleanup_pbp_cache()
     if os.name == 'nt':
         import warnings
