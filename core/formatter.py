@@ -10,6 +10,8 @@ from typing import Dict, List, Any, Optional, Tuple
 import core.loaders as loaders
 from core.database import insert_parlay
 
+from config.settings import cfg
+
 logger = logging.getLogger("NHL_Bot")
 
 
@@ -73,7 +75,10 @@ def format_telegram_v18(
     Returns:
         Message HTML formaté pour Telegram.
     """
-    msg = f"<b>\U0001f3d2 NHL V18.3 \u2014 VAGUE {wave_label}</b>\n\n"
+    if cfg.api.mode == "playoff":
+        msg = f"<b>\U0001f3c6 NHL PLAYOFF V18.3 \u2014 VAGUE {wave_label}</b>\n\n"
+    else:
+        msg = f"<b>\U0001f3d2 NHL V18.3 \u2014 VAGUE {wave_label}</b>\n\n"
 
     for mid in wave_ids:
         data = compos_en_memoire.get(mid)

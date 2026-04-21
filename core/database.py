@@ -88,7 +88,7 @@ def init_db() -> None:
     # On vérifie chaque table pour les colonnes manquantes
     tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
     
-    # Colonnes communes ajoutées en V14, V14.2 (cote), V18 (mise) et V18.2 (closing_cote)
+    # Colonnes communes ajoutées en V14, V14.2 (cote), V18 (mise), V18.2 (closing_cote), V19 (game_mode)
     common_cols = [
         ("is_home", "BOOLEAN DEFAULT 0"),
         ("opp_b2b", "BOOLEAN DEFAULT 0"),
@@ -96,6 +96,7 @@ def init_db() -> None:
         ("cote", "REAL DEFAULT NULL"),
         ("mise", "REAL DEFAULT NULL"),
         ("closing_cote", "REAL DEFAULT NULL"),
+        ("game_mode", "TEXT DEFAULT 'regular'"),
     ]
     
     for table in tables_to_fix:
@@ -196,7 +197,7 @@ def reset_db() -> None:
     conn.commit()
     conn.close()
 
-def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all") -> str:
+def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all", game_mode: str = "all") -> str:
     """
     Calculates and returns ROI statistics for a specific market.
     Uses actual odds (cote) for profit calculation when available.
@@ -205,6 +206,7 @@ def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "al
         table: The table to query.
         target_col: The column representing the result (but, assist, point).
         days: 'all' or string number of days.
+        game_mode: 'all', 'regular', or 'playoff' to filter by game mode.
 
     Returns:
         A formatted HTML string with ROI stats.
@@ -220,6 +222,9 @@ def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "al
             query += f" AND date >= '{cutoff}'"
         except ValueError:
             pass
+
+    if game_mode in ("regular", "playoff"):
+        query += f" AND game_mode = '{game_mode}'"
 
     c.execute(query)
     rows = c.fetchall()

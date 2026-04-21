@@ -44,7 +44,7 @@ SETTINGS_PATH = "config/settings.toml"
 PROBAS_PATH = "config/probas.json"
 
 @st.cache_data(ttl=60)
-def load_and_simulate(unit_value_euro: float):
+def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
     if not os.path.exists(DB_PATH) or not os.path.exists(SETTINGS_PATH):
         return pd.DataFrame(), {}
 
@@ -55,6 +55,8 @@ def load_and_simulate(unit_value_euro: float):
     conn = sqlite3.connect(DB_PATH)
     # On limite aux joueurs ayant un resultat connu
     query = "SELECT * FROM players WHERE but IS NOT NULL AND but != ''"
+    if mode_filter in ("regular", "playoff"):
+        query += f" AND game_mode = '{mode_filter}'"
     df = pd.read_sql_query(query, conn)
     
     # On charge également les cotes réelles mémorisées dans les tables picks pour interpoler
@@ -246,12 +248,16 @@ st.sidebar.title("Simulateur Quant V18.3")
 unit_euro = st.sidebar.number_input("💵 Valeur d'1 Unité (en €)", min_value=0.1, max_value=500.0, value=10.0, step=5.0)
 
 st.sidebar.markdown("---")
+mode_options = {"Tous": "all", "Saison Régulière": "regular", "Playoff": "playoff"}
+mode_choice = st.sidebar.radio("🏒 Mode NHL", list(mode_options.keys()), index=0, horizontal=True)
+selected_mode = mode_options[mode_choice]
 st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur V18.3 actuel** (Singles & Combinés)")
 
-st.title(f"🚀 Dashboard Simulateur V18.3")
+mode_label = f" ({mode_choice})" if selected_mode != "all" else ""
+st.title(f"🚀 Dashboard Simulateur V18.3{mode_label}")
 st.markdown(f"Si l'algorithme V18.3 actuel avait tourné depuis le début de la récolte de Data, avec **1 Unité = {unit_euro} €** :")
 
-df_sim, probas_actuelles = load_and_simulate(unit_euro)
+df_sim, probas_actuelles = load_and_simulate(unit_euro, selected_mode)
 
 if df_sim.empty:
     st.warning("Aucune donnée de simulation générée. La BDD est peut-être vide.")

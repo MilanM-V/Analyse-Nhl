@@ -49,7 +49,7 @@ def log_picks_to_db(
             "pk_pct": adv.get("PK%", 80), "rebounds": f.get("L10_Rebounds_G", 0),
             "rush": f.get("L10_Rush_G", 0), "opp_b2b": adv.get("B2B", False),
             "consec_goals": f.get("ConsecGoals", 0), "cote": p.get("Cote"),
-            "mise": p.get("MiseNum")
+            "mise": p.get("MiseNum"), "game_mode": cfg.api.mode
         })
 
     for p in asts:
@@ -64,7 +64,7 @@ def log_picks_to_db(
             "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
             "cf_pct": adv.get("CF_pct", 50), "pk_pct": adv.get("PK%", 80),
             "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote"),
-            "mise": p.get("MiseNum")
+            "mise": p.get("MiseNum"), "game_mode": cfg.api.mode
         })
 
     for p in pts:
@@ -79,7 +79,7 @@ def log_picks_to_db(
             "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
             "cf_pct": adv.get("CF_pct", 50),
             "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote"),
-            "mise": p.get("MiseNum")
+            "mise": p.get("MiseNum"), "game_mode": cfg.api.mode
         })
 
     # Unified Player SQL Log
@@ -96,7 +96,7 @@ def log_picks_to_db(
             "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0) if adv else 0,
             "cf_pct": adv.get("CF_pct", 50) if adv else 50, "hdca_g": adv.get("HDCA_G", 0) if adv else 0,
             "pk_pct": adv.get("PK%", 80) if adv else 80,
-            "consec_goals": f.get("ConsecGoals", 0)
+            "consec_goals": f.get("ConsecGoals", 0), "game_mode": cfg.api.mode
         })
 
 
