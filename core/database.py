@@ -105,6 +105,52 @@ def init_db():
 
     conn.commit()
     
+    # Upgrade existing tables if necessary (V14-V19 Migration)
+    logger.info("Vérification de l'intégrité de la base de données...")
+    tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
+    
+    # Colonnes universelles (V14 à V19)
+    # On s'assure que TOUTES les tables ont ces colonnes pour la cohérence des stats
+    common_cols = [
+        ("is_home", "BOOLEAN DEFAULT 0"),
+        ("opp_b2b", "BOOLEAN DEFAULT 0"),
+        ("consec_goals", "INTEGER DEFAULT 0"),
+        ("cote", "REAL DEFAULT NULL"),
+        ("mise", "REAL DEFAULT NULL"),
+        ("closing_cote", "REAL DEFAULT NULL"),
+        ("game_mode", "TEXT DEFAULT 'regular'"),
+        ("ixg", "REAL DEFAULT 0"),
+        ("hdcf", "REAL DEFAULT 0"),
+        ("sog", "REAL DEFAULT 0"),
+        ("atoi", "REAL DEFAULT 0"),
+    ]
+    
+    for table in tables_to_fix:
+        for col_name, col_type in common_cols:
+            try:
+                # Vérifier si la colonne existe déjà pour éviter des logs inutiles
+                c.execute(f"SELECT {col_name} FROM {table} LIMIT 1")
+            except sqlite3.OperationalError:
+                # La colonne n'existe pas, on l'ajoute
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"🛠️ Migration : Colonne '{col_name}' ajoutée à la table '{table}'.")
+                except Exception as e:
+                    logger.error(f"❌ Erreur migration {table}.{col_name}: {e}")
+
+    # Colonnes spécifiques à la table 'players' (Transition V12 -> V14)
+    player_cols = [
+        ("score_but", "REAL"), ("score_assist", "REAL"), ("score_point", "REAL"),
+        ("picked_but", "BOOLEAN"), ("picked_assist", "BOOLEAN"), ("picked_point", "BOOLEAN"),
+        ("l10_a", "REAL"), ("l10_pts", "REAL"), ("season_a", "REAL"), ("season_pts", "REAL"),
+        ("assist", "INTEGER DEFAULT NULL"), ("point", "INTEGER DEFAULT NULL")
+    ]
+    for col_name, col_type in player_cols:
+        try:
+            c.execute(f"ALTER TABLE players ADD COLUMN {col_name} {col_type}")
+            logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table 'players'.")
+        except sqlite3.OperationalError: pass
+    
     conn.commit()
     conn.close()
     ensure_schema()

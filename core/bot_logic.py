@@ -380,11 +380,12 @@ class NhlBot:
             })
 
         # Odds enrichment & +EV Filtering
-        players_to_fetch = list({r["Joueur"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list})
+        # On crée un dictionnaire {Joueur: Equipe} pour permettre au scraper d'être chirurgical (économise les crédits API)
+        players_to_fetch = {r["Joueur"]: r["Equipe"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list}
         odds_map = {}
         if players_to_fetch:
-            logger.info(f"   Récupération asynchrone des cotes BettingPros pour {len(players_to_fetch)} joueur(s)...")
-            odds_map = asyncio.run(odds_scraper.fetch_multiple_odds(players_to_fetch))
+            logger.info(f"   Récupération CHIRURGICALE des cotes pour {len(players_to_fetch)} joueur(s)...")
+            odds_map = asyncio.run(odds_scraper.fetch_multiple_odds(players_to_fetch, telegram=self.telegram))
 
             if odds_map:
                 any_odds_found = any(
