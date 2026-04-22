@@ -70,9 +70,12 @@ def evaluate_player_markets(
     p_atoi = float(p_form.get('ATOI', 0))
     pos = str(v5_p.get('Position', '')).strip() if v5_p else ""
 
+    # Mode Playoff : On ignore le filtre "Home Only" pour augmenter le volume
+    is_playoff = (cfg.api.mode == "playoff")
+
     # Buteurs
     cat_but = None
-    if (is_home or not cfg.thresholds.buteurs.home_only) and \
+    if (is_home or is_playoff or not cfg.thresholds.buteurs.home_only) and \
        pos not in ('D', 'LD', 'RD') and \
        season_g >= cfg.thresholds.buteurs.season_g_min and \
        l10_sog >= cfg.thresholds.buteurs.l10_sog_min and \
@@ -82,7 +85,7 @@ def evaluate_player_markets(
 
     # Passeurs
     cat_ast = None
-    if (is_home or not cfg.thresholds.passeurs.home_only) and \
+    if (is_home or is_playoff or not cfg.thresholds.passeurs.home_only) and \
        season_a >= cfg.thresholds.passeurs.season_a_min and \
        l10_a >= cfg.thresholds.passeurs.l10_a_min and \
        p_atoi >= cfg.thresholds.passeurs.atoi_min and \
@@ -91,7 +94,7 @@ def evaluate_player_markets(
 
     # Pointeurs
     cat_pts = None
-    if (is_home or not cfg.thresholds.pointeurs.home_only) and \
+    if (is_home or is_playoff or not cfg.thresholds.pointeurs.home_only) and \
        season_pts >= cfg.thresholds.pointeurs.season_pts_min and \
        l10_pts >= cfg.thresholds.pointeurs.l10_pts_min and \
        p_atoi >= cfg.thresholds.pointeurs.atoi_min and \
