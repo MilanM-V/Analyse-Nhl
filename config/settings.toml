@@ -1,0 +1,54 @@
+# ─── NHL Bot Configuration ───────────────────────────────────────────────────
+# Source unique pour tous les seuils et paramètres du bot.
+# V18 — Filtres optimisés sur 2893 joueurs (grid search exhaustif)
+
+[thresholds.buteurs]
+# V18 — Filtres simples optimisés (44.7% WR, +43% ROI estimé)
+# Le QS scoring N'EST PLUS UTILISÉ comme filtre de sélection.
+# Il reste comme métrique de tri/affichage.
+season_g_min = 0.40     # Buteur confirmé sur la saison
+l10_sog_min = 3.0       # Tirs cadrés L10 minimum
+l10_hdcf_min = 2.5      # Tirs haute danger L10 minimum (monté de 2.0)
+home_only = true        # Ne parier que sur les joueurs à domicile
+opp_ga_min = 2.8        # Adversaire qui encaisse >= 2.8 buts/match (NOUVEAU)
+cote_min = 3.00         # NOUVEAU — Seules les grosses cotes sont +EV pour les buts
+
+[thresholds.passeurs]
+# V18 — Filtres optimisés (58.5% WR, +13.6% ROI estimé)
+season_a_min = 0.50     # Passeur très régulier
+l10_a_min = 0.80        # Très en forme (8 passes sur 10 matchs)
+home_only = true        # Domicile uniquement
+atoi_min = 18.0         # NOUVEAU — Grosses minutes = plus d'occasions
+opp_ga_min = 2.8        # NOUVEAU — Adversaire perméable
+cote_min = 2.20         # NOUVEAU — Seules les cotes >= 2.20 sont +EV
+
+[thresholds.pointeurs]
+# V18 — Filtres optimisés (69.6% WR, +4.3% ROI simple, +13.8% combo)
+season_pts_min = 0.90   # Star confirmée (monté de 0.80)
+l10_pts_min = 0.80      # Forme récente forte (monté de 0.40)
+home_only = true        # Domicile uniquement
+atoi_min = 16.0         # NOUVEAU — Temps de glace minimum
+opp_ga_min = 2.8        # NOUVEAU — Adversaire perméable
+cote_min = 0.0          # Pas de filtre cote (rentable uniquement en combiné)
+
+[thresholds.general]
+atoi_min = 13.0
+
+[kelly]
+buteur_cap = 3.0
+passeur_cap = 2.0
+pointeur_cap = 2.0
+
+[wave]
+ecart_max_min = 5
+force_envoi_min_avant = 17
+
+[csv]
+# Séparateur décimal pour les CSV de log ("," = format FR, "." = international)
+decimal_separator = ","
+
+[api]
+mode = "playoff"        # "regular" ou "playoff"
+season_id = "20252026"
+game_type = "2"         # Ne pas toucher manuellement en mode playoff
+semaphore_limit = 20

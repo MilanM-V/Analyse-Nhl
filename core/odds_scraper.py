@@ -1,258 +1,126 @@
-import aiohttp
-import asyncio
-import json
-from bs4 import BeautifulSoup
-import unicodedata
+import os
 import logging
+import requests
+import asyncio
+import time
+from typing import Dict, List, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("NHL_Bot")
 
-# Compteur de cassure pour détection proactive
-_consecutive_failures = 0
-_FAILURE_ALERT_THRESHOLD = 5
+# Configuration The Odds API
+API_KEY = os.getenv("api_odds")
+SPORT = "icehockey_nhl"
+REGION = "us" # Regions: us, uk, au, eu
+MARKETS = "player_goal_scorer_anytime,player_assists,player_points"
 
-def normalize_name_for_url(name: str) -> str:
-    """
-    Slugifier pour convertir 'M. Bunting' ou 'Tim Stützle'
-    en 'm-bunting', 'tim-stutzle' pour les URLs BettingPros.
-    """
-    if not name: return ""
-    # Décompose les caractères accentués
-    normalized = unicodedata.normalize('NFD', name)
-    str_no_accents = "".join(c for c in normalized if not unicodedata.combining(c))
-    
-    # Remplacements divers
-    str_no_accents = str_no_accents.lower().replace(".", "").replace("'", "")
-    str_slug = str_no_accents.strip().replace(" ", "-")
-    return str_slug
+# Cache global pour éviter de consommer trop de crédits
+_CACHE = {
+    "data": {},      # { "Player Name": {"BUTS": 2.1, ...} }
+    "timestamp": 0
+}
+CACHE_TTL = 3600  # 1 heure
 
-def american_to_decimal(cote):
-    """Convertit une cote américaine en décimale."""
+def _fetch_all_nhl_odds() -> Dict[str, Dict]:
+    """Récupère toutes les cotes de la journée via The Odds API."""
+    if not API_KEY:
+        logger.error("[Odds API] Clé API 'api_odds' manquante dans le .env")
+        return {}
+
+    # 1. Récupérer les événements (matchs) du jour
+    events_url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/events?apiKey={API_KEY}"
     try:
-        cote = int(cote)
-        if cote > 0:
-            return round((cote / 100) + 1, 2)
-        else:
-            return round((100 / abs(cote)) + 1, 2)
-    except:
-        return 1.85 # Par défaut arbitraire si erreur absolue
+        r = requests.get(events_url, timeout=10)
+        if r.status_code != 200:
+            logger.error(f"[Odds API] Erreur récupération événements: {r.status_code}")
+            return {}
+        events = r.json()
+    except Exception as e:
+        logger.error(f"[Odds API] Exception événements: {e}")
+        return {}
 
-def _parse_html_odds(html: str) -> dict | None:
-    """
-    Parse les cotes depuis le HTML de BettingPros (méthode actuelle éprouvée).
-    Retourne le dict JSON structuré ou None si la structure a changé.
+    global_odds = {}
 
-    Args:
-        html: Le contenu HTML de la page BettingPros.
-
-    Returns:
-        Le dictionnaire JSON contenant les données de cotes, ou None.
-    """
-    soup = BeautifulSoup(html, 'html.parser')
-    scripts = soup.find_all('script', type='application/json')
-    
-    for script in scripts:
-        if script.string and '"markets"' in script.string and '"offers"' in script.string:
-            try:
-                temp_data = json.loads(script.string)
-                if temp_data.get('offers') and temp_data.get('books'):
-                    return temp_data
-            except json.JSONDecodeError:
-                continue
-    return None
-
-def _parse_api_json(html: str) -> dict | None:
-    """
-    Tente d'extraire les données depuis le __NEXT_DATA__ JSON embarqué.
-    C'est la méthode la plus stable car elle utilise le store Next.js natif.
-
-    Args:
-        html: Le contenu HTML de la page BettingPros.
-
-    Returns:
-        Le dictionnaire JSON contenant les données de cotes, ou None.
-    """
-    soup = BeautifulSoup(html, 'html.parser')
-    
-    # Méthode 1 : __NEXT_DATA__ (Next.js server-side props)
-    next_data_script = soup.find('script', id='__NEXT_DATA__')
-    if next_data_script and next_data_script.string:
+    # 2. Pour chaque match, récupérer les props
+    for event in events:
+        event_id = event['id']
+        logger.info(f"[Odds API] Récupération des cotes pour {event['home_team']} vs {event['away_team']}...")
+        
+        props_url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/events/{event_id}/odds?apiKey={API_KEY}&regions={REGION}&markets={MARKETS}&oddsFormat=decimal"
         try:
-            next_data = json.loads(next_data_script.string)
-            page_props = next_data.get('props', {}).get('pageProps', {})
-            if page_props.get('offers') and page_props.get('books'):
-                return page_props
-        except (json.JSONDecodeError, AttributeError):
-            pass
-    
-    # Méthode 2 : Tout script JSON contenant la structure attendue
-    for script in soup.find_all('script'):
-        if not script.string:
+            r = requests.get(props_url, timeout=10)
+            if r.status_code != 200:
+                logger.error(f"[Odds API] Erreur props pour {event_id}: {r.status_code}")
+                continue
+            data = r.json()
+            
+            # 3. Parser les bookmakers
+            # On prend le premier bookmaker qui a des données pour simplifier (Consensus ou leader)
+            for book in data.get('bookmakers', []):
+                for market in book.get('markets', []):
+                    market_key = market['key']
+                    for outcome in market.get('outcomes', []):
+                        player_name = outcome['description']
+                        price = outcome['price']
+                        
+                        if player_name not in global_odds:
+                            global_odds[player_name] = {"BUTS": None, "ASSISTS": None, "POINTS": None}
+                        
+                        if market_key == 'player_goal_scorer_anytime':
+                            # On garde la meilleure cote si déjà présente
+                            if global_odds[player_name]["BUTS"] is None or price > global_odds[player_name]["BUTS"]:
+                                global_odds[player_name]["BUTS"] = price
+                        elif market_key == 'player_assists':
+                            if outcome.get('name') == 'Over' and outcome.get('point') == 0.5:
+                                if global_odds[player_name]["ASSISTS"] is None or price > global_odds[player_name]["ASSISTS"]:
+                                    global_odds[player_name]["ASSISTS"] = price
+                        elif market_key == 'player_points':
+                            if outcome.get('name') == 'Over' and outcome.get('point') == 0.5:
+                                if global_odds[player_name]["POINTS"] is None or price > global_odds[player_name]["POINTS"]:
+                                    global_odds[player_name]["POINTS"] = price
+                                    
+        except Exception as e:
+            logger.error(f"[Odds API] Exception props pour {event_id}: {e}")
             continue
-        text = script.string.strip()
-        # Chercher des JSON embarqués dans des variables JS
-        for pattern in ['"offers":', '"markets":']:
-            if pattern in text:
-                # Extraire le JSON le plus large possible
-                for start_char in ['{', '[']:
-                    idx = text.find(start_char)
-                    if idx >= 0:
-                        try:
-                            candidate = json.loads(text[idx:])
-                            if isinstance(candidate, dict) and candidate.get('offers'):
-                                return candidate
-                        except json.JSONDecodeError:
-                            continue
-    return None
+            
+    return global_odds
 
-def _extract_odds_from_data(data: dict) -> dict:
+async def fetch_multiple_odds(player_names: List[str]) -> Dict[str, Dict]:
     """
-    Extrait les cotes Buts/Assists/Points à partir du JSON structuré.
-    Code commun aux deux méthodes de parsing.
-
-    Args:
-        data: Dictionnaire JSON contenant 'markets', 'offers', et 'books'.
-
-    Returns:
-        Dict avec les clés 'BUTS', 'ASSISTS', 'POINTS' (valeurs ou None).
+    Point d'entrée compatible avec l'ancien scraper.
+    Récupère ou utilise le cache pour retourner les cotes demandées.
     """
-    result = {'BUTS': None, 'ASSISTS': None, 'POINTS': None}
+    global _CACHE
+    now = time.time()
     
-    market_map = {m.get('id'): (m.get('meta', {}).get('label') or m.get('name')) for m in data.get('markets', [])}
-    book_map = {b.get('id'): b.get('name') for b in data.get('books', [])}
+    # Rafraîchir le cache si nécessaire
+    if not _CACHE["data"] or (now - _CACHE["timestamp"] > CACHE_TTL):
+        logger.info("[Odds API] Rafraîchissement du cache des cotes...")
+        _CACHE["data"] = _fetch_all_nhl_odds()
+        _CACHE["timestamp"] = now
+    else:
+        logger.info("[Odds API] Utilisation du cache (TTL restants: %ds)", int(CACHE_TTL - (now - _CACHE["timestamp"])))
 
-    for offer in data.get('offers', []):
-        nom_marche = market_map.get(offer.get('market_id'), "").lower()
-        
-        cat_key = None
-        if "goalie" not in nom_marche:
-            if "goal" in nom_marche:
-                cat_key = "BUTS"
-            elif "assist" in nom_marche:
-                cat_key = "ASSISTS"
-            elif "point" in nom_marche:
-                cat_key = "POINTS"
-        
-        if cat_key:
-            for selection in offer.get('selections', []):
-                if selection.get('label') == "Over":
-                    for b_data in selection.get('books', []):
-                        if book_map.get(b_data.get('id')) == "BettingPros Consensus":
-                            for line_info in b_data.get('lines', []):
-                                if line_info.get('line') == 0.5:
-                                    cote_fr = american_to_decimal(line_info.get('cost'))
-                                    if result[cat_key] is None or cote_fr > result[cat_key]:
-                                        result[cat_key] = cote_fr
-                                    break
-    return result
+    # Filtrer pour les joueurs demandés
+    results = {}
+    for name in player_names:
+        if name in _CACHE["data"]:
+            results[name] = _CACHE["data"][name]
+            results[name]['player'] = name # Compatibilité
+        else:
+            # On essaye une recherche floue si besoin ? (Optionnel)
+            results[name] = {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None}
+            
+    return results
+
+# Fonctions legacy pour compatibilité si appelées directement
+def normalize_name_for_url(name: str) -> str:
+    return name.lower().replace(" ", "-")
 
 async def fetch_player_odds(session, player_name: str) -> dict:
-    """
-    Récupère la cote BettingPros "Consensus" Over 0.5 pour un joueur.
-    Stratégie en cascade : API JSON d'abord, puis HTML parsing en fallback.
-
-    Args:
-        session: La session aiohttp partagée.
-        player_name: Le nom complet du joueur.
-
-    Returns:
-        Dict avec 'player', 'BUTS', 'ASSISTS', 'POINTS'.
-    """
-    global _consecutive_failures
-    
-    slug = normalize_name_for_url(player_name)
-    url = f"https://www.bettingpros.com/nhl/odds/player-props/{slug}/"
-    
-    odds_data = {
-        'player': player_name,
-        'BUTS': None,
-        'ASSISTS': None,
-        'POINTS': None
-    }
-    
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0'
-    ]
-    
-    html = None
-    for attempt in range(3):
-        headers = {'User-Agent': user_agents[attempt % len(user_agents)]}
-        try:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    break
-                elif response.status in (403, 429):
-                    logger.debug(f"[Odds] {player_name} ({slug}) : Anti-bot bloquant (HTTP {response.status}). Essai {attempt+1}/3...")
-                else:
-                    logger.debug(f"[Odds] {player_name} : Erreur HTTP {response.status}")
-                    
-        except Exception as e:
-            logger.debug(f"[Odds] {player_name} : Timeout ou erreur de connexion ({e}). Essai {attempt+1}/3...")
-
-        if attempt < 2:
-            await asyncio.sleep((attempt + 1) * 2)
-
-    if not html:
-        _consecutive_failures += 1
-        return odds_data
-
-    # Stratégie en cascade : API JSON → HTML parsing
-    data = _parse_api_json(html) or _parse_html_odds(html)
-    
-    if not data:
-        _consecutive_failures += 1
-        if _consecutive_failures >= _FAILURE_ALERT_THRESHOLD:
-            logger.warning(
-                f"⚠️ [Odds] {_consecutive_failures} échecs consécutifs de parsing ! "
-                f"La structure HTML de BettingPros a probablement changé. "
-                f"Vérifier odds_scraper.py manuellement."
-            )
-        return odds_data
-
-    # Reset du compteur de cassure si on réussit
-    _consecutive_failures = 0
-    
-    extracted = _extract_odds_from_data(data)
-    odds_data.update(extracted)
-    return odds_data
-
-async def fetch_multiple_odds(player_names: list) -> dict:
-    """
-    Point d'entrée pour récupérer en parallèle les cotes de plusieurs joueurs.
-    Retourne { "Nom Joueur": {"BUTS": 2.10, "ASSISTS": 2.50, ...} }
-
-    Args:
-        player_names: Liste de noms de joueurs.
-
-    Returns:
-        Dictionnaire de cotes par joueur (seuls ceux avec au moins une cote).
-    """
-    global _consecutive_failures
-    
-    if not player_names:
-        return {}
-    
-    # Reset du compteur au début de chaque vague
-    _consecutive_failures = 0
-        
-    async with aiohttp.ClientSession() as session:
-        tasks = [fetch_player_odds(session, name) for name in player_names]
-        results = await asyncio.gather(*tasks)
-    
-    # Alerte si trop de cassures dans la vague
-    if _consecutive_failures >= _FAILURE_ALERT_THRESHOLD:
-        logger.warning(
-            f"🚨 [Odds] ALERTE CASSURE : {_consecutive_failures}/{len(player_names)} joueurs sans cote. "
-            f"Le scraping BettingPros est probablement cassé."
-        )
-        
-    # Mapping
-    odds_map = {}
-    for res in results:
-        if res['BUTS'] or res['ASSISTS'] or res['POINTS']:
-            odds_map[res['player']] = res
-            
-    return odds_map
+    # Cette fonction n'est plus utilisée individuellement avec l'API
+    # mais on la garde pour éviter des erreurs d'import
+    all_odds = await fetch_multiple_odds([player_name])
+    return all_odds.get(player_name, {"player": player_name, "BUTS": None, "ASSISTS": None, "POINTS": None})

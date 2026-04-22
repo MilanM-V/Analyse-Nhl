@@ -8,11 +8,26 @@
 
 ## Fonctionnalités
 
-- **Moteur prédictif** : Score QS v10 avec des seuils calibrés (ELITE ≥ 10.5, SAFE ≥ 9.5, JOUABLE ≥ 7.5).
-- **Scraping des cotes en direct** : Scraper asynchrone pour Flashscore et BettingPros utilisant Selenium (Brave) et aiohttp.
-- **Tableau de bord dynamique** : Interface Streamlit avec courbes de profit filtrables par période et filtres joueurs.
-- **Rapports Telegram** : Notifications par match, incluant un message lorsqu’aucun joueur ne passe les filtres.
-- **Pipeline de données robuste** : Ingestion asynchrone, back‑testing et ré‑entraînement automatisé du modèle.
+- **Moteur prédictif V18.3** : Filtres optimisés sur +2800 joueurs (Buteurs, Passeurs, Pointeurs).
+- **Mode Playoff 🏆** : Bascule intelligente entre Saison Régulière et Playoffs avec continuité des statistiques "Last 10".
+- **Tracking Avancé** : Suivi séparé du ROI Saison vs Playoff en base de données SQLite.
+- **Scraping des cotes en direct** : Intégration Flashscore et BettingPros pour identifier la "Value".
+- **Tableau de bord V18** : Interface Streamlit avec filtres par mode, courbes de profit et simulation Kelly Criterion.
+- **Alertes Telegram** : Notifications automatiques des meilleurs picks et combinés (Duo Booster, Double Buteur, etc.).
+
+---
+
+## Performances Attendues (Probabilités V18 Optimisées)
+
+Le système V18 a été calibré sur un historique massif pour maximiser le Winrate tout en gardant un ROI positif :
+
+| Marché | Winrate Estimé | ROI Attendu |
+| :--- | :--- | :--- |
+| **Buteurs** | 44.7% | +43.0% |
+| **Passeurs** | 58.5% | +13.6% |
+| **Pointeurs** | 69.6% | +4.3% (Simple) / +13.8% (Combo) |
+
+*Note : Les performances en mode Playoff peuvent varier en fonction de l'intensité défensive, mais conservent la même sélectivité de haut niveau.*
 
 ---
 

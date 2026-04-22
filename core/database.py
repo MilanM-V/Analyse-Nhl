@@ -10,7 +10,7 @@ DB_PATH = "./bot_database.db"
 
 def get_connection() -> sqlite3.Connection:
     """Returns a connection to the SQLite database."""
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15.0)
 
 # V14 : Ajout dynamique des colonnes XGBoost si elles n'existent pas
 def ensure_schema():
@@ -93,6 +93,16 @@ def init_db():
         )
     ''')
 
+    # Table des paris combinés (V18.2)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS picks_parlays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT, vague TEXT, type_combo TEXT,
+            leg1_joueur TEXT, leg2_joueur TEXT, leg3_joueur TEXT,
+            cote_totale REAL, mise REAL, resultat INTEGER DEFAULT NULL
+        )
+    ''')
+
     conn.commit()
     
     conn.commit()
@@ -146,6 +156,25 @@ def insert_player(player_data: Dict[str, Any], conn: Optional[sqlite3.Connection
         conn.commit()
         conn.close()
 
+def insert_parlay(parlay_data: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
+    """
+    Inserts a generated parlay (combiné) into the picks_parlays table.
+    """
+    auto_close = conn is None
+    if auto_close:
+        conn = get_connection()
+    c = conn.cursor()
+
+    cols = ', '.join(parlay_data.keys())
+    placeholders = ', '.join(['?'] * len(parlay_data))
+
+    sql = f'INSERT INTO picks_parlays ({cols}) VALUES ({placeholders})'
+    c.execute(sql, list(parlay_data.values()))
+
+    if auto_close:
+        conn.commit()
+        conn.close()
+
 def reset_db() -> None:
     """Clears all content from all relevant tables."""
     conn = get_connection()
@@ -155,7 +184,7 @@ def reset_db() -> None:
     conn.commit()
     conn.close()
 
-def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all") -> str:
+def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all", game_mode: str = "all") -> str:
     """
     Calculates and returns ROI statistics for a specific market.
     Uses actual odds (cote) for profit calculation when available.
@@ -164,6 +193,7 @@ def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "al
         table: The table to query.
         target_col: The column representing the result (but, assist, point).
         days: 'all' or string number of days.
+        game_mode: 'all', 'regular', or 'playoff' to filter by game mode.
 
     Returns:
         A formatted HTML string with ROI stats.
@@ -179,6 +209,9 @@ def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "al
             query += f" AND date >= '{cutoff}'"
         except ValueError:
             pass
+
+    if game_mode in ("regular", "playoff"):
+        query += f" AND game_mode = '{game_mode}'"
 
     c.execute(query)
     rows = c.fetchall()

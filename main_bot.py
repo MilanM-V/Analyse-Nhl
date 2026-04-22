@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from core.datastore import DataStore
 from core.services import TelegramNotifier, create_telegram_app
 from core.bot_logic import NhlBot
+from config.settings import cfg
 
 logger = logging.getLogger("NHL_Bot")
 logger.setLevel(logging.INFO)
@@ -27,15 +28,20 @@ if hasattr(time, 'tzset'):
     time.tzset()
 
 def main():
-    # Initialisation minimale avant le try global pour pouvoir envoyer l'alerte
+    # Initialisation minimale avant le try global
+    from core.database import init_db
+    init_db()  # Auto-migration de la BDD lors du push serveur
+    
     if not os.path.exists("./stats"):
         os.makedirs("./stats")
+        
     datastore = DataStore()
     telegram = TelegramNotifier()
 
     try:
+        mode_str = "PLAYOFF 🏆" if cfg.api.mode == "playoff" else "Saison Régulière 🏒"
         logger.info("=====================================================")
-        logger.info("  DÉMARRAGE DU ROBOT NHL VALUE BETS V14 (ASYNC)   ")
+        logger.info(f"  DÉMARRAGE DU ROBOT NHL V18 — MODE: {mode_str}")
         logger.info("  Architecture refactorisée (DataStore SQLite+RAM ) ")
         logger.info("=====================================================")
 
@@ -52,31 +58,7 @@ def main():
         import threading
         threading.Thread(target=bot.run_scan_cycle, daemon=True).start()
 
-        # V14 : Trigger Weekly Retraining ML (Dimanche)
-        def trigger_retraining():
-            from datetime import datetime
-            last_retrain_file = "stats/last_retrain.txt"
-            today = datetime.now()
-            if today.weekday() == 6:  # Dimanche
-                today_str = today.strftime("%Y-%m-%d")
-                already_run = False
-                if os.path.exists(last_retrain_file):
-                    with open(last_retrain_file, "r") as f:
-                        if f.read().strip() == today_str:
-                            already_run = True
-                
-                if not already_run:
-                    logger.info("🤖 C'est Dimanche ! Démarrage du ré-apprentissage ML en arrière-plan...")
-                    telegram.send_message("🤖 <b>Auto-Retraining V14</b>\nLancement du ré-apprentissage hebdomadaire XGBoost en tâche de fond...")
-                    try:
-                        cflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
-                        subprocess.run([sys.executable, "scripts/weekly_retrain.py"], check=True, creationflags=cflags)
-                        telegram.send_message("✅ <b>Retraining Terminé</b>\nLes poids du modèle XGBoost Production ont été réajustés avec le backtest du dimanche.")
-                    except Exception as e:
-                        logger.error(f"Erreur Retraining ML : {e}")
-                        telegram.send_message(f"❌ <b>Échec du Retraining</b>\nErreur: {e}")
-
-        threading.Thread(target=trigger_retraining, daemon=True).start()
+        # NB: V17 - Le système de Retraining ML a été retiré (overfitting).
 
         logger.info("Le bot est en attente...")
 

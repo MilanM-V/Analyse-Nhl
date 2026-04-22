@@ -1,65 +1,39 @@
 """
-fichier_nhl.py — 100% API NHL officielle (V14.1 ASYNC TURBO)
-Scraping asynchrone pour passer de ~2 min à ~10 secondes.
+data/fetcher.py — Pipeline de récupération asynchrone des statistiques NHL.
 """
 
-import os, time, math, json, logging
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from collections import defaultdict
-from logging.handlers import RotatingFileHandler
-from dotenv import load_dotenv
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+import os
+import time
+import math
+import json
+import logging
 import asyncio
 import aiohttp
+import sys
 
-load_dotenv()
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import pandas as pd
+from collections import defaultdict
+from typing import Dict, List, Any, Set
+
+from config.settings import cfg
+from config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL
+from data.cache import get_pbp, get_toi_from_boxscore, cleanup_pbp_cache, FOLDER_NAME
 
 logger = logging.getLogger("NHL_Bot")
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-try:
-    file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-except Exception:
-    pass
-
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
-
-FOLDER_NAME = "stats"
-if not os.path.exists(FOLDER_NAME):
-    os.makedirs(FOLDER_NAME)
 
 BASE      = "https://api.nhle.com/stats/rest/en"
 BASE_WEB  = "https://api-web.nhle.com"
-SEASON_ID = "20252026"
-GAME_TYPE = "2"
-EXP       = f"seasonId={SEASON_ID} and gameTypeId={GAME_TYPE}"
 
-TEAM_FULL_TO_ABBR = {
-    'Anaheim Ducks': 'ANA', 'Boston Bruins': 'BOS', 'Buffalo Sabres': 'BUF',
-    'Calgary Flames': 'CGY', 'Carolina Hurricanes': 'CAR', 'Chicago Blackhawks': 'CHI',
-    'Colorado Avalanche': 'COL', 'Columbus Blue Jackets': 'CBJ', 'Dallas Stars': 'DAL',
-    'Detroit Red Wings': 'DET', 'Edmonton Oilers': 'EDM', 'Florida Panthers': 'FLA',
-    'Los Angeles Kings': 'LAK', 'Minnesota Wild': 'MIN', 'Montreal Canadiens': 'MTL',
-    'Nashville Predators': 'NSH', 'New Jersey Devils': 'NJD', 'New York Islanders': 'NYI',
-    'New York Rangers': 'NYR', 'Ottawa Senators': 'OTT', 'Philadelphia Flyers': 'PHI',
-    'Pittsburgh Penguins': 'PIT', 'San Jose Sharks': 'SJS', 'Seattle Kraken': 'SEA',
-    'St. Louis Blues': 'STL', 'Tampa Bay Lightning': 'TBL', 'Toronto Maple Leafs': 'TOR',
-    'Vancouver Canucks': 'VAN', 'Vegas Golden Knights': 'VGK', 'Washington Capitals': 'WSH',
-    'Winnipeg Jets': 'WPG', 'Utah Hockey Club': 'UTA',
-}
+SEMAPHORE = None
 
-# --- Asynchronous Network Layer ---
-
-SEMAPHORE = asyncio.Semaphore(20)
-
-async def api_get(session, url, retries=5):
+async def api_get(session: aiohttp.ClientSession, url: str, retries: int = 5) -> Any:
+    """Requête GET asynchrone avec gestion du rate limiting (HTTP 429)."""
+    global SEMAPHORE
+    if SEMAPHORE is None:
+        SEMAPHORE = asyncio.Semaphore(cfg.api.semaphore_limit)
+        
     async with SEMAPHORE:
         for i in range(retries):
             try:
@@ -78,11 +52,11 @@ async def api_get(session, url, retries=5):
                 await asyncio.sleep(2)
         return None
 
-async def fetch_all(session, endpoint, exp=None, limit=100):
-    exp_str = exp or EXP
+async def fetch_all(session: aiohttp.ClientSession, endpoint: str, exp: str = None, limit: int = 100) -> List[Dict]:
+    """Récupère une ressource paginée de l'API NHL Stats."""
+    exp_str = exp or f"seasonId={cfg.api.season_id} and gameTypeId={cfg.api.game_type}"
     url_base = f"{BASE}/{endpoint}?limit={limit}&cayenneExp={exp_str}"
     
-    # Check total items first
     first_data = await api_get(session, f"{url_base}&start=0")
     if not first_data or not first_data.get('data'):
         return []
@@ -105,153 +79,25 @@ async def fetch_all(session, endpoint, exp=None, limit=100):
             
     return all_data
 
-# --- xG Model logic (no async needed) ---
-
-SHOT_TYPE_ENCODE = {
-    'wrist': 1.0, 'snap': 0.85, 'backhand': 0.75,
-    'tip-in': 1.2, 'deflected': 1.15, 'slap': 0.65,
-    'wrap-around': 0.70, 'bat': 0.60,
-}
-XG_MODEL_PATH = "models/xg_model.pkl"
-
-def _xg_features(x, y, shot_type='wrist', is_pp=False, is_5v5=True,
-                  is_slot=False, is_rebound=False, is_rush=False, period=1):
-    bx   = 89.0
-    ax   = abs(x)
-    dist = math.sqrt((bx - ax)**2 + y**2)
-    angle = math.degrees(math.atan2(abs(y), bx - ax)) if (bx - ax) > 0 else 90.0
-    shot_val = SHOT_TYPE_ENCODE.get(shot_type, 0.8)
-    slot = int(ax >= 69 and abs(y) <= 15)
-    return [
-        dist, angle, dist**2, math.sin(math.radians(angle)),
-        ax, shot_val, int(is_pp), int(is_5v5), 1/(dist+1),
-        slot, int(is_rebound), int(is_rush), min(period, 4),
-    ]
-
-class XGModel:
-    def __init__(self):
-        self._load_or_train()
-
-    def _load_or_train(self):
-        import pickle
-        if os.path.exists(XG_MODEL_PATH):
-            try:
-                with open(XG_MODEL_PATH, 'rb') as f:
-                    data = pickle.load(f)
-                self.model   = data['model']
-                self.scaler  = data.get('scaler')
-                self.use_pkl = True
-                auc = data.get('auc_cv', 0)
-                n   = data.get('n_train', 0)
-                logger.info(f"[xG model] Chargé depuis pkl — AUC={auc:.4f}")
-                return
-            except Exception as e:
-                logger.warning(f"[xG model] Erreur chargement pkl: {e}")
-
-        self.use_pkl = False
-        self.scaler  = StandardScaler()
-        np.random.seed(42)
-        n = 10000
-        xs = np.random.uniform(25, 89, n)
-        ys = np.random.uniform(-30, 30, n)
-        feats = np.array([_xg_features(xi, yi) for xi, yi in zip(xs, ys)])
-        dist  = feats[:, 0]
-        prob  = 1 / (1 + np.exp(0.12 * (dist - 18)))
-        labels = (np.random.random(n) < prob).astype(int)
-        X_sc = self.scaler.fit_transform(feats)
-        self.model = LogisticRegression(max_iter=1000)
-        self.model.fit(X_sc, labels)
-
-    def predict(self, x, y, shot_type='wrist', sit='1551', is_rebound=False, is_rush=False, period=1):
-        is_pp  = len(sit) >= 3 and sit[1] > sit[2]
-        is_5v5 = sit == '1551'
-        feats  = np.array([_xg_features(x, y, shot_type, is_pp, is_5v5, False, is_rebound, is_rush, period)])
-        if self.scaler:
-            feats = self.scaler.transform(feats)
-        return float(self.model.predict_proba(feats)[0][1])
-
-_xg_model = None
-
-def get_xg_model():
-    global _xg_model
-    if _xg_model is None:
-        _xg_model = XGModel()
-    return _xg_model
-
-def is_high_danger(x, y, zone_code, home_defending_side, event_owner_team_id, home_team_id):
-    if zone_code != 'O': return False
-    ax = abs(x)
-    dist = math.sqrt((89 - ax)**2 + y**2)
-    in_slot = ax >= 54 and abs(y) <= 9
-    return in_slot or dist < 20
-
-# --- Fetch details async ---
-
-async def get_last_n_game_ids(session, team_abbr, n=10):
-    url = f"{BASE_WEB}/v1/club-schedule-season/{team_abbr}/{SEASON_ID}"
+async def get_last_n_game_ids(session: aiohttp.ClientSession, team_abbr: str, n: int = 10) -> List[str]:
+    url = f"{BASE_WEB}/v1/club-schedule-season/{team_abbr}/{cfg.api.season_id}"
     data = await api_get(session, url)
     if not data: return []
     games = data.get('games', [])
-    finished = [g for g in games if g.get('gameState') == 'OFF' and g.get('gameType') == 2]
+    # En mode playoff, on accepte les types 2 (Saison) et 3 (Playoffs) pour assurer la continuité des stats L10
+    allowed_types = [2, 3] if cfg.api.mode == "playoff" else [2]
+    finished = [g for g in games if g.get('gameState') == 'OFF' and g.get('gameType') in allowed_types]
     finished.sort(key=lambda g: g.get('gameDate', ''), reverse=True)
     return [str(g['id']) for g in finished[:n]]
 
-async def get_pbp(session, game_id):
-    cache_dir = os.path.join(FOLDER_NAME, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, f"pbp_cache_{game_id}.json")
-    
-    if os.path.exists(cache_path):
-        with open(cache_path) as f:
-            return json.load(f)
-            
-    data = await api_get(session, f"{BASE_WEB}/v1/gamecenter/{game_id}/play-by-play")
-    if data:
-        with open(cache_path, 'w') as f:
-            json.dump(data, f)
-    return data
-
-async def get_toi_from_boxscore(session, game_id):
-    cache_dir = os.path.join(FOLDER_NAME, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, f"box_cache_{game_id}.json")
-    
-    if os.path.exists(cache_path):
-        with open(cache_path) as f:
-            data = json.load(f)
-    else:
-        data = await api_get(session, f"{BASE_WEB}/v1/gamecenter/{game_id}/boxscore")
-        if data:
-            with open(cache_path, 'w') as f:
-                json.dump(data, f)
-
-    if not data: return {}
-
-    toi_dict = {}
-    def parse_toi(toi_str):
-        try:
-            m, s = map(int, toi_str.split(':'))
-            return m * 60 + s
-        except:
-            return 0
-
-    for side in ('homeTeam', 'awayTeam'):
-        team_abbr = data.get(side, {}).get('abbrev', '')
-        team_data = data.get('playerByGameStats', {}).get(side, {})
-        for group in ('forwards', 'defense', 'goalies'):
-            for p in team_data.get(group, []):
-                pid = p.get('playerId')
-                if pid:
-                    toi_dict[pid] = {'toi': parse_toi(p.get('toi', '0:00')), 'team': team_abbr}
-    return toi_dict
-
 # --- Building CSVs Async ---
 
-async def build_player_season_totals(session):
+async def build_player_season_totals(session: aiohttp.ClientSession):
     logger.info("  Player Season Totals.csv...")
-    summary_task = fetch_all(session, "skater/summary")
-    pct_task = fetch_all(session, "skater/percentages")
-    summary, pct = await asyncio.gather(summary_task, pct_task)
+    summary, pct = await asyncio.gather(
+        fetch_all(session, "skater/summary"),
+        fetch_all(session, "skater/percentages")
+    )
 
     pct_idx = {r['playerId']: r for r in pct}
     rows = []
@@ -278,7 +124,7 @@ async def build_player_season_totals(session):
     df.to_csv(os.path.join(FOLDER_NAME, 'Player Season Totals.csv'), index=False, encoding='utf-8-sig')
     return df
 
-async def build_on_ice(session):
+async def build_on_ice(session: aiohttp.ClientSession):
     logger.info("  on_ice.csv...")
     pct = await fetch_all(session, "skater/percentages")
     rows = []
@@ -296,24 +142,32 @@ async def build_on_ice(session):
     df.to_csv(os.path.join(FOLDER_NAME, 'on_ice.csv'), index=False, encoding='utf-8-sig')
     return df
 
-async def build_power_play(session):
+async def build_power_play(session: aiohttp.ClientSession):
     logger.info("  power play.csv...")
-    summary = await fetch_all(session, "skater/summary")
+    # L'API NHL offre le endpoint timeonice qui contient ppTimeOnIcePerGame directement
+    time_data = await fetch_all(session, "skater/timeonice")
+    
     rows = []
-    for r in summary:
+    for r in time_data:
         gp = r.get('gamesPlayed', 0)
         if gp == 0: continue
+        
+        # ppTimeOnIcePerGame est renvoyé en secondes par l'API
+        pp_toi_sec = float(r.get('ppTimeOnIcePerGame', 0))
+        pp_toi_min = round(pp_toi_sec / 60.0, 2)
+        
         rows.append({
             'Player': r.get('skaterFullName', ''),
             'Team':   r.get('teamAbbrevs', ''),
             'GP':     gp,
-            'TOI':    float(r.get('ppPoints', 0) or 0) * 2.0,
+            'TOI':    pp_toi_min,
         })
+        
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(FOLDER_NAME, 'power play.csv'), index=False, encoding='utf-8-sig')
     return df
 
-async def build_goalies(session):
+async def build_goalies(session: aiohttp.ClientSession):
     logger.info("  goalies.csv...")
     data = await fetch_all(session, "goalie/summary")
     rows = []
@@ -332,7 +186,7 @@ async def build_goalies(session):
     df.to_csv(os.path.join(FOLDER_NAME, 'goalies.csv'), index=False, encoding='utf-8-sig')
     return df
 
-async def build_pk(session):
+async def build_pk(session: aiohttp.ClientSession):
     logger.info("  pk.csv...")
     pk_data = await fetch_all(session, "team/penaltykill")
     rows = []
@@ -346,17 +200,20 @@ async def build_pk(session):
     df.to_csv(os.path.join(FOLDER_NAME, 'pk.csv'), index=False, encoding='utf-8-sig')
     return df
 
-async def build_match_history(session):
+async def build_match_history(session: aiohttp.ClientSession):
     logger.info("  match.csv...")
     rows = []
     
     async def fetch_team_history(team_abbr, full_name):
-        url = f"{BASE_WEB}/v1/club-schedule-season/{team_abbr}/{SEASON_ID}"
+        url = f"{BASE_WEB}/v1/club-schedule-season/{team_abbr}/{cfg.api.season_id}"
         data = await api_get(session, url)
         if not data: return []
         res = []
         for g in data.get('games', []):
-            if g.get('gameState') != 'OFF' or g.get('gameType') != 2: continue
+            g_type = g.get('gameType')
+            # On accepte le type configuré OU le type 3 si on est en mode playoff
+            is_valid_type = (g_type == int(cfg.api.game_type)) or (cfg.api.mode == "playoff" and g_type == 3)
+            if g.get('gameState') != 'OFF' or not is_valid_type: continue
             res.append({
                 'Game': f"{g.get('gameDate', '')} - Game {g.get('id', '')} {full_name} Limited Report",
                 'Team': full_name,
@@ -364,10 +221,7 @@ async def build_match_history(session):
             })
         return res
 
-    tasks = []
-    for full_name, team_abbr in TEAM_FULL_TO_ABBR.items():
-        tasks.append(fetch_team_history(team_abbr, full_name))
-        
+    tasks = [fetch_team_history(abbr, full) for full, abbr in TEAM_FULL_TO_ABBR.items()]
     results = await asyncio.gather(*tasks)
     for r in results: rows.extend(r)
 
@@ -375,7 +229,7 @@ async def build_match_history(session):
     df.to_csv(os.path.join(FOLDER_NAME, 'match.csv'), index=False, encoding='utf-8-sig')
     return df
 
-def compute_hdca_from_cache(all_teams, game_ids_cache=None):
+def compute_hdca_from_cache(all_teams: List[str], game_ids_cache: Dict[str, List[str]]):
     team_stats = defaultdict(lambda: {'hdca': 0, 'hdcf': 0, 'gp': set()})
     processed = set()
 
@@ -412,7 +266,7 @@ def compute_hdca_from_cache(all_teams, game_ids_cache=None):
 
     return team_stats
 
-async def build_team_stats(session, all_teams, game_ids_cache):
+async def build_team_stats(session: aiohttp.ClientSession, all_teams: List[str], game_ids_cache: Dict[str, List[str]]):
     logger.info("  team.csv...")
     summary, pct, realtime, pk_data = await asyncio.gather(
         fetch_all(session, "team/summary"),
@@ -426,9 +280,6 @@ async def build_team_stats(session, all_teams, game_ids_cache):
     pk_idx  = {r['teamId']: r for r in pk_data}
 
     hdca_data = compute_hdca_from_cache(all_teams, game_ids_cache)
-
-    full_to_abbr = {v2: k2 for k2, v2 in TEAM_FULL_TO_ABBR.items()}
-    full_to_abbr = {v: k for k, v in full_to_abbr.items()}
 
     rows = []
     for r in summary:
@@ -457,33 +308,61 @@ async def build_team_stats(session, all_teams, game_ids_cache):
     df.to_csv(os.path.join(FOLDER_NAME, 'team.csv'), index=False, encoding='utf-8-sig')
     return df
 
-async def prefetch_pbp_and_boxscores(session, all_teams):
-    """Prétélécharge tous les Boxscores et PBP des 10 derniers matchs en parallèle."""
-    # 1. Obtenir les 10 derniers game_ids par équipe
-    game_tasks = {team: get_last_n_game_ids(session, team, 10) for team in all_teams}
-    results = await asyncio.gather(*game_tasks.values())
-    game_ids_cache = dict(zip(game_tasks.keys(), results))
+async def prefetch_pbp_and_boxscores(session: aiohttp.ClientSession, all_teams: List[str]) -> Dict[str, List[str]]:
+    # Fix RuntimeWarning: Ensure all coroutines are gathered correctly
+    teams_list = list(all_teams)
+    tasks_ids = [get_last_n_game_ids(session, team, 10) for team in teams_list]
+    id_results = await asyncio.gather(*tasks_ids)
+    game_ids_cache = dict(zip(teams_list, id_results))
     
-    # 2. Extraire la liste unique des game_ids
     unique_game_ids = set()
     for gids in game_ids_cache.values():
         unique_game_ids.update(gids)
         
     logger.info(f"  Téléchargement asynchrone PBP de {len(unique_game_ids)} matchs...")
     
-    # 3. Lancer Fetch PBP & Boxscore concurrently
     tasks = []
     for gid in unique_game_ids:
-        tasks.append(get_pbp(session, gid))
-        tasks.append(get_toi_from_boxscore(session, gid))
+        tasks.append(get_pbp(session, gid, api_get))
+        tasks.append(get_toi_from_boxscore(session, gid, api_get))
         
     await asyncio.gather(*tasks)
     return game_ids_cache
 
+def is_high_danger(x, y, zone, home_side, event_owner_id, home_team_id):
+    if zone != 'O': return False
+    abs_x = abs(x)
+    # High danger area is the "home plate" in front of the net:
+    # 1. Must be in front of the goal line (abs_x <= 89)
+    # 2. Must be within the slot distance (abs_x >= 65 is roughly 24 feet from goal line)
+    # 3. Y must correspond to the slot width (between the faceoff dots).
+    if abs_x > 89: return False
+    dist = math.sqrt((89 - abs_x)**2 + y**2)
+    return dist <= 26 and abs(y) <= 22
 
-def compute_last10_stats(all_teams, game_ids_cache):
-    xg_model = get_xg_model()
+def estimate_xg(x, y, shot_type, is_rebound, is_rush):
+    abs_x = abs(x)
+    if abs_x > 89:
+        xg = 0.01 # Behind the net
+    else:
+        dist = math.sqrt((89 - abs_x)**2 + y**2)
+        if dist <= 15:
+            xg = 0.18
+        elif dist <= 30:
+            xg = 0.08
+        elif dist <= 45:
+            xg = 0.04
+        else:
+            xg = 0.015
 
+    if is_rebound: xg += 0.25
+    if is_rush: xg += 0.10
+    if shot_type in ('deflected', 'tip-in'): xg += 0.12
+    if shot_type == 'slap': xg += 0.03
+
+    return min(xg, 0.99)
+
+def compute_last10_stats(all_teams: List[str], game_ids_cache: Dict[str, List[str]]):
     player_stats = defaultdict(lambda: {
         'name': '', 'team': '', 'pos': '', 'gp': 0, 'toi_sec': 0,
         'goals': 0, 'assists': 0, 'points': 0,
@@ -573,7 +452,7 @@ def compute_last10_stats(all_teams, game_ids_cache):
                         if tj == 'shot-on-goal' and 0 < delta <= 3: is_rebound = True
                         if tj == 'takeaway' and 0 < delta <= 4: is_rush = True
 
-                    xg_val = xg_model.predict(x, y, shot_type, sit, is_rebound=is_rebound, is_rush=is_rush, period=per) if zone == 'O' else 0.0
+                    xg_val = estimate_xg(x, y, shot_type, is_rebound, is_rush) if zone == 'O' else 0.0
                     hd = is_high_danger(x, y, zone, home_side, owner, home_team_id)
                     sc = (math.sqrt((89 - abs(x))**2 + y**2) if zone == 'O' else 999) < 35
 
@@ -598,24 +477,26 @@ def compute_last10_stats(all_teams, game_ids_cache):
                                 aps['name'], aps['team'], aps['pos'] = roster[a_pid]['name'], roster[a_pid]['team'], roster[a_pid]['pos']
                                 aps['assists'] += 1
                                 aps['points'] += 1
-                                aps['games_seen'].add(gid) # Ensure they are counted as having played
+                                aps['games_seen'].add(gid)
 
                     ps['rebounds'] += int(is_rebound)
                     ps['rush']     += int(is_rush)
 
     pid_to_team = {} 
-    for f in os.listdir(os.path.join(FOLDER_NAME, "cache")):
-        if not f.startswith('box_cache_'): continue
-        try:
-            with open(os.path.join(FOLDER_NAME, "cache", f)) as fh: d = json.load(fh)
-            for side in ('homeTeam', 'awayTeam'):
-                abbr = d.get(side, {}).get('abbrev', '')
-                if not abbr: continue
-                for group in ('forwards', 'defense', 'goalies'):
-                    for p in d.get('playerByGameStats', {}).get(side, {}).get(group, []):
-                        pid_box = p.get('playerId')
-                        if pid_box and pid_box not in pid_to_team: pid_to_team[pid_box] = abbr
-        except: pass
+    cache_dir = os.path.join(FOLDER_NAME, "cache")
+    if os.path.exists(cache_dir):
+        for f in os.listdir(cache_dir):
+            if not f.startswith('box_cache_'): continue
+            try:
+                with open(os.path.join(cache_dir, f)) as fh: d = json.load(fh)
+                for side in ('homeTeam', 'awayTeam'):
+                    abbr = d.get(side, {}).get('abbrev', '')
+                    if not abbr: continue
+                    for group in ('forwards', 'defense', 'goalies'):
+                        for p in d.get('playerByGameStats', {}).get(side, {}).get(group, []):
+                            pid_box = p.get('playerId')
+                            if pid_box and pid_box not in pid_to_team: pid_to_team[pid_box] = abbr
+            except: pass
 
     for pid, s in player_stats.items():
         if not s['team'] and pid in pid_to_team: s['team'] = pid_to_team[pid]
@@ -651,9 +532,6 @@ async def main_async():
     logger.info("=" * 55)
     t0 = time.time()
     
-    # Init xG model in thread
-    get_xg_model()
-
     async with aiohttp.ClientSession() as session:
         # Phase 1: Parallel general stats building
         tasks = [
@@ -679,21 +557,10 @@ async def main_async():
     elapsed = time.time() - t0
     logger.info(f"✅ Scraping terminé en {elapsed:.1f} secondes !")
 
-def cleanup_pbp_cache():
-    now = time.time()
-    count = 0
-    cache_dir = os.path.join(FOLDER_NAME, "cache")
-    if not os.path.exists(cache_dir): return
-    for f in os.listdir(cache_dir):
-        if (f.startswith('pbp_cache_') or f.startswith('box_cache_')) and f.endswith('.json'):
-            fpath = os.path.join(cache_dir, f)
-            if now - os.path.getmtime(fpath) > 2 * 86400:
-                os.remove(fpath)
-                count += 1
-    if count: logger.info(f"  Cache PBP: {count} fichiers supprimés")
-
 def update_all_stats_sync():
-    """Point d'entrée principal pour la compatibilité avec main_bot.py"""
+    """Point d'entrée principal pour compatibilité avec bot_logic.py."""
+    global SEMAPHORE
+    SEMAPHORE = None  # Reset pour la nouvelle boucle asyncio
     cleanup_pbp_cache()
     if os.name == 'nt':
         import warnings
@@ -704,6 +571,3 @@ def update_all_stats_sync():
             except Exception:
                 pass
     asyncio.run(main_async())
-
-if __name__ == "__main__":
-    update_all_stats_sync()

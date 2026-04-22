@@ -2,30 +2,21 @@ import pandas as pd
 import re
 import logging
 import os
+import sys
+
+# Ajout du dossier racine au sys.path pour permettre l'exécution standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Set, Tuple
 
 logger = logging.getLogger("NHL_Bot")
 
-TEAM_MAPPING = {
-    'Anaheim Ducks': 'ANA', 'Boston Bruins': 'BOS', 'Buffalo Sabres': 'BUF', 'Calgary Flames': 'CGY',
-    'Carolina Hurricanes': 'CAR', 'Chicago Blackhawks': 'CHI', 'Colorado Avalanche': 'COL',
-    'Columbus Blue Jackets': 'CBJ', 'Dallas Stars': 'DAL', 'Detroit Red Wings': 'DET',
-    'Edmonton Oilers': 'EDM', 'Florida Panthers': 'FLA', 'Los Angeles Kings': 'LAK',
-    'Minnesota Wild': 'MIN', 'Montreal Canadiens': 'MTL', 'Nashville Predators': 'NSH',
-    'New Jersey Devils': 'NJD', 'New York Islanders': 'NYI', 'New York Rangers': 'NYR',
-    'Ottawa Senators': 'OTT', 'Philadelphia Flyers': 'PHI', 'Pittsburgh Penguins': 'PIT',
-    'San Jose Sharks': 'SJS', 'Seattle Kraken': 'SEA', 'St Louis Blues': 'STL',
-    'St. Louis Blues': 'STL', 'Tampa Bay Lightning': 'TBL', 'Toronto Maple Leafs': 'TOR', 
-    'Vancouver Canucks': 'VAN', 'Vegas Golden Knights': 'VGK', 'Washington Capitals': 'WSH', 
-    'Winnipeg Jets': 'WPG', 'Utah Hockey Club': 'UTA', 'Utah Mammoth': 'UTA'
-}
-
-REVERSE_TEAM_MAPPING = {v: k for k, v in TEAM_MAPPING.items()}
-
-TEAM_CLEANER = {
-    'L.A': 'LAK', 'N.J': 'NJD', 'S.J': 'SJS', 'T.B': 'TBL', 'L.A.': 'LAK', 'N.J.': 'NJD', 'S.J.': 'SJS', 'T.B.': 'TBL'
-}
+# Imports centralisés depuis la source unique (config/constants.py)
+from config.constants import (
+    TEAM_FULL_TO_ABBR as TEAM_MAPPING,
+    TEAM_ABBR_TO_FULL as REVERSE_TEAM_MAPPING,
+    TEAM_CLEANER,
+)
 
 def clean_team_name(team_str: str) -> str:
     """
@@ -262,6 +253,124 @@ def load_pk_stats(filepath: str) -> Dict[str, float]:
     except Exception as e:
         logger.warning(f"load_pk_stats error: {e}")
         return {}
+
+def get_auto_pp1_players(form_data: Dict[str, Dict[str, Any]], pp_stats: Dict[str, float], teams_playing: List[str]) -> List[str]:
+    """Identifies potential PP1 players for a list of teams based on their average PP TOI."""
+    pp1_list = []
+    for team in teams_playing:
+        team_players = []
+        for player, stats in form_data.items():
+            if stats.get('Team') == team:
+                team_players.append((player, pp_stats.get(player, 0.0)))
+        team_players.sort(key=lambda x: x[1], reverse=True)
+        top_5 = [p[0] for p in team_players[:5] if p[1] > 0]
+        pp1_list.extend(top_5)
+    return pp1_list
+
+def check_if_backup_goalie(goalie_name: str, goalie_stats: Dict[str, Dict[str, Any]]) -> bool:
+    """Determines if a goalie is a backup based on games played ratio within their team."""
+    g = goalie_stats.get(goalie_name)
+    if not g or g.get('GP', 0) == 0:
+        return False
+    team = g.get('Team', '')
+    if not team:
+        return False
+    team_gps = [v.get('GP', 0) for v in goalie_stats.values()
+                if v.get('Team') == team and v.get('GP', 0) > 0]
+    if not team_gps:
+        return False
+    ratio = g['GP'] / max(team_gps)
+    return ratio < 0.25
+
+def parse_flashscore_file(filepath: str, known_players: List[str], form_data: Optional[Dict[str, Dict[str, Any]]] = None) -> Tuple[List[Tuple[str, str]], List[str], Dict[str, str]]:
+    """Parses a Flashscore scraped file to extract matches, lineups, and starting goalies."""
+    matches = []
+    compos_by_team = {}  
+    goalies = {}
+
+    def get_real_name(scraped_name: str, team_context: Optional[str] = None) -> str:
+        s_name = scraped_name.strip()
+        if not s_name: return ""
+
+        s_clean = re.sub(r'\s+(II|III|IV|Jr|Sr)\.?$', '', s_name, flags=re.IGNORECASE).strip()
+        parts = s_clean.split(' ')
+        if len(parts) < 2: return s_name
+
+        last_name = " ".join(parts[:-1]).replace(',', '').strip().lower()
+        first_init = parts[-1][0].lower()
+
+        candidates = []
+        for k_name in known_players:
+            k_parts = k_name.split(' ')
+            k_first = k_parts[0].lower()
+            k_last = " ".join(k_parts[1:]).lower()
+
+            if last_name in k_last and k_first.startswith(first_init):
+                exact = (last_name == k_last)
+                team_match = 0
+                if team_context and form_data:
+                    p_team = form_data.get(k_name, {}).get('Team', '')
+                    team_match = 2 if p_team == team_context else 0
+
+                score = (2 if exact else 1) + team_match
+                candidates.append((k_name, score))
+
+        if not candidates: return s_name
+        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        best_name, best_score = candidates[0]
+        if len(candidates) > 1:
+            k_last_best = " ".join(best_name.split()[1:]).lower()
+            if last_name != k_last_best:
+                return s_name  
+
+        return best_name
+
+    current_dom = ""
+    current_ext = ""
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("Match :"):
+                    m = re.search(r"Match :\s*(.*?)\s*-\s*(.*?)\s*\(", line)
+                    if m:
+                        current_dom = TEAM_MAPPING.get(m.group(1).strip(), m.group(1).strip())
+                        current_ext = TEAM_MAPPING.get(m.group(2).strip(), m.group(2).strip())
+                        matches.append((current_dom, current_ext))
+                        compos_by_team.setdefault(current_dom, set())
+                        compos_by_team.setdefault(current_ext, set())
+                elif line.startswith("goal dom:"):
+                    g_name = line.replace("goal dom:", "").strip()
+                    goalies[current_dom] = get_real_name(g_name, current_dom)
+                elif line.startswith("goal ext:"):
+                    g_name = line.replace("goal ext:", "").strip()
+                    goalies[current_ext] = get_real_name(g_name, current_ext)
+                elif line.startswith("f1 dom") or line.startswith("f2 dom"):
+                    players_str = line.split(":", 1)[1]
+                    for p in players_str.split(','):
+                        real_p = get_real_name(p.strip(), current_dom)
+                        if real_p: compos_by_team[current_dom].add(real_p)
+                elif line.startswith("f1 ext") or line.startswith("f2 ext"):
+                    players_str = line.split(":", 1)[1]
+                    for p in players_str.split(','):
+                        real_p = get_real_name(p.strip(), current_ext)
+                        if real_p: compos_by_team[current_ext].add(real_p)
+                elif line.startswith("f1") or line.startswith("f2"):
+                    players_str = line.split(":", 1)[1]
+                    for p in players_str.split(','):
+                        real_p = get_real_name(p.strip())
+                        if real_p:
+                            compos_by_team.setdefault(current_dom, set()).add(real_p)
+    except Exception as e:
+        logger.warning(f"parse_flashscore_file error: {e}")
+
+    all_compos = set()
+    for players in compos_by_team.values():
+        all_compos.update(players)
+
+    return matches, list(all_compos), goalies
 
 def get_b2b_teams(match_filepath: str, today_str: str) -> List[str]:
     """
