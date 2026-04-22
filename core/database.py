@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from typing import Dict, Any, Optional, List
 
@@ -155,7 +155,7 @@ def reset_db() -> None:
     conn.commit()
     conn.close()
 
-def get_roi_stats(table: str = "picks", target_col: str = "but") -> str:
+def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all") -> str:
     """
     Calculates and returns ROI statistics for a specific market.
     Uses actual odds (cote) for profit calculation when available.
@@ -163,6 +163,7 @@ def get_roi_stats(table: str = "picks", target_col: str = "but") -> str:
     Args:
         table: The table to query.
         target_col: The column representing the result (but, assist, point).
+        days: 'all' or string number of days.
 
     Returns:
         A formatted HTML string with ROI stats.
@@ -170,7 +171,16 @@ def get_roi_stats(table: str = "picks", target_col: str = "but") -> str:
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute(f"SELECT {target_col}, cote, verdict FROM {table} WHERE {target_col} IS NOT NULL AND {target_col} != ''")
+    query = f"SELECT {target_col}, cote, verdict FROM {table} WHERE {target_col} IS NOT NULL AND {target_col} != ''"
+    if days != "all":
+        try:
+            days_int = int(days)
+            cutoff = (datetime.now() - timedelta(days=days_int)).strftime('%Y-%m-%d')
+            query += f" AND date >= '{cutoff}'"
+        except ValueError:
+            pass
+
+    c.execute(query)
     rows = c.fetchall()
     conn.close()
 

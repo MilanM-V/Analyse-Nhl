@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import os
 from datetime import datetime, timedelta
 st.set_page_config(
-    page_title="NHL Betting Bot | Dashboard V14.3",
+    page_title="NHL Betting Bot | Dashboard V15.4",
     page_icon="🏒",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -57,10 +57,12 @@ def load_data(table_name="picks", target_col="but"):
             df['result'] = pd.to_numeric(df[target_col], errors='coerce').fillna(0).astype(int)
             # Calcul du profit avec la cote si disponible
             if 'cote' in df.columns:
-                df['cote'] = pd.to_numeric(df['cote'], errors='coerce')
-                mean_cote = round(df['cote'].mean(), 2)
+                df['real_cote'] = pd.to_numeric(df['cote'], errors='coerce')
+                
+                mean_cote = round(df['real_cote'].mean(), 2)
                 mean_cote = mean_cote if pd.notna(mean_cote) else 1.85
-                df['cote'] = df['cote'].fillna(mean_cote)
+                
+                df['cote'] = df['real_cote'].fillna(mean_cote)
                 df['unit'] = df.apply(lambda row: (row['cote'] - 1) if row['result'] > 0 else -1, axis=1)
             else:
                 df['unit'] = df['result'].apply(lambda x: 1 if x > 0 else -1)
@@ -74,7 +76,7 @@ def load_data(table_name="picks", target_col="but"):
 
 # Sidebar
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
-st.sidebar.title("NHL Bot V14.3")
+st.sidebar.title("NHL Bot V15.4")
 market_filter = st.sidebar.radio("Marché à analyser :", ["GLOBAL", "BUTEURS", "PASSEURS", "POINTEURS"])
 time_filter = st.sidebar.selectbox("Période :", ["Tout (All Time)", "7 Derniers Jours", "30 Derniers Jours", "Saison Actuelle"])
 st.sidebar.markdown("---")
@@ -115,6 +117,13 @@ else:
     df = df_pts.reset_index(drop=True)
     title_suffix = "Pointeurs"
 
+# ----- Filtre des Catégories -----
+if not df.empty and 'verdict' in df.columns:
+    available_cats = sorted(df['verdict'].dropna().unique().tolist())
+    selected_cats = st.sidebar.multiselect("Filtrer par Catégorie :", available_cats, default=available_cats)
+    if selected_cats:
+        df = df[df['verdict'].isin(selected_cats)].reset_index(drop=True)
+
 # Recalcul des unités cumulées pour la période filtrée
 if not df.empty:
     df['cumulative_units'] = df['unit'].cumsum()
@@ -131,7 +140,10 @@ total_won = df['result'].sum()
 global_units = round(df['unit'].sum(), 1)
 winrate = (total_won / total_played * 100) if total_played > 0 else 0
 roi_pct = round((global_units / total_played) * 100, 1) if total_played > 0 else 0
-avg_cote = round(df['cote'].mean(), 2) if 'cote' in df.columns else "N/A"
+if 'real_cote' in df.columns and pd.notna(df['real_cote'].mean()):
+    avg_cote = round(df['real_cote'].mean(), 2)
+else:
+    avg_cote = "N/A"
 
 col1, col2, col3 = st.columns(3)
 
@@ -283,5 +295,4 @@ with pB:
 st.markdown("---")
 st.subheader("🗂️ Journal des Paris")
 st.dataframe(df.drop(columns=['id', 'result', 'unit', 'cumulative_units'], errors='ignore').sort_values(by='date', ascending=False), use_container_width=True)
-
-st.caption(f"Dashboard V14.3 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
+st.caption(f"Dashboard V15.4 | {datetime.now().strftime('%d/%m/%Y %H:%M')} | Antigravity Architecture")
