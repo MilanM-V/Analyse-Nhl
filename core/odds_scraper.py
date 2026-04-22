@@ -88,59 +88,59 @@ def _fetch_event_odds(event_id: str, markets: List[str]) -> Dict:
     except Exception:
         return {}
 
-async def fetch_multiple_odds(player_names: List[str]) -> Dict[str, Dict]:
+async def fetch_multiple_odds(players_to_teams: Dict[str, str], telegram=None) -> Dict[str, Dict]:
     """
-    Point d'entrée optimisé.
-    On ne scanne que les matchs des joueurs demandés qui commencent bientôt.
+    Point d'entrée chirurgical avec surveillance de quota.
     """
     if not API_KEY:
-        logger.warning("[Odds API] Aucune clé API trouvée dans le .env. Passage de l'étape des cotes.")
-        return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in player_names}
+        return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
 
-    if not player_names:
+    if not players_to_teams:
         return {}
 
-    global _CACHE
-    now = time.time()
+    # 1. Récupérer les événements (1 crédit)
+    url_events = f"https://api.the-odds-api.com/v4/sports/{SPORT}/events?apiKey={API_KEY}"
+    try:
+        r = requests.get(url_events, timeout=10)
+        
+        # Vérification Quota
+        remaining = r.headers.get('x-requests-remaining')
+        if remaining and int(remaining) < 20 and telegram:
+            telegram.send_message(f"⚠️ <b>ALERTE QUOTA ODDS API</b> ⚠️\nIl ne vous reste que <b>{remaining}</b> crédits sur votre quota gratuit de 500.")
+            
+        if r.status_code == 429 or r.status_code == 403:
+            logger.error("[Odds API] QUOTA ÉPUISÉ !")
+            if telegram:
+                telegram.send_message("🚨 <b>QUOTA ODDS API ÉPUISÉ</b> 🚨\nLe bot ne peut plus récupérer de cotes pour ce mois-ci.")
+            return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
 
-    # Si le cache est récent, on l'utilise
-    if _CACHE["data"] and (now - _CACHE["timestamp"] < CACHE_TTL):
-        logger.info("[Odds API] Utilisation du cache des cotes.")
-        return {name: _CACHE["data"].get(name, {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None}) for name in player_names}
+        if r.status_code != 200:
+            return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
+            
+        events = r.json()
+    except Exception as e:
+        logger.error(f"[Odds API] Erreur : {e}")
+        return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
 
-    # 1. Récupérer les événements du jour (1 crédit)
-    events = _get_upcoming_events()
-    if not events:
-        return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in player_names}
+    final_results = {}
+    target_teams = {t.lower().replace(" ", "").replace(".", "") for t in players_to_teams.values()}
 
-    new_data = {}
-    
-    # 2. On scanne les événements trouvés
     for event in events:
-        event_id = event['id']
-        # On récupère les 3 marchés pour ce match (3 crédits)
-        # Note: On pourrait affiner pour ne prendre que les marchés utiles au match
-        active_markets = ['player_goal_scorer_anytime', 'player_assists', 'player_points']
+        home = event['home_team'].lower().replace(" ", "").replace(".", "")
+        away = event['away_team'].lower().replace(" ", "").replace(".", "")
         
-        logger.info(f"[Odds API] Scan chirurgical : {event['home_team']} vs {event['away_team']}...")
-        event_data = _fetch_event_odds(event_id, active_markets)
-        
-        if event_data:
-            for p_name, p_odds in event_data.items():
-                p_odds['player'] = p_name
-                new_data[p_name] = p_odds
+        if any(team in home or team in away or home in team or away in team for team in target_teams):
+            logger.info(f"🎯 [Odds API] Appel chirurgical : {event['home_team']} vs {event['away_team']}")
+            event_data = _fetch_event_odds(event['id'], ['player_goal_scorer_anytime', 'player_assists', 'player_points'])
+            
+            if event_data:
+                for p_name, p_odds in event_data.items():
+                    p_odds['player'] = p_name
+                    final_results[p_name] = p_odds
 
-    # Mise à jour du cache
-    _CACHE["data"] = new_data
-    _CACHE["timestamp"] = now
-
-    # Retourner les résultats pour les joueurs demandés
     results = {}
-    for name in player_names:
-        if name in new_data:
-            results[name] = new_data[name]
-        else:
-            results[name] = {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None}
+    for name in players_to_teams:
+        results[name] = final_results.get(name, {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None})
             
     return results
 
