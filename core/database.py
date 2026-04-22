@@ -84,11 +84,12 @@ def init_db() -> None:
 
     conn.commit()
     
-    # Upgrade existing tables if necessary (V14 Migration)
-    # On vérifie chaque table pour les colonnes manquantes
+    # Upgrade existing tables if necessary (V14-V19 Migration)
+    logger.info("Vérification de l'intégrité de la base de données...")
     tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
     
-    # Colonnes communes ajoutées en V14, V14.2 (cote), V18 (mise), V18.2 (closing_cote), V19 (game_mode)
+    # Colonnes universelles (V14 à V19)
+    # On s'assure que TOUTES les tables ont ces colonnes pour la cohérence des stats
     common_cols = [
         ("is_home", "BOOLEAN DEFAULT 0"),
         ("opp_b2b", "BOOLEAN DEFAULT 0"),
@@ -97,14 +98,24 @@ def init_db() -> None:
         ("mise", "REAL DEFAULT NULL"),
         ("closing_cote", "REAL DEFAULT NULL"),
         ("game_mode", "TEXT DEFAULT 'regular'"),
+        ("ixg", "REAL DEFAULT 0"),
+        ("hdcf", "REAL DEFAULT 0"),
+        ("sog", "REAL DEFAULT 0"),
+        ("atoi", "REAL DEFAULT 0"),
     ]
     
     for table in tables_to_fix:
         for col_name, col_type in common_cols:
             try:
-                c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table '{table}'.")
-            except sqlite3.OperationalError: pass
+                # Vérifier si la colonne existe déjà pour éviter des logs inutiles
+                c.execute(f"SELECT {col_name} FROM {table} LIMIT 1")
+            except sqlite3.OperationalError:
+                # La colonne n'existe pas, on l'ajoute
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"🛠️ Migration : Colonne '{col_name}' ajoutée à la table '{table}'.")
+                except Exception as e:
+                    logger.error(f"❌ Erreur migration {table}.{col_name}: {e}")
 
     # Colonnes spécifiques à la table 'players' (Transition V12 -> V14)
     player_cols = [
