@@ -127,6 +127,8 @@ async def fetch_multiple_odds(players_to_teams: Dict[str, str], telegram=None) -
     # On convertit les abbréviations (ex: TB) en noms complets (ex: Tampa Bay Lightning)
     target_teams_full = {TEAM_ABBR_TO_FULL.get(t, t).lower().replace(" ", "").replace(".", "") for t in players_to_teams.values()}
 
+    final_results = {}
+    
     for event in events:
         home = event['home_team'].lower().replace(" ", "").replace(".", "")
         away = event['away_team'].lower().replace(" ", "").replace(".", "")
