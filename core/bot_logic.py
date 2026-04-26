@@ -396,7 +396,7 @@ class NhlBot:
                 )
                 if not any_odds_found:
                     logger.error("ALERTE CRITIQUE : AUCUNE COTE TROUVÉE POUR AUCUN JOUEUR DE LA VAGUE !")
-                    self.telegram.send_message(f"🚨 <b>ALERTE CRITIQUE SCRAPER</b> 🚨\nLe scraper de cotes n'a trouvé absolument <b>aucune cote</b> pour l'ensemble des {len(players_to_fetch)} joueurs de la vague {wave_label}.\nBettingPros a probablement bloqué l'accès ou la structure HTML a changé.")
+                    self.telegram.send_message(f"🚨 <b>ALERTE CRITIQUE SCRAPER</b> 🚨\nLe scraper de cotes n'a trouvé absolument <b>aucune cote</b> pour l'ensemble des {len(players_to_fetch)} joueurs de la vague {wave_label}.\nThe Odds API n'a renvoyé aucune cote ou la vérification des noms d'équipe a échoué.")
 
             for p in final_picks_but:
                 p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")

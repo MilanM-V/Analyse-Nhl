@@ -122,14 +122,16 @@ async def fetch_multiple_odds(players_to_teams: Dict[str, str], telegram=None) -
         logger.error(f"[Odds API] Erreur : {e}")
         return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
 
-    final_results = {}
-    target_teams = {t.lower().replace(" ", "").replace(".", "") for t in players_to_teams.values()}
+    from config.constants import TEAM_ABBR_TO_FULL
+    
+    # On convertit les abbréviations (ex: TB) en noms complets (ex: Tampa Bay Lightning)
+    target_teams_full = {TEAM_ABBR_TO_FULL.get(t, t).lower().replace(" ", "").replace(".", "") for t in players_to_teams.values()}
 
     for event in events:
         home = event['home_team'].lower().replace(" ", "").replace(".", "")
         away = event['away_team'].lower().replace(" ", "").replace(".", "")
         
-        if any(team in home or team in away or home in team or away in team for team in target_teams):
+        if any(team in home or team in away or home in team or away in team for team in target_teams_full):
             logger.info(f"🎯 [Odds API] Appel chirurgical : {event['home_team']} vs {event['away_team']}")
             event_data = _fetch_event_odds(event['id'], ['player_goal_scorer_anytime', 'player_assists', 'player_points'])
             

@@ -6,29 +6,24 @@
 
 ---
 
-## Performances Réelles (Audit V4 — Données Hors-Échantillon)
+## Performances Réelles (Audit Base de Données — Avril 2026)
 
-Résultats calculés **uniquement sur des cotes réelles** de bookmakers, sans aucune imputation ni overfitting :
+Résultats calculés **strictement sur la base de données historique (`bot_database.db`) avec des cotes réelles** sans filtre EV trompeur. L'audit a révélé que les cotes des Passeurs et Pointeurs sont souvent trop basses pour compenser leur taux de réussite réel.
 
-### Paris Simples
+### Paris Simples (Flat Betting 1U)
 
-| Marché | Volume | Winrate | ROI |
+| Marché | Winrate Réel | ROI Brut | Diagnostic |
 | :--- | :--- | :--- | :--- |
-| **Passeurs** | 217 | ~55% | **+15.0%** |
-| **Pointeurs** | 91 | ~65% | **+16.7%** |
-| ~~Buteurs~~ | — | — | **Désactivé** (ROI -26%) |
+| **Buteurs** | 32.5% | **+3.8%** | **Seul marché rentable sans filtre** (Cote moy: 3.20) |
+| **Passeurs** | 47.0% | **-9.2%** | Cotes trop écrasées par les bookmakers (Cote moy: 1.96) |
+| **Pointeurs** | 52.3% | **-15.8%** | Surévalué (Cote moy: 1.64). La proba (58%) surestime le WR réel (52%). |
 
-### Combinés (Duo)
+> ⚠️ **Attention au biais de calibration** : Le dashboard simulait des ROI de >+40% sur les Passeurs/Pointeurs car le filtre "EV > 5%" se base sur des probabilités théoriques (ex: 58.8% de winrate pour les Pointeurs). Or l'audit prouve que le vrai winrate avec de réelles cotes n'est que de 52.3%. Le bot validait donc des paris à EV négatif en pensant qu'ils étaient rentables.
 
-| Type de Combiné | Volume | Winrate | ROI |
-| :--- | :--- | :--- | :--- |
-| **Même Joueur (Passe+Point)** | 36 | 44.4% | **+56.8%** |
-| **Intra-Match (Passeur+Pointeur)** | 108 | 46.3% | **+50.3%** |
-| **Inter-Match (Passeur+Passeur)** | 3991 | 30.8% | **+22.6%** |
-| Inter-Match (Passeur+Pointeur) | 965 | 37.6% | +13.4% |
-| ~~Inter-Match (Pointeur+Pointeur)~~ | 208 | 37.0% | **-2.7%** ❌ |
+### Stratégie Recommandée suite à l'Audit
 
-> **Règle d'or** : Ne jamais combiner plus de 2 sélections. Les Trios (3 joueurs) ont un ROI de -6.6%.
+1. **Buteurs** : C'est paradoxalement le marché offrant le plus de "Value" (+3.8% ROI net) sans aucun filtre. Leurs cotes élevées compensent largement le faible winrate.
+2. **Filtres EV** : Nécessite une recalibration complète des probabilités bayésiennes dans `probas.json` pour refléter la vraie performance des algorithmes.
 
 ---
 
