@@ -122,16 +122,23 @@ async def fetch_multiple_odds(players_to_teams: Dict[str, str], telegram=None) -
         logger.error(f"[Odds API] Erreur : {e}")
         return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
 
-    from config.constants import TEAM_ABBR_TO_FULL
-    
-    # On convertit les abbréviations (ex: TB) en noms complets (ex: Tampa Bay Lightning)
-    target_teams_full = {TEAM_ABBR_TO_FULL.get(t, t).lower().replace(" ", "").replace(".", "") for t in players_to_teams.values()}
+    from config.constants import TEAM_FULL_TO_ABBR
+    import unicodedata
+
+    def normalize(text: str) -> str:
+        return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8').lower().replace(" ", "").replace(".", "")
+
+    target_abbrs = set(players_to_teams.values())
+    target_teams_full = {normalize(t) for t in target_abbrs}
+    for full_name, abbr in TEAM_FULL_TO_ABBR.items():
+        if abbr in target_abbrs:
+            target_teams_full.add(normalize(full_name))
 
     final_results = {}
     
     for event in events:
-        home = event['home_team'].lower().replace(" ", "").replace(".", "")
-        away = event['away_team'].lower().replace(" ", "").replace(".", "")
+        home = normalize(event['home_team'])
+        away = normalize(event['away_team'])
         
         if any(team in home or team in away or home in team or away in team for team in target_teams_full):
             logger.info(f"🎯 [Odds API] Appel chirurgical : {event['home_team']} vs {event['away_team']}")
