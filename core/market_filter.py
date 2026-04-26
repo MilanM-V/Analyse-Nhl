@@ -73,15 +73,15 @@ def evaluate_player_markets(
     # Mode Playoff : On ignore le filtre "Home Only" pour augmenter le volume
     is_playoff = (cfg.api.mode == "playoff")
 
-    # Buteurs
+    # Buteurs (DESACTIVES TEMPORAIREMENT CAR ROI NEGATIF)
     cat_but = None
-    if (is_home or not cfg.thresholds.buteurs.home_only) and \
-       pos not in ('D', 'LD', 'RD') and \
-       season_g >= cfg.thresholds.buteurs.season_g_min and \
-       l10_sog >= cfg.thresholds.buteurs.l10_sog_min and \
-       l10_hdcf >= cfg.thresholds.buteurs.l10_hdcf_min and \
-       opp_ga >= cfg.thresholds.buteurs.opp_ga_min:
-        cat_but = "BUTEUR"
+    # if (is_home or not cfg.thresholds.buteurs.home_only) and \
+    #    pos not in ('D', 'LD', 'RD') and \
+    #    season_g >= cfg.thresholds.buteurs.season_g_min and \
+    #    l10_sog >= cfg.thresholds.buteurs.l10_sog_min and \
+    #    l10_hdcf >= cfg.thresholds.buteurs.l10_hdcf_min and \
+    #    opp_ga >= cfg.thresholds.buteurs.opp_ga_min:
+    #     cat_but = "BUTEUR"
 
     # Passeurs
     cat_ast = None

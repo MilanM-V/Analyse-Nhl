@@ -47,8 +47,9 @@ def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str 
     cap = CATEGORY_CAPS.get(categorie, 2.0)
 
     if f > 0:
-        quarter_f = f / 4.0
-        units = round(quarter_f * 100 * 2) / 2  # arrondi à 0.5 près
+        # Fraction très prudente (1/8ème) car les cotes réelles ont beaucoup de variance
+        eighth_f = f / 8.0
+        units = round(eighth_f * 100 * 2) / 2  # arrondi à 0.5 près
         units = max(0.5, min(units, cap))
         return f"{units} U"
 
@@ -56,24 +57,17 @@ def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str 
 
 
 def is_cote_valid(pick: dict, cote_min: float) -> bool:
-    """Vérifie que la cote existe, dépasse le minimum, et que l'EV est positive.
-
-    Args:
-        pick: Dictionnaire du pick contenant 'Cote', 'Proba', 'Joueur'.
-        cote_min: Cote minimum requise pour le marché.
-
-    Returns:
-        True si le pick est valide pour le pari.
-    """
     if not pick.get("Cote") or pick["Cote"] <= 1.05:
         logger.debug(f"Pari Rejeté (Absence de Cote) : {pick['Joueur']}")
         return False
     if cote_min > 0 and pick["Cote"] < cote_min:
         logger.debug(f"Pari Rejeté (Cote {pick['Cote']:.2f} < min {cote_min:.2f}) : {pick['Joueur']}")
         return False
+        
     ev = (pick["Proba"] * pick["Cote"]) - 1.0
-    if ev < 0.02:
-        logger.debug(f"Pari Rejeté (-EV) : {pick['Joueur']} (EV: {ev*100:.1f}%)")
+    # FILTRE EV STRICT (Nouveau Cerveau IA) : Rejet si EV < 5%
+    if ev < 0.05:
+        logger.debug(f"Pari Rejeté (-EV / Marge Faible) : {pick['Joueur']} (EV: {ev*100:.1f}%)")
         return False
     return True
 

@@ -126,23 +126,23 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
         cat_but, cat_ast, cat_pts = evaluate_player_markets(joueur, p_form, v5_p, adv_stats, is_home)
 
         # Helper pour générer un résultat
-        def add_result(cat_name, cote_dict, cote_reel_defaut, cote_simu_defaut, cf_min, prob_key, res_won):
+        def add_result(cat_name, cote_dict, cf_min, prob_key, res_won):
             cote_reel_scrap = cote_dict.get(key)
             
-            # La VRAIE cote pour calculer l'argent gagné (Moyenne réelle si non scrapé)
-            cote = cote_reel_scrap if cote_reel_scrap else cote_reel_defaut
-            
-            # La FAUSSE cote utilisée par le bot historiquement pour autoriser le pari
-            cote_simu = cote_reel_scrap if cote_reel_scrap else cote_simu_defaut
+            # Filtrage Strict (Option 1) : On ignore si pas de vraie cote
+            if not cote_reel_scrap:
+                return
+                
+            cote = cote_reel_scrap
             
             thresh_group = getattr(cfg.thresholds, prob_key, None)
             cote_mini = getattr(thresh_group, "cote_min", cf_min) if thresh_group else cf_min
             
-            if cote_simu >= cote_mini:
+            if cote >= cote_mini:
                 prob = probas.get(prob_key, 0.30)
-                edge = (prob * cote_simu) - 1.0
-                if edge > 0:
-                    mise_str = calculate_quarter_kelly(prob, cote_simu, cat_name)
+                edge = (prob * cote) - 1.0
+                if edge > 0.05: # Strict EV > 5%
+                    mise_str = calculate_quarter_kelly(prob, cote, cat_name)
                     mise = float(mise_str.replace(" U", "")) if mise_str != "0 U" else 0.0
                     if mise > 0:
                         gain_u = (cote * mise - mise) if res_won else -mise
@@ -151,17 +151,17 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
                                        "gain_u": gain_u, "gain_euro": gain_u * unit_value_euro,
                                        "won": res_won, "equipe": row['equipe'], "adv": row['adversaire']})
 
-        # Buteur
-        if cat_but:
-            add_result("BUTEUR", cotes_but_dict, avg_but, 3.20, 2.50, "buteurs", res_but)
+        # Buteur (DESACTIVE CAR ROI NEGATIF)
+        # if cat_but:
+        #     add_result("BUTEUR", cotes_but_dict, 2.50, "buteurs", res_but)
             
         # Passeur
         if cat_ast:
-            add_result("PASSEUR", cotes_ast_dict, avg_ast, 2.40, 2.00, "passeurs", res_ast)
+            add_result("PASSEUR", cotes_ast_dict, 2.00, "passeurs", res_ast)
             
         # Pointeur
         if cat_pts:
-            add_result("POINTEUR", cotes_pts_dict, avg_pts, 1.90, 1.50, "pointeurs", res_pts)
+            add_result("POINTEUR", cotes_pts_dict, 1.50, "pointeurs", res_pts)
 
     # ----- SIMULATION DES COMBINÉS V18.3 -----
     def get_best_per_match(picks_list):
@@ -215,21 +215,23 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
                 "won": won, "equipe": "COMBO", "adv": "COMBO"
             })
             
-        # Double Points
-        if len(best_pts) >= 2:
-            add_combo(best_pts[0], best_pts[1], "COMBO DOUBLE PTS", 0.5)
+        # 1. INTRA-MATCH : Passeur + Pointeur même match (ROI +50%)
+        for a in asts:
+            for p in pts:
+                if a['joueur'] != p['joueur'] and f"{a['equipe']}-{a['adv']}" == f"{p['equipe']}-{p['adv']}":
+                    add_combo(a, p, "COMBO INTRA Passeur+Pointeur", 0.5)
+                    break
+            else:
+                continue
+            break
             
-        # Duo Booster
+        # 2. INTER-MATCH : Passeur + Passeur matchs différents (ROI +23%)
+        dast = find_cross_duo(best_ast, best_ast)
+        if dast: add_combo(dast[0], dast[1], "COMBO INTER Double Passeurs", 0.5)
+            
+        # 3. INTER-MATCH : Passeur + Pointeur matchs différents (ROI +13%)
         booster = find_cross_duo(best_ast, best_pts)
-        if booster: add_combo(booster[0], booster[1], "COMBO DUO BOOSTER", 0.5)
-            
-        # Duo Offensif
-        offensif = find_cross_duo(best_but, best_pts)
-        if offensif: add_combo(offensif[0], offensif[1], "COMBO DUO OFFENSIF", 0.5)
-            
-        # Double Buteur
-        dbut = find_cross_duo(best_but, best_but)
-        if dbut: add_combo(dbut[0], dbut[1], "COMBO DOUBLE BUTEUR", 0.3)
+        if booster: add_combo(booster[0], booster[1], "COMBO INTER Passeur+Pointeur", 0.5)
         
     results.extend(parlay_results)
 
@@ -251,11 +253,11 @@ st.sidebar.markdown("---")
 mode_options = {"Tous": "all", "Saison Régulière": "regular", "Playoff": "playoff"}
 mode_choice = st.sidebar.radio("🏒 Mode NHL", list(mode_options.keys()), index=0, horizontal=True)
 selected_mode = mode_options[mode_choice]
-st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur OMEGA Optimal** (Singles & Combinés)")
+st.sidebar.info("📌 Ce dashboard simule le **Moteur V4** (Passeurs & Pointeurs uniquement, EV > 5%, cotes réelles)")
 
 mode_label = f" ({mode_choice})" if selected_mode != "all" else ""
-st.title(f"🚀 Dashboard Simulateur OMEGA{mode_label}")
-st.markdown(f"Si l'algorithme OMEGA (+172.3 U) avait tourné depuis le début de la récolte de Data, avec **1 Unité = {unit_euro} €** :")
+st.title(f"📊 Dashboard Simulateur V4{mode_label}")
+st.markdown(f"Simulation honnête sur cotes réelles uniquement (Passeurs + Pointeurs + Combinés prouvés), avec **1 Unité = {unit_euro} €** :")
 
 df_sim, probas_actuelles = load_and_simulate(unit_euro, selected_mode)
 
