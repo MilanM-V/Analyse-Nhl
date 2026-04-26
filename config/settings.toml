@@ -3,41 +3,40 @@
 # V18 — Filtres optimisés sur 2893 joueurs (grid search exhaustif)
 
 [thresholds.buteurs]
-# V18 — Filtres simples optimisés (44.7% WR, +43% ROI estimé)
-# Le QS scoring N'EST PLUS UTILISÉ comme filtre de sélection.
-# Il reste comme métrique de tri/affichage.
-season_g_min = 0.40     # Buteur confirmé sur la saison
-l10_sog_min = 3.0       # Tirs cadrés L10 minimum
-l10_hdcf_min = 2.5      # Tirs haute danger L10 minimum (monté de 2.0)
-home_only = true        # Ne parier que sur les joueurs à domicile
-opp_ga_min = 2.8        # Adversaire qui encaisse >= 2.8 buts/match (NOUVEAU)
-cote_min = 3.00         # NOUVEAU — Seules les grosses cotes sont +EV pour les buts
+# OMEGA Optimal — Buteurs (+87.9 U)
+season_g_min = 0.40
+l10_sog_min = 2.5
+l10_hdcf_min = 1.5
+home_only = false
+opp_ga_min = 2.5
+cote_min = 0.0
 
 [thresholds.passeurs]
-# V18 — Filtres optimisés (58.5% WR, +13.6% ROI estimé)
-season_a_min = 0.50     # Passeur très régulier
-l10_a_min = 0.80        # Très en forme (8 passes sur 10 matchs)
-home_only = true        # Domicile uniquement
-atoi_min = 18.0         # NOUVEAU — Grosses minutes = plus d'occasions
-opp_ga_min = 2.8        # NOUVEAU — Adversaire perméable
-cote_min = 2.20         # NOUVEAU — Seules les cotes >= 2.20 sont +EV
+# OMEGA Optimal — Passeurs (+22.1 U)
+season_a_min = 0.50
+l10_a_min = 0.60
+home_only = true
+atoi_min = 16.0
+opp_ga_min = 2.6
+cote_min = 0.0
 
 [thresholds.pointeurs]
-# V18 — Filtres optimisés (69.6% WR, +4.3% ROI simple, +13.8% combo)
-season_pts_min = 0.90   # Star confirmée (monté de 0.80)
-l10_pts_min = 0.80      # Forme récente forte (monté de 0.40)
-home_only = true        # Domicile uniquement
-atoi_min = 16.0         # NOUVEAU — Temps de glace minimum
-opp_ga_min = 2.8        # NOUVEAU — Adversaire perméable
-cote_min = 0.0          # Pas de filtre cote (rentable uniquement en combiné)
+# OMEGA Optimal — Pointeurs (+62.3 U)
+season_pts_min = 0.90
+l10_pts_min = 0.60
+home_only = false
+atoi_min = 17.0
+opp_ga_min = 2.6
+cote_min = 0.0
 
 [thresholds.general]
 atoi_min = 13.0
 
 [kelly]
-buteur_cap = 3.0
-passeur_cap = 2.0
-pointeur_cap = 2.0
+# Quarter Kelly fraction is used in bot_logic / kelly
+buteur_cap = 2.0
+passeur_cap = 3.0
+pointeur_cap = 4.0
 
 [wave]
 ecart_max_min = 5

@@ -243,7 +243,7 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
 
 # ----- INTERFACE -----
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/3/3a/05_NHL_Shield.svg/1200px-05_NHL_Shield.svg.png", width=80)
-st.sidebar.title("Simulateur Quant V18.3")
+st.sidebar.title("Simulateur Quant OMEGA")
 
 unit_euro = st.sidebar.number_input("💵 Valeur d'1 Unité (en €)", min_value=0.1, max_value=500.0, value=10.0, step=5.0)
 
@@ -251,11 +251,11 @@ st.sidebar.markdown("---")
 mode_options = {"Tous": "all", "Saison Régulière": "regular", "Playoff": "playoff"}
 mode_choice = st.sidebar.radio("🏒 Mode NHL", list(mode_options.keys()), index=0, horizontal=True)
 selected_mode = mode_options[mode_choice]
-st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur V18.3 actuel** (Singles & Combinés)")
+st.sidebar.info("📌 Ce dashboard 'rejoue' l'intégralité de tes données historiques à travers le **Moteur OMEGA Optimal** (Singles & Combinés)")
 
 mode_label = f" ({mode_choice})" if selected_mode != "all" else ""
-st.title(f"🚀 Dashboard Simulateur V18.3{mode_label}")
-st.markdown(f"Si l'algorithme V18.3 actuel avait tourné depuis le début de la récolte de Data, avec **1 Unité = {unit_euro} €** :")
+st.title(f"🚀 Dashboard Simulateur OMEGA{mode_label}")
+st.markdown(f"Si l'algorithme OMEGA (+172.3 U) avait tourné depuis le début de la récolte de Data, avec **1 Unité = {unit_euro} €** :")
 
 df_sim, probas_actuelles = load_and_simulate(unit_euro, selected_mode)
 
@@ -282,7 +282,7 @@ with c3:
 
 c4, c5, c6 = st.columns(3)
 with c4:
-    st.markdown(f'<div class="metric-container"><div class="metric-label">Picks Sélectionnés (V18)</div><div class="metric-value">{total_picks}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-container"><div class="metric-label">Picks Sélectionnés (OMEGA)</div><div class="metric-value">{total_picks}</div></div>', unsafe_allow_html=True)
 with c5:
     st.markdown(f'<div class="metric-container"><div class="metric-label">Taux de Réussite (Winrate)</div><div class="metric-value">{winrate:.1f}%</div></div>', unsafe_allow_html=True)
 with c6:
@@ -321,5 +321,5 @@ with colB:
     st.caption("Le moteur de recommandation se base sur ces taux mis à jour hebdomadairement par le script Bayésien.")
 
 st.markdown("---")
-st.subheader("📋 Derniers Paris V18 Simulés")
+st.subheader("📋 Derniers Paris OMEGA Simulés")
 st.dataframe(df_sim.sort_values(by='date', ascending=False).head(50), use_container_width=True)
