@@ -1,14 +1,11 @@
 pandas
-numpy
 selenium
 python-dotenv
 requests
-scikit-learn
-joblib
 python-telegram-bot[job-queue]
-xgboost
 streamlit
 plotly
 aiohttp
 beautifulsoup4
 pytest
+schedule

@@ -10,7 +10,7 @@ DB_PATH = "./bot_database.db"
 
 def get_connection() -> sqlite3.Connection:
     """Returns a connection to the SQLite database."""
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15.0)
 
 # V14 : Ajout dynamique des colonnes XGBoost si elles n'existent pas
 def ensure_schema():
@@ -93,7 +93,63 @@ def init_db():
         )
     ''')
 
+    # Table des paris combinés (V18.2)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS picks_parlays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT, vague TEXT, type_combo TEXT,
+            leg1_joueur TEXT, leg2_joueur TEXT, leg3_joueur TEXT,
+            cote_totale REAL, mise REAL, resultat INTEGER DEFAULT NULL
+        )
+    ''')
+
     conn.commit()
+    
+    # Upgrade existing tables if necessary (V14-V19 Migration)
+    logger.info("Vérification de l'intégrité de la base de données...")
+    tables_to_fix = ["picks", "picks_assists", "picks_points", "players"]
+    
+    # Colonnes universelles (V14 à V19)
+    # On s'assure que TOUTES les tables ont ces colonnes pour la cohérence des stats
+    common_cols = [
+        ("is_home", "BOOLEAN DEFAULT 0"),
+        ("opp_b2b", "BOOLEAN DEFAULT 0"),
+        ("consec_goals", "INTEGER DEFAULT 0"),
+        ("cote", "REAL DEFAULT NULL"),
+        ("mise", "REAL DEFAULT NULL"),
+        ("closing_cote", "REAL DEFAULT NULL"),
+        ("game_mode", "TEXT DEFAULT 'regular'"),
+        ("ixg", "REAL DEFAULT 0"),
+        ("hdcf", "REAL DEFAULT 0"),
+        ("sog", "REAL DEFAULT 0"),
+        ("atoi", "REAL DEFAULT 0"),
+    ]
+    
+    for table in tables_to_fix:
+        for col_name, col_type in common_cols:
+            try:
+                # Vérifier si la colonne existe déjà pour éviter des logs inutiles
+                c.execute(f"SELECT {col_name} FROM {table} LIMIT 1")
+            except sqlite3.OperationalError:
+                # La colonne n'existe pas, on l'ajoute
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                    logger.info(f"🛠️ Migration : Colonne '{col_name}' ajoutée à la table '{table}'.")
+                except Exception as e:
+                    logger.error(f"❌ Erreur migration {table}.{col_name}: {e}")
+
+    # Colonnes spécifiques à la table 'players' (Transition V12 -> V14)
+    player_cols = [
+        ("score_but", "REAL"), ("score_assist", "REAL"), ("score_point", "REAL"),
+        ("picked_but", "BOOLEAN"), ("picked_assist", "BOOLEAN"), ("picked_point", "BOOLEAN"),
+        ("l10_a", "REAL"), ("l10_pts", "REAL"), ("season_a", "REAL"), ("season_pts", "REAL"),
+        ("assist", "INTEGER DEFAULT NULL"), ("point", "INTEGER DEFAULT NULL")
+    ]
+    for col_name, col_type in player_cols:
+        try:
+            c.execute(f"ALTER TABLE players ADD COLUMN {col_name} {col_type}")
+            logger.info(f"Migration V14 : Colonne '{col_name}' ajoutée à la table 'players'.")
+        except sqlite3.OperationalError: pass
     
     conn.commit()
     conn.close()
@@ -146,6 +202,25 @@ def insert_player(player_data: Dict[str, Any], conn: Optional[sqlite3.Connection
         conn.commit()
         conn.close()
 
+def insert_parlay(parlay_data: Dict[str, Any], conn: Optional[sqlite3.Connection] = None) -> None:
+    """
+    Inserts a generated parlay (combiné) into the picks_parlays table.
+    """
+    auto_close = conn is None
+    if auto_close:
+        conn = get_connection()
+    c = conn.cursor()
+
+    cols = ', '.join(parlay_data.keys())
+    placeholders = ', '.join(['?'] * len(parlay_data))
+
+    sql = f'INSERT INTO picks_parlays ({cols}) VALUES ({placeholders})'
+    c.execute(sql, list(parlay_data.values()))
+
+    if auto_close:
+        conn.commit()
+        conn.close()
+
 def reset_db() -> None:
     """Clears all content from all relevant tables."""
     conn = get_connection()
@@ -155,7 +230,7 @@ def reset_db() -> None:
     conn.commit()
     conn.close()
 
-def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all") -> str:
+def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "all", game_mode: str = "all") -> str:
     """
     Calculates and returns ROI statistics for a specific market.
     Uses actual odds (cote) for profit calculation when available.
@@ -164,6 +239,7 @@ def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "al
         table: The table to query.
         target_col: The column representing the result (but, assist, point).
         days: 'all' or string number of days.
+        game_mode: 'all', 'regular', or 'playoff' to filter by game mode.
 
     Returns:
         A formatted HTML string with ROI stats.
@@ -179,6 +255,9 @@ def get_roi_stats(table: str = "picks", target_col: str = "but", days: str = "al
             query += f" AND date >= '{cutoff}'"
         except ValueError:
             pass
+
+    if game_mode in ("regular", "playoff"):
+        query += f" AND game_mode = '{game_mode}'"
 
     c.execute(query)
     rows = c.fetchall()
