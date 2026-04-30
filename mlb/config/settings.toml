@@ -1,0 +1,11 @@
+# ─── MLB Bot Configuration ─────────────────────────────────────────────────
+# Source unique pour tous les seuils et paramètres du bot MLB.
+# À remplir quand le bot MLB sera développé.
+
+[api]
+mode = "regular"
+season_id = "2026"
+
+[schedule]
+# Heure du scan quotidien (format HH:MM, heure locale)
+harvest_time = "16:30"

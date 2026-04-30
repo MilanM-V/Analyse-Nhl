@@ -1,61 +1,56 @@
-# Analyse-Nhl
+# BetEngine — Plateforme Multi-Sport de Paris Quantitatifs
 
-[![GitHub stars](https://img.shields.io/github/stars/MilanM-V/Analyse-Nhl?style=social)](https://github.com/MilanM-V/Analyse-Nhl)
-
-**Analyse-Nhl** est un bot quantitatif de paris sportifs NHL spécialisé sur les marchés **Passeurs** et **Pointeurs**. Il utilise des modèles XGBoost entraînés avec validation croisée temporelle (Time-Series Split) pour identifier les "Value Bets" avec un avantage mathématique réel (EV > 5%) sur les bookmakers.
+> Bot autonome de paris sportifs basé sur l'Expected Value (EV > 5%), le Kelly Criterion, et les probabilités bayésiennes. Multi-sport, modulaire, déployé sur VPS avec supervision intelligente.
 
 ---
 
-## Performances Réelles (Audit Base de Données — Avril 2026)
+## Sports Actifs
 
-Résultats calculés **strictement sur la base de données historique (`bot_database.db`) avec des cotes réelles** sans filtre EV trompeur. L'audit a révélé que les cotes des Passeurs et Pointeurs sont souvent trop basses pour compenser leur taux de réussite réel.
-
-### Paris Simples (Flat Betting 1U)
-
-| Marché | Winrate Réel | ROI Brut | Diagnostic |
-| :--- | :--- | :--- | :--- |
-| **Buteurs** | 32.5% | **+3.8%** | **Seul marché rentable sans filtre** (Cote moy: 3.20) |
-| **Passeurs** | 47.0% | **-9.2%** | Cotes trop écrasées par les bookmakers (Cote moy: 1.96) |
-| **Pointeurs** | 52.3% | **-15.8%** | Surévalué (Cote moy: 1.64). La proba (58%) surestime le WR réel (52%). |
-
-> ⚠️ **Attention au biais de calibration** : Le dashboard simulait des ROI de >+40% sur les Passeurs/Pointeurs car le filtre "EV > 5%" se base sur des probabilités théoriques (ex: 58.8% de winrate pour les Pointeurs). Or l'audit prouve que le vrai winrate avec de réelles cotes n'est que de 52.3%. Le bot validait donc des paris à EV négatif en pensant qu'ils étaient rentables.
-
-### Stratégie Recommandée suite à l'Audit
-
-1. **Buteurs** : C'est paradoxalement le marché offrant le plus de "Value" (+3.8% ROI net) sans aucun filtre. Leurs cotes élevées compensent largement le faible winrate.
-2. **Filtres EV** : Nécessite une recalibration complète des probabilités bayésiennes dans `probas.json` pour refléter la vraie performance des algorithmes.
+| Sport | Status | Marchés |
+|-------|--------|---------|
+| 🏒 **NHL** | ✅ Production V18 | Passeur, Pointeur |
+| ⚾ **MLB** | 🔧 Collecte de données | Strikeouts pitcher, Hits/HR batter |
+| 🏀 **NBA** | 📋 Planifié | Combinés PRA (Points + Rebounds + Assists) |
+| ⚽ **Foot** | 💤 Futur | Marchés de niche (corners, cartons, tirs cadrés) |
 
 ---
 
 ## Architecture
 
 ```
-core/
-├── bot_logic.py      # Orchestration : scan → filtre → odds → Kelly → Telegram
-├── market_filter.py  # Filtrage par marché (Passeurs/Pointeurs uniquement)
-├── kelly.py          # Kelly Criterion fractionnaire (1/8) + filtre EV > 5%
-├── formatter.py      # Messages Telegram (Singles + Top 3 Combinés)
-├── odds_scraper.py   # Intégration The Odds API (chirurgicale par match)
-├── scraper.py        # Scraping Flashscore/RotoWire pour les compos
-├── database.py       # SQLite (picks, picks_assists, picks_points, parlays)
-├── loaders.py        # Chargement CSV (stats NHL, form, PP1, B2B)
-├── updater.py        # Résolution automatique des résultats
-└── services.py       # Telegram & Email
+bet2/
+├── shared/                  # Code commun à tous les sports
+│   ├── telegram_hub.py      # Envoi centralisé Telegram (POST HTTP)
+│   ├── base_bot.py          # Classe abstraite BaseSportBot
+│   ├── portfolio.py         # Portefeuille simulé (100 U, SQLite)
+│   └── utils.py             # Retry HTTP, normalisation noms
+│
+├── nhl/                     # 🏒 Bot NHL (Production)
+│   ├── config/              # settings.toml, probas.json, constants.py
+│   ├── core/                # bot_logic, market_filter, kelly, scraper, odds, updater...
+│   ├── data/                # Pipeline async NHL API → CSV
+│   ├── main_bot.py          # Point d'entrée NHL
+│   └── dashboard.py         # Dashboard Streamlit NHL
+│
+├── mlb/                     # ⚾ Bot MLB (Harvester)
+│   ├── core/harvester.py    # Collecte boxscores MLB API
+│   └── main_bot.py          # Point d'entrée MLB
+│
+├── vps/                     # Scripts VPS
+│   └── watchdog.py          # Superviseur intelligent multi-sport
+│
+├── PROJECT_VISION.md        # Vision complète du projet
+└── VPS_WATCHDOG.md          # Spec technique du watchdog
+```
 
-scripts/
-├── train_models.py   # Entraînement XGBoost (TimeSeriesSplit, anti-overfitting)
-├── estimate_ev.py    # Simulation de profit réel (simples + combinés)
-├── omega_audit_v4.py # Audit honnête complet (simples vs duos vs trios)
-└── combo_analysis.py # Analyse exhaustive des types de combinés
+---
 
-config/
-├── settings.toml     # Seuils de filtrage, Kelly caps, mode playoff
-└── probas.json       # Probabilités bayésiennes dynamiques
+## Pipeline de Paris (Cycle NHL)
 
-models/
-├── xg_model_but.pkl  # Modèle buteurs (désactivé)
-├── xg_model_ast.pkl  # Modèle passeurs (actif)
-└── xg_model_pts.pkl  # Modèle pointeurs (actif)
+```
+UPDATE STATS (NHL API) → SCAN LINEUPS (Flashscore) → FILTRAGE MARCHÉ (seuils stats)
+     → SCRAPE ODDS (The Odds API) → VALIDATION EV > 5% → KELLY SIZING (1/8ème)
+     → ENVOI TELEGRAM → LOG DB + CSV → RÉSOLUTION AUTO (Boxscore API)
 ```
 
 ---
@@ -69,34 +64,94 @@ cd Analyse-Nhl
 python -m venv venv
 # Windows
 venv\Scripts\activate
-# macOS / Linux
+# Linux
 source venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-> **Prérequis** : Python 3.12+, navigateur Brave (Selenium).
+> **Prérequis** : Python 3.12+, Brave Browser (Selenium).
+
+Créer un fichier `.env` à la racine :
+```env
+TELEGRAM_TOKEN=your_token
+TELEGRAM_CHAT_ID=your_chat_id
+BRAVE_PATH=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe
+api_odds=your_odds_api_key
+```
 
 ---
 
 ## Utilisation
 
+### Local
+
 ```bash
-# Tableau de bord Streamlit
-streamlit run dashboard.py
+# Bot NHL complet
+python nhl/main_bot.py
 
-# Bot complet (scraping + prédictions + alertes Telegram)
-python main_bot.py
+# Dashboard Streamlit NHL
+streamlit run nhl/dashboard.py
 
-# Ré-entraîner les modèles IA
-python scripts/train_models.py
-
-# Audit de rentabilité
-python scripts/omega_audit_v4.py
-
-# Analyse des combinés
-python scripts/combo_analysis.py
+# Bot MLB (harvester uniquement)
+python mlb/main_bot.py
 ```
+
+### VPS (Production)
+
+```bash
+# Déployer via git push puis sur le VPS :
+systemctl daemon-reload
+systemctl restart watchdog-betengine
+
+# Le watchdog gère automatiquement :
+# - Démarrage de tous les bots sport configurés
+# - Redémarrage ciblé après chaque git push (par dossier modifié)
+# - Restart auto si un bot crash
+```
+
+#### Service systemd (`/etc/systemd/system/watchdog-betengine.service`)
+
+```ini
+[Unit]
+Description=BetEngine Multi-Sport Watchdog
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/BetEngine
+ExecStart=/opt/BetEngine/venv/bin/python3 vps/watchdog.py
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Installer le service
+sudo cp watchdog-betengine.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable watchdog-betengine
+sudo systemctl start watchdog-betengine
+
+# Vérifier
+sudo systemctl status watchdog-betengine
+journalctl -u watchdog-betengine -f
+```
+
+> **Important** : Le watchdog lance et supervise tous les bots. Tu n'as plus besoin de services systemd séparés pour chaque bot. Un seul service (`watchdog-betengine`) suffit.
+
+---
+
+## Documentation
+
+| Document | Contenu |
+|----------|---------|
+| [PROJECT_VISION.md](PROJECT_VISION.md) | Vision complète, stratégies par sport, architecture cible, roadmap |
+| [VPS_WATCHDOG.md](VPS_WATCHDOG.md) | Spécification technique du watchdog VPS |
 
 ---
 

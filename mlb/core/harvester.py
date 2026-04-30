@@ -160,9 +160,9 @@ def fetch_mlb_day(date_str: str):
     logger.info(f"Données MLB du {date_str} sauvegardées avec succès !")
     sys.stdout.flush()
 
-if __name__ == "__main__":
-    init_db()
 
+def run_harvester_loop() -> None:
+    """Lance la boucle de collecte MLB quotidienne."""
     import schedule
 
     def job():
@@ -173,7 +173,6 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Erreur inattendue pendant la tâche quotidienne : {e}")
 
-    # Planification automatique locale tous les jours à 16h30 (Heure de ton PC)
     schedule.every().day.at("16:30").do(job)
 
     logger.info("=====================================================")
@@ -194,3 +193,9 @@ if __name__ == "__main__":
             logger.error(f"Erreur inattendue dans la boucle : {e}")
             sys.stdout.flush()
             time.sleep(60)
+
+
+if __name__ == "__main__":
+    init_db()
+    run_harvester_loop()
+

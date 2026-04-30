@@ -4,7 +4,26 @@ import time
 import logging
 import subprocess
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+# ─── PATH SETUP (Multi-Sport Architecture) ───────────────────────────────────
+# Ensures imports work regardless of how this script is launched:
+#   - SPORT_DIR (nhl/) → makes 'from config.settings import cfg' work
+#   - REPO_ROOT        → makes 'from shared.telegram_hub import ...' work
+_SPORT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SPORT_DIR.parent
+
+if str(_SPORT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SPORT_DIR))
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+# Set CWD to nhl/ so relative paths (./stats/, bot.log, etc.) resolve correctly
+os.chdir(_SPORT_DIR)
+
 from dotenv import load_dotenv
+# Load .env from repo root (secrets are shared across all sports)
+load_dotenv(_REPO_ROOT / ".env")
 
 from core.datastore import DataStore
 from core.services import TelegramNotifier, create_telegram_app
@@ -20,8 +39,6 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
-
-load_dotenv()
 
 if hasattr(time, 'tzset'):
     os.environ['TZ'] = 'Europe/Paris'
