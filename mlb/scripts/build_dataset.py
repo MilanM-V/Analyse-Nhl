@@ -1,13 +1,16 @@
 """
-mlb/scripts/build_dataset.py — Création du dataset historique pour l'entraînement MLB.
+mlb/scripts/build_dataset.py — Création du dataset historique pour l'entraînement MLB (V2).
 
 Ce script utilise pybaseball.statcast pour télécharger les données "pitch-by-pitch" 
 sur une période donnée, et les aggréger par match et par lanceur pour trouver 
 le nombre total de Strikeouts réalisés.
+
+V2 : Ajout des variables Umpire, Vélocité, Spin Rate et Swinging Strike %.
 """
 
 import os
 import pandas as pd
+import numpy as np
 from pybaseball import statcast
 import logging
 
@@ -17,6 +20,12 @@ logger = logging.getLogger("MLB-Dataset")
 def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
     """
     Télécharge les données Statcast, agrège les strikeouts par lanceur et sauvegarde en CSV.
+    
+    V2 Features ajoutées :
+    - umpire : Nom de l'arbitre du match.
+    - avg_release_speed : Vélocité moyenne du lanceur (mph).
+    - avg_spin_rate : Spin rate moyen du lanceur (RPM).
+    - swinging_strike_pct : % de swinging strikes (whiffs) du lanceur dans ce match.
     """
     logger.info(f"Téléchargement des données Statcast du {start_date} au {end_date}... (Cela peut prendre quelques minutes)")
     
@@ -33,14 +42,34 @@ def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
         
     logger.info(f"{len(df)} lancers (pitches) téléchargés. Traitement en cours...")
     
-    # On ne s'intéresse qu'aux événements de fin de passage au bâton (strikeout, hit, walk, etc.)
-    events_df = df.dropna(subset=['events']).copy()
+    # --- STATCAST V2 FEATURES (calculées AVANT le filtrage par events) ---
+    # Ces métriques sont calculées sur TOUS les lancers, pas seulement les at-bats terminés.
     
-    # Création d'une colonne binaire 1/0 pour les strikeouts
+    # Swinging Strike : description == 'swinging_strike' ou 'swinging_strike_blocked'
+    df['is_swinging_strike'] = df['description'].isin([
+        'swinging_strike', 'swinging_strike_blocked', 'foul_tip'
+    ]).astype(int)
+    
+    # Agrégation des métriques Statcast par match + lanceur (tous les lancers)
+    pitch_stats = df.groupby(['game_date', 'game_pk', 'pitcher', 'player_name']).agg(
+        total_pitches=('description', 'count'),
+        swinging_strikes=('is_swinging_strike', 'sum'),
+        avg_release_speed=('release_speed', 'mean'),
+        avg_spin_rate=('release_spin_rate', 'mean'),
+        umpire=('umpire', 'first'),
+    ).reset_index()
+    
+    pitch_stats['swinging_strike_pct'] = np.where(
+        pitch_stats['total_pitches'] > 0,
+        pitch_stats['swinging_strikes'] / pitch_stats['total_pitches'],
+        0
+    )
+    
+    # --- EVENTS (fin de passage au bâton) pour compter les Strikeouts ---
+    events_df = df.dropna(subset=['events']).copy()
     events_df['is_strikeout'] = (events_df['events'] == 'strikeout').astype(int)
     
     # Agrégation par match (game_pk) et par lanceur (pitcher)
-    # On récupère aussi le nom du lanceur, l'équipe au bâton (batter team) et l'équipe au lancer
     dataset = events_df.groupby(['game_date', 'game_pk', 'pitcher', 'player_name']).agg(
         total_batters_faced=('events', 'count'),
         strikeouts=('is_strikeout', 'sum'),
@@ -48,6 +77,14 @@ def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
         away_team=('away_team', 'first'),
         inning_topbot=('inning_topbot', 'first') # Top = away batting, Bot = home batting
     ).reset_index()
+    
+    # --- MERGE des features Statcast dans le dataset principal ---
+    merge_keys = ['game_date', 'game_pk', 'pitcher', 'player_name']
+    dataset = dataset.merge(
+        pitch_stats[merge_keys + ['avg_release_speed', 'avg_spin_rate', 'swinging_strike_pct', 'umpire']],
+        on=merge_keys,
+        how='left'
+    )
     
     # Déduire l'équipe du lanceur et l'équipe adverse
     def assign_teams(row):
@@ -67,16 +104,28 @@ def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
     # Règle simple : un SP affronte généralement au moins 15 batteurs par match.
     sp_dataset = dataset[dataset['total_batters_faced'] >= 15].copy()
     
-    # Nettoyage et sélection des colonnes utiles pour XGBoost
+    # Nettoyage et sélection des colonnes utiles pour XGBoost V2
     final_df = sp_dataset[[
         'game_date', 'player_name', 'pitcher_team', 'opp_team', 'is_home', 
-        'total_batters_faced', 'strikeouts'
+        'total_batters_faced', 'strikeouts',
+        'avg_release_speed', 'avg_spin_rate', 'swinging_strike_pct', 'umpire'
     ]].sort_values('game_date', ascending=True)
+    
+    # Remplir les NaN numériques
+    for col in ['avg_release_speed', 'avg_spin_rate', 'swinging_strike_pct']:
+        final_df[col] = final_df[col].fillna(final_df[col].median())
     
     # Sauvegarde
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     final_df.to_csv(output_csv, index=False)
-    logger.info(f"Dataset créé avec succès : {output_csv} ({len(final_df)} matchs de lanceurs partants)")
+    
+    # Stats du dataset
+    n_umpires = final_df['umpire'].nunique()
+    avg_velo = final_df['avg_release_speed'].mean()
+    logger.info(f"✅ Dataset V2 créé : {output_csv}")
+    logger.info(f"   📊 {len(final_df)} matchs de lanceurs partants")
+    logger.info(f"   👨‍⚖️ {n_umpires} arbitres uniques détectés")
+    logger.info(f"   ⚡ Vélocité moyenne : {avg_velo:.1f} mph")
 
 if __name__ == "__main__":
     # Téléchargement de 3 mois entiers de la saison 2024 pour avoir un dataset robuste

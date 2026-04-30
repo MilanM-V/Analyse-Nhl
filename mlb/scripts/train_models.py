@@ -1,8 +1,11 @@
 """
-mlb/scripts/train_models.py — Entraînement et Backtest du modèle XGBoost (Strikeouts).
+mlb/scripts/train_models.py — Entraînement et Backtest du modèle XGBoost V2 (Strikeouts).
 
-Ce script lit le dataset généré par build_dataset.py, entraîne un modèle XGBoost
-avec validation croisée temporelle (TimeSeriesSplit), et évalue sa précision.
+Ce script lit le dataset généré par build_dataset.py (V2 avec Umpire + Statcast),
+entraîne un modèle XGBoost avec validation croisée temporelle (TimeSeriesSplit),
+et évalue sa précision + ROI simulé.
+
+V2 Features : is_home, L5_K9, Opp_L10_K, L5_Velo, L5_SwStr%, Umpire_K_Factor
 """
 
 import os
@@ -21,13 +24,16 @@ DATASET_PATH = "mlb/data/dataset_strikeouts.csv"
 MODEL_PATH = "mlb/models/xg_model_strikeouts.pkl"
 
 def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
-    """Création des features (moyennes glissantes) pour éviter le lookahead bias."""
+    """Création des features (moyennes glissantes) pour éviter le lookahead bias.
+    
+    V2 : Ajout de L5_Velo, L5_SwStr, et Umpire_K_Factor.
+    """
     df = df.copy()
     df['game_date'] = pd.to_datetime(df['game_date'])
     df = df.sort_values(['player_name', 'game_date'])
     
+    # --- FEATURES V1 (inchangées) ---
     # K/9 historique du lanceur (sur les 5 derniers matchs)
-    # Note: On calcule les manches lancées (IP) en estimant 3 batteurs = 1 manche
     df['IP_est'] = df['total_batters_faced'] / 3.0
     
     # On décale (shift) pour ne pas utiliser les stats du match qu'on veut prédire !
@@ -41,12 +47,54 @@ def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
     df_team['Opp_L10_K'] = df_team.groupby('opp_team')['strikeouts'].transform(lambda x: x.shift(1).rolling(10, min_periods=1).mean())
     df['Opp_L10_K'] = df_team['Opp_L10_K']
     
+    # --- FEATURES V2 (nouvelles) ---
+    
+    # 1. Vélocité moyenne glissante sur les 5 derniers matchs (shifted)
+    has_velo = 'avg_release_speed' in df.columns
+    if has_velo:
+        df['L5_Velo'] = df.groupby('player_name')['avg_release_speed'].transform(
+            lambda x: x.shift(1).rolling(5, min_periods=1).mean()
+        )
+    else:
+        df['L5_Velo'] = 0
+        logger.warning("Colonne 'avg_release_speed' absente — L5_Velo mis à 0.")
+        
+    # 2. Swinging Strike % glissant sur les 5 derniers matchs (shifted)
+    has_swstr = 'swinging_strike_pct' in df.columns
+    if has_swstr:
+        df['L5_SwStr'] = df.groupby('player_name')['swinging_strike_pct'].transform(
+            lambda x: x.shift(1).rolling(5, min_periods=1).mean()
+        )
+    else:
+        df['L5_SwStr'] = 0
+        logger.warning("Colonne 'swinging_strike_pct' absente — L5_SwStr mis à 0.")
+    
+    # 3. Umpire K-Factor : Moyenne historique de K par match quand cet arbitre officie
+    has_umpire = 'umpire' in df.columns
+    if has_umpire:
+        # On calcule la moyenne de K globale par arbitre SUR TOUT le dataset
+        # puis on la normalise par rapport à la moyenne générale
+        global_avg_k = df['strikeouts'].mean()
+        umpire_avg = df.groupby('umpire')['strikeouts'].mean()
+        df['Umpire_K_Factor'] = df['umpire'].map(umpire_avg) / global_avg_k
+        df['Umpire_K_Factor'] = df['Umpire_K_Factor'].fillna(1.0)  # Arbitre inconnu = facteur neutre
+        
+        # Log des arbitres extrêmes
+        top_ump = umpire_avg.nlargest(3)
+        bot_ump = umpire_avg.nsmallest(3)
+        logger.info(f"👨‍⚖️ Top 3 Umpires Pro-K : {dict(top_ump.round(1))}")
+        logger.info(f"👨‍⚖️ Bot 3 Umpires Anti-K : {dict(bot_ump.round(1))}")
+    else:
+        df['Umpire_K_Factor'] = 1.0
+        logger.warning("Colonne 'umpire' absente — Umpire_K_Factor mis à 1.0.")
+    
     # Remplir les NaN (premiers matchs de la saison)
     df = df.fillna(0)
     
     return df
 
 def train_and_backtest():
+    """Entraîne le modèle XGBoost V2 et effectue un backtest complet."""
     if not os.path.exists(DATASET_PATH):
         logger.error(f"Fichier {DATASET_PATH} introuvable. Lancez build_dataset.py d'abord.")
         return
@@ -54,7 +102,7 @@ def train_and_backtest():
     df = pd.read_csv(DATASET_PATH)
     logger.info(f"Dataset chargé : {len(df)} matchs.")
     
-    # 1. Feature Engineering
+    # 1. Feature Engineering V2
     df = feature_engineering(df)
     
     # On retire les matchs où l'on n'a pas d'historique (les premiers matchs de chaque joueur)
@@ -62,11 +110,11 @@ def train_and_backtest():
     logger.info(f"Matchs exploitables (avec historique) : {len(df_train)}")
     
     if len(df_train) < 50:
-        logger.error("Pas assez de données pour entraîner le modèle. Veuillez télécharger une plus grande période (ex: 3-6 mois) dans build_dataset.py.")
+        logger.error("Pas assez de données pour entraîner le modèle.")
         return
         
-    # 2. Préparation pour XGBoost
-    features = ['is_home', 'L5_K9', 'Opp_L10_K']
+    # 2. Préparation pour XGBoost — V2 Features
+    features = ['is_home', 'L5_K9', 'Opp_L10_K', 'L5_Velo', 'L5_SwStr', 'Umpire_K_Factor']
     X = df_train[features]
     y = df_train['strikeouts']
     
@@ -74,9 +122,12 @@ def train_and_backtest():
     tscv = TimeSeriesSplit(n_splits=5)
     model = xgb.XGBRegressor(
         objective='reg:squarederror',
-        n_estimators=100,
+        n_estimators=150,  # Augmenté de 100 à 150 pour les nouvelles features
         learning_rate=0.05,
-        max_depth=3,
+        max_depth=4,       # Augmenté de 3 à 4 pour capturer les interactions
+        min_child_weight=5,  # Régularisation contre l'overfitting
+        subsample=0.8,       # Bagging pour la robustesse
+        colsample_bytree=0.8,
         random_state=42
     )
     
@@ -98,8 +149,6 @@ def train_and_backtest():
         maes.append(mean_absolute_error(y_test, preds))
         
         # --- SIMULATION ROI (1 Unité) ---
-        # On simule que le bookmaker place la ligne (Over/Under) à la moyenne historique du lanceur (L5_K9 arrondi)
-        # La cote standard pour un Over/Under en MLB est souvent autour de 1.85
         lignes_bookmaker = np.round(X_test['L5_K9'])
         
         for i in range(len(preds)):
@@ -116,10 +165,8 @@ def train_and_backtest():
                 else:
                     profit_u -= 1.0   # Perte de la mise
                     
-            # Optionnel: on pourrait aussi parier UNDER si l'IA prédit beaucoup moins
-            
-    logger.info("=== RÉSULTATS BACKTEST (Validation Croisée) ===")
-    logger.info(f"Erreur Absolue Moyenne (MAE) : {np.mean(maes):.2f} Strikeouts (L'IA se trompe de {np.mean(maes):.2f} K en moyenne)")
+    logger.info("=== RÉSULTATS BACKTEST V2 (Validation Croisée) ===")
+    logger.info(f"Erreur Absolue Moyenne (MAE) : {np.mean(maes):.2f} Strikeouts")
     logger.info(f"RMSE : {np.mean(rmses):.2f}")
     
     logger.info("=== SIMULATION DE PORTEFEUILLE (Flat Betting 1U) ===")
@@ -135,16 +182,18 @@ def train_and_backtest():
     # 4. Entraînement final sur tout le dataset
     model.fit(X, y)
     
-    # Importance des features
+    # Importance des features V2
     importance = model.feature_importances_
-    logger.info("=== IMPORTANCE DES VARIABLES ===")
-    for f, imp in zip(features, importance):
-        logger.info(f" - {f}: {imp*100:.1f}%")
+    logger.info("=== IMPORTANCE DES VARIABLES (V2) ===")
+    feat_imp = sorted(zip(features, importance), key=lambda x: -x[1])
+    for f, imp in feat_imp:
+        bar = "█" * int(imp * 50)
+        logger.info(f"  {f:20s} : {imp*100:5.1f}%  {bar}")
         
     # 5. Sauvegarde
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     joblib.dump(model, MODEL_PATH)
-    logger.info(f"✅ Modèle sauvegardé dans {MODEL_PATH}")
+    logger.info(f"✅ Modèle V2 sauvegardé dans {MODEL_PATH}")
 
 if __name__ == "__main__":
     train_and_backtest()

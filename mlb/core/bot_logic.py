@@ -91,23 +91,60 @@ class MlbBot(BaseSportBot):
         # 4. Filtrer les picks sans cote ou avec une cote trop faible
         final_picks = [p for p in picks_strikeouts if p.get("Cote", 0) >= 1.50]
         
-        # 5. Envoyer sur Telegram et Logger dans le portfolio
-        if final_picks:
+        # 5. Calcul du Kelly Criterion et filtre EV
+        validated_picks = []
+        for p in final_picks:
+            cote = p["Cote"]
+            proba = p.get("Proba", 0.50)
+            
+            # Calcul de l'Expected Value (EV)
+            ev = (proba * cote) - 1.0
+            p["EV"] = round(ev * 100, 1)  # EV en pourcentage
+            
+            # Filtre EV strict : on ne mise que si l'avantage mathématique > 5%
+            if ev < 0.05:
+                logger.info(f"❌ {p['Joueur']} rejeté (EV: {p['EV']}% < 5%)")
+                continue
+            
+            # Quarter Kelly Criterion pour le sizing
+            b = cote - 1.0
+            q = 1.0 - proba
+            f_kelly = (proba * b - q) / b
+            
+            if f_kelly > 0:
+                # 1/8ème de Kelly (très prudent) — même formule que NHL
+                eighth_kelly = f_kelly / 8.0
+                mise = round(eighth_kelly * 100 * 2) / 2  # Arrondi à 0.5 U
+                # Plafonds MLB : min 0.5 U, max 3.0 U
+                mise = max(0.5, min(mise, 3.0))
+            else:
+                mise = 0.0
+                
+            if mise > 0:
+                p["Mise"] = mise
+                validated_picks.append(p)
+                logger.info(f"✅ {p['Joueur']} validé (EV: +{p['EV']}%, Mise: {mise}U, Proba: {proba:.0%})")
+        
+        # 6. Envoyer sur Telegram et Logger dans le portfolio
+        if validated_picks:
             msg = "⚾ <b>ALERTE MLB - STRIKEOUTS</b> ⚾\n\n"
-            for p in final_picks:
-                msg += f"🔥 <b>{p['Joueur']}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
+            for p in validated_picks:
+                confiance_emoji = "🔥" if p["Confiance"] == "ELITE" else "✅" if p["Confiance"] == "ELEVEE" else "📊"
+                msg += f"{confiance_emoji} <b>{p['Joueur']}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
                 msg += f"🎯 Marché : OVER Strikeouts\n"
                 msg += f"💰 Cote : <b>{p['Cote']}</b>\n"
-                msg += f"🤖 Prédiction IA : <b>{p['Predicted_K']:.1f} K</b>\n"
+                msg += f"🤖 Prédiction IA : <b>{p['Predicted_K']:.1f} K</b> (Proba: {p['Proba']:.0%})\n"
+                msg += f"📈 Edge : <b>+{p['EV']}%</b>\n"
+                msg += f"💵 Mise Kelly : <b>{p['Mise']} U</b>\n"
                 msg += f"📊 Moyenne récente : {p['Moyenne_K']:.1f} K/match\n\n"
                 
-                # Ajout fictif au portfolio (1U Flat pour l'instant)
+                # Enregistrement dans le portfolio avec la mise Kelly
                 self.portfolio.log_bet(
                     sport="mlb",
                     player=p["Joueur"],
                     market="STRIKEOUTS",
                     cote=p["Cote"],
-                    mise=1.0
+                    mise=p["Mise"]
                 )
                 
             logger.info("Envoi Telegram MLB...")
