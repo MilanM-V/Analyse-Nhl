@@ -11,7 +11,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
-from pybaseball import probables, schedule_and_record
+import requests
 
 logger = logging.getLogger("MLB-Fetcher")
 
@@ -33,10 +33,44 @@ def get_todays_probables(date_str: Optional[str] = None) -> pd.DataFrame:
     if not date_str:
         date_str = datetime.datetime.now().strftime("%Y-%m-%d")
         
-    logger.info(f"[MLB] Récupération des Probable Pitchers pour le {date_str}...")
+    logger.info(f"[MLB] Récupération des Probable Pitchers pour le {date_str} via MLB Stats API...")
     try:
-        # pybaseball.probables() prend une date YYYY-MM-DD
-        df = probables(date_str)
+        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}&hydrate=probablePitcher"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        
+        games = data.get("dates", [])
+        if not games:
+            logger.info("[MLB] Aucun match trouvé pour cette date.")
+            return pd.DataFrame()
+            
+        matchups = []
+        for game in games[0].get("games", []):
+            teams = game.get("teams", {})
+            away = teams.get("away", {})
+            home = teams.get("home", {})
+            
+            away_team = away.get("team", {}).get("name")
+            home_team = home.get("team", {}).get("name")
+            
+            away_pitcher = away.get("probablePitcher", {}).get("fullName")
+            home_pitcher = home.get("probablePitcher", {}).get("fullName")
+            
+            if away_pitcher:
+                matchups.append({
+                    "Pitcher": away_pitcher,
+                    "Team": away_team,
+                    "Opp": f"@{home_team}"
+                })
+            
+            if home_pitcher:
+                matchups.append({
+                    "Pitcher": home_pitcher,
+                    "Team": home_team,
+                    "Opp": away_team
+                })
+                
+        df = pd.DataFrame(matchups)
         logger.info(f"[MLB] {len(df)} lanceurs probables trouvés.")
         return df
     except Exception as e:

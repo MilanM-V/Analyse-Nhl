@@ -25,9 +25,10 @@ class MlbBot(BaseSportBot):
     """
     Bot MLB : gère la récupération des données, filtres, cotes et envois.
     """
+    sport_name = "MLB"
     
     def __init__(self):
-        super().__init__("MLB")
+        super().__init__()
         self.portfolio = Portfolio()
         self.scanned_today = False
         
@@ -102,11 +103,11 @@ class MlbBot(BaseSportBot):
                 
                 # Ajout fictif au portfolio (1U Flat pour l'instant)
                 self.portfolio.log_bet(
-                    bet_type="STRIKEOUTS",
                     sport="mlb",
-                    player_name=p["Joueur"],
-                    odds=p["Cote"],
-                    stake_u=1.0
+                    player=p["Joueur"],
+                    market="STRIKEOUTS",
+                    cote=p["Cote"],
+                    mise=1.0
                 )
                 
             logger.info("Envoi Telegram MLB...")
@@ -123,3 +124,11 @@ class MlbBot(BaseSportBot):
         from mlb.core.harvester import run_harvester_loop
         run_harvester_loop()
         self.scanned_today = False
+
+    def update_daily_stats(self) -> bool:
+        """
+        Met à jour les statistiques quotidiennes.
+        Pour la MLB, cela est géré par l'end_of_day_cleanup (harvester).
+        """
+        logger.info("Mise à jour des stats quotidiennes MLB (déléguée au harvester).")
+        return True

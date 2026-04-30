@@ -10,6 +10,9 @@ beautifulsoup4
 pytest
 schedule
 pybaseball
+<<<<<<< HEAD
 xgboost
 joblib
 scikit-learn
+=======
+>>>>>>> 045a7d6eba21eaadc5206343e496883bfde0feef
