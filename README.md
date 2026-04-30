@@ -9,7 +9,7 @@
 | Sport | Status | Marchés |
 |-------|--------|---------|
 | 🏒 **NHL** | ✅ Production V18 | Passeur, Pointeur |
-| ⚾ **MLB** | 🔧 Collecte de données | Strikeouts pitcher, Hits/HR batter |
+| ⚾ **MLB** | ✅ Beta V2 | Strikeouts pitcher (XGBoost Statcast) |
 | 🏀 **NBA** | 📋 Planifié | Combinés PRA (Points + Rebounds + Assists) |
 | ⚽ **Foot** | 💤 Futur | Marchés de niche (corners, cartons, tirs cadrés) |
 
@@ -17,27 +17,32 @@
 
 ## Architecture
 
-```
+```text
 bet2/
 ├── shared/                  # Code commun à tous les sports
 │   ├── telegram_hub.py      # Envoi centralisé Telegram (POST HTTP)
+│   ├── odds_api.py          # Client unifié The Odds API (NHL/MLB)
 │   ├── base_bot.py          # Classe abstraite BaseSportBot
 │   ├── portfolio.py         # Portefeuille simulé (100 U, SQLite)
-│   └── utils.py             # Retry HTTP, normalisation noms
+│   └── kelly.py             # Calculateur du Kelly Criterion fractionnel
 │
-├── nhl/                     # 🏒 Bot NHL (Production)
+├── nhl/                     # 🏒 Bot NHL (Production V18)
 │   ├── config/              # settings.toml, probas.json, constants.py
-│   ├── core/                # bot_logic, market_filter, kelly, scraper, odds, updater...
-│   ├── data/                # Pipeline async NHL API → CSV
+│   ├── core/                # bot_logic, market_filter, services, loaders...
+│   ├── data/                # Bases de données NHL
 │   ├── main_bot.py          # Point d'entrée NHL
 │   └── dashboard.py         # Dashboard Streamlit NHL
 │
-├── mlb/                     # ⚾ Bot MLB (Harvester)
-│   ├── core/harvester.py    # Collecte boxscores MLB API
-│   └── main_bot.py          # Point d'entrée MLB
+├── mlb/                     # ⚾ Bot MLB (Beta V2)
+│   ├── core/                # bot_logic, market_filter, database...
+│   ├── scripts/             # build_dataset, train_models, ab_test_features
+│   ├── data/                # Base SQLite MLB (Statcast)
+│   ├── main_bot.py          # Point d'entrée MLB
+│   └── dashboard.py         # Dashboard Streamlit MLB
 │
 ├── vps/                     # Scripts VPS
-│   └── watchdog.py          # Superviseur intelligent multi-sport
+│   ├── watchdog.py          # Superviseur intelligent multi-sport
+│   └── backup_manager.py    # Sauvegarde auto DB par Email
 │
 ├── PROJECT_VISION.md        # Vision complète du projet
 └── VPS_WATCHDOG.md          # Spec technique du watchdog
