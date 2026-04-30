@@ -221,6 +221,46 @@ class Portfolio:
             "by_sport": by_sport,
         }
 
+    def get_history(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Retourne l'historique des derniers paris.
+
+        Args:
+            limit: Nombre de paris à retourner.
+
+        Returns:
+            Liste de dictionnaires avec les infos des paris.
+        """
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT timestamp, sport, player, cote, mise, resolved, gain "
+            "FROM portfolio ORDER BY id DESC LIMIT ?",
+            (limit,)
+        )
+        rows = c.fetchall()
+        conn.close()
+
+        history = []
+        for r in rows:
+            timestamp, sport, player, cote, mise, resolved, gain = r
+            if resolved == 0:
+                status = "PENDING"
+            else:
+                status = "WIN" if gain and gain > 0 else "LOSS"
+
+            # Formater la date en YYYY-MM-DD HH:MM
+            date_bet = timestamp[:16].replace("T", " ") if "T" in timestamp else timestamp[:16]
+
+            history.append({
+                'date_bet': date_bet,
+                'sport': sport,
+                'player_name': player,
+                'odds': cote,
+                'stake_u': mise,
+                'status': status
+            })
+        return history
+
     def format_telegram_summary(self) -> str:
         """Génère un résumé formaté pour Telegram.
 
