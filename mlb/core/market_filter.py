@@ -49,6 +49,7 @@ def evaluate_pitcher_strikeouts(pitcher_name: str, pitcher_stats: Dict[str, Any]
         'L5_Velo': pitcher_stats.get("avg_velo", 93.0),       # Fallback: vélocité moyenne MLB
         'L5_SwStr': pitcher_stats.get("swstr_pct", 0.11),     # Fallback: SwStr% moyen MLB (~11%)
         'Umpire_K_Factor': pitcher_stats.get("umpire_k_factor", 1.0),  # Fallback: arbitre neutre
+        'L5_Spin': pitcher_stats.get("avg_spin_rate", 2250.0), # Fallback: spin rate moyen MLB (~2250 RPM)
     }])
     
     # Si le modèle n'a que 3 features (V1), on ne passe que celles-là
