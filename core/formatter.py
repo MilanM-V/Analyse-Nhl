@@ -160,25 +160,39 @@ def _build_parlays_section(
         })
         return s
 
-    # Double Points & Triple Points
-    if len(best_pts) >= 2:
-        msg += _add_combo(best_pts[0], best_pts[1], "DOUBLE POINTS", "\U0001f3af", "DOUBLE_POINTS", 0.5)
-        if len(best_pts) >= 3:
-            msg += _add_combo(best_pts[0], best_pts[1], "TRIPLE POINTS", "\U0001f680", "TRIPLE_POINTS", 0.3, p3=best_pts[2])
+    # Combinés classés par ROI prouvé (Audit V4)
+    # Note: "Même Joueur Passe+Point" supprimé car Passe = Point automatiquement
+    # 1. Intra-Match Passeur+Pointeur (+50.3% ROI)
+    # 2. Inter-Match Passeur+Passeur (+22.6% ROI)
+    # 3. Inter-Match Passeur+Pointeur (+13.4% ROI)
+    parlays_added = 0
 
-    # Duo Booster (Ast + Pts)
+    # 1. INTRA-MATCH : Passeur + Pointeur même match (ROI +50.3%)
+    for a in best_ast:
+        if parlays_added >= 3:
+            break
+        match_a = f"{a['Equipe']}-{a.get('Adversaire', '')}"
+        for p in best_pts:
+            if a['Joueur'] != p['Joueur'] and a.get('Cote') and p.get('Cote'):
+                match_p = f"{p['Equipe']}-{p.get('Adversaire', '')}"
+                if match_a == match_p:
+                    msg += _add_combo(a, p, "INTRA-MATCH Passeur+Pointeur (ROI +50%)", "\U0001f525", "INTRA_AST_PTS", 0.5)
+                    parlays_added += 1
+                    break
+
+    # 2. INTER-MATCH : Passeur + Passeur matchs différents (ROI +22.6%)
+    dast = find_cross_duo(best_ast, best_ast)
+    if dast and parlays_added < 3:
+        msg += _add_combo(dast[0], dast[1], "INTER-MATCH Double Passeurs (ROI +23%)", "\U0001f170\ufe0f", "INTER_DOUBLE_AST", 0.5)
+        parlays_added += 1
+
+    # 3. INTER-MATCH : Passeur + Pointeur matchs différents (ROI +13.4%)
     booster = find_cross_duo(best_ast, best_pts)
-    if booster:
-        msg += _add_combo(booster[0], booster[1], "DUO BOOSTER (Passeur + Pointeur)", "\U0001f525", "PASSEUR_POINTEUR", 0.5)
+    if booster and parlays_added < 3:
+        msg += _add_combo(booster[0], booster[1], "INTER-MATCH Passeur+Pointeur (ROI +13%)", "\U0001f3af", "INTER_AST_PTS", 0.5)
+        parlays_added += 1
 
-    # Duo Offensif (But + Pts)
-    offensif = find_cross_duo(best_but, best_pts)
-    if offensif:
-        msg += _add_combo(offensif[0], offensif[1], "DUO OFFENSIF (Buteur + Pointeur)", "\U0001f4a3", "BUTEUR_POINTEUR", 0.5)
-
-    # Double Buteur
-    dbut = find_cross_duo(best_but, best_but)
-    if dbut:
-        msg += _add_combo(dbut[0], dbut[1], "DOUBLE BUTEUR", "\u2694\ufe0f", "DOUBLE_BUTEUR", 0.3)
+    if parlays_added == 0:
+        msg += "  <i>Aucun combiné EV+ possible pour cette vague.</i>\n"
 
     return msg
