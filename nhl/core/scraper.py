@@ -50,7 +50,7 @@ def _utc_to_local(utc_str):
     except Exception:
         return ""
 
-def get_scheduled_matches(url="", driver=None):
+def get_scheduled_matches(url=""):
     date_str = _nhl_date()
     try:
         r = requests.get(f"{NHL_BASE}/v1/schedule/{date_str}", timeout=10)
@@ -155,7 +155,7 @@ def _parse_rotowire_team(ul_element) -> dict:
                 
     return team_data
 
-def get_lineups(match_id, home="", away="", driver=None):
+def get_lineups(match_id, home="", away=""):
     soup = _get_rotowire_soup()
     if not soup:
         logger.warning("[Scraper] Impossible de charger RotoWire.")
@@ -230,13 +230,6 @@ def get_lineups(match_id, home="", away="", driver=None):
         "f2_ext":  f2_ext,
     }
 
-class ScraperDriverContext:
-    def __init__(self):
-        self.driver = None
-    def __enter__(self):
-        return self.driver
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

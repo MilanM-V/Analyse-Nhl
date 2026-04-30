@@ -134,11 +134,12 @@ def run_backtest(X: pd.DataFrame, y: pd.Series, label: str) -> dict:
 
 
 def main():
-    if not os.path.exists(DATASET_PATH):
-        logger.error(f"Dataset introuvable: {DATASET_PATH}")
-        return
+    from mlb.core.database import load_all_pitcher_stats
+    df = load_all_pitcher_stats()
     
-    df = pd.read_csv(DATASET_PATH)
+    if df.empty:
+        logger.error("La base de données SQLite est vide. Lancez mlb/scripts/build_dataset.py d'abord.")
+        return
     df = feature_engineering(df)
     df_train = df[df['L5_K9'] > 0].copy()
     

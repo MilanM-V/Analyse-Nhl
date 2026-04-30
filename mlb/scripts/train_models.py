@@ -95,11 +95,13 @@ def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
 
 def train_and_backtest():
     """Entraîne le modèle XGBoost V2 et effectue un backtest complet."""
-    if not os.path.exists(DATASET_PATH):
-        logger.error(f"Fichier {DATASET_PATH} introuvable. Lancez build_dataset.py d'abord.")
+    from mlb.core.database import load_all_pitcher_stats
+    df = load_all_pitcher_stats()
+    
+    if df.empty:
+        logger.error("La base de données SQLite est vide. Lancez mlb/scripts/build_dataset.py d'abord.")
         return
         
-    df = pd.read_csv(DATASET_PATH)
     logger.info(f"Dataset chargé : {len(df)} matchs.")
     
     # 1. Feature Engineering V2

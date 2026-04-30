@@ -17,7 +17,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("MLB-Dataset")
 
-def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
+def build_strikeout_dataset(start_date: str, end_date: str):
     """
     Télécharge les données Statcast, agrège les strikeouts par lanceur et sauvegarde en CSV.
     
@@ -104,9 +104,9 @@ def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
     # Règle simple : un SP affronte généralement au moins 15 batteurs par match.
     sp_dataset = dataset[dataset['total_batters_faced'] >= 15].copy()
     
-    # Nettoyage et sélection des colonnes utiles pour XGBoost V2
+    # Nettoyage et sélection des colonnes utiles pour la BDD et XGBoost V2
     final_df = sp_dataset[[
-        'game_date', 'player_name', 'pitcher_team', 'opp_team', 'is_home', 
+        'game_date', 'game_pk', 'pitcher', 'player_name', 'pitcher_team', 'opp_team', 'is_home', 
         'total_batters_faced', 'strikeouts',
         'avg_release_speed', 'avg_spin_rate', 'swinging_strike_pct', 'umpire'
     ]].sort_values('game_date', ascending=True)
@@ -115,18 +115,35 @@ def build_strikeout_dataset(start_date: str, end_date: str, output_csv: str):
     for col in ['avg_release_speed', 'avg_spin_rate', 'swinging_strike_pct']:
         final_df[col] = final_df[col].fillna(final_df[col].median())
     
-    # Sauvegarde
-    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
-    final_df.to_csv(output_csv, index=False)
+    # Sauvegarde dans SQLite
+    from mlb.core.database import init_db, save_pitcher_stats_batch
+    init_db()
+    save_pitcher_stats_batch(final_df)
     
     # Stats du dataset
     n_umpires = final_df['umpire'].nunique()
     avg_velo = final_df['avg_release_speed'].mean()
-    logger.info(f"✅ Dataset V2 créé : {output_csv}")
-    logger.info(f"   📊 {len(final_df)} matchs de lanceurs partants")
-    logger.info(f"   👨‍⚖️ {n_umpires} arbitres uniques détectés")
+    logger.info(f"✅ Mise à jour SQLite terminée.")
+    logger.info(f"   📊 {len(final_df)} matchs de lanceurs partants ajoutés.")
     logger.info(f"   ⚡ Vélocité moyenne : {avg_velo:.1f} mph")
 
 if __name__ == "__main__":
-    # Téléchargement de 3 mois entiers de la saison 2024 pour avoir un dataset robuste
-    build_strikeout_dataset("2024-03-28", "2024-06-30", "mlb/data/dataset_strikeouts.csv")
+    from mlb.core.database import init_db, get_latest_game_date
+    init_db()
+    
+    latest_date = get_latest_game_date()
+    from datetime import datetime, timedelta
+    
+    if latest_date:
+        start_date = (datetime.strptime(latest_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        logger.info(f"Dernière date en base : {latest_date}. Reprise au {start_date}")
+    else:
+        # Initialisation sur le début de la saison
+        start_date = "2024-03-28"
+        
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    
+    if start_date <= end_date:
+        build_strikeout_dataset(start_date, end_date)
+    else:
+        logger.info("Base de données déjà à jour.")

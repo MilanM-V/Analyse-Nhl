@@ -216,30 +216,29 @@ class NhlBot:
                 return
 
             mode_icon = "🏆" if cfg.api.mode == "playoff" else "🏒"
-            logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] {mode_icon} Lancement du scan Flashscore (Mode: {cfg.api.mode})...")
+            logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] {mode_icon} Lancement du scan API / RotoWire (Mode: {cfg.api.mode})...")
             self.purge_old_matches()
 
-            with scraper.ScraperDriverContext() as driver:
-                self.matches_du_jour = scraper.get_scheduled_matches("https://www.flashscore.fr/hockey/usa/nhl/calendrier/", driver=driver)
+            self.matches_du_jour = scraper.get_scheduled_matches()
 
-                if not self.is_active_hours():
-                    logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Hors horaires (05h-17h). Scan des compos ignoré.")
-                    return
+            if not self.is_active_hours():
+                logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Hors horaires (05h-17h). Scan des compos ignoré.")
+                return
 
-                for m in self.matches_du_jour:
-                    match_id = m['id']
-                    if match_id in self.matchs_traites:
-                        continue
+            for m in self.matches_du_jour:
+                match_id = m['id']
+                if match_id in self.matchs_traites:
+                    continue
 
-                    logger.info(f"   Vérification compo : {m['home']} - {m['away']}...")
-                    compo = scraper.get_lineups(match_id, m['home'], m['away'], driver=driver)
+                logger.info(f"   Vérification compo : {m['home']} - {m['away']}...")
+                compo = scraper.get_lineups(match_id, m['home'], m['away'])
 
-                    if isinstance(compo, dict):
-                        logger.info("    COMPO TROUVÉE ! Mise en mémoire.")
-                        self.compos_en_memoire[match_id] = {"match_info": m, "compo": compo}
-                        self.matchs_traites.add(match_id)
-                    else:
-                        logger.info(f"   {compo} — On réessaiera au prochain cycle.")
+                if isinstance(compo, dict):
+                    logger.info("    COMPO TROUVÉE ! Mise en mémoire.")
+                    self.compos_en_memoire[match_id] = {"match_info": m, "compo": compo}
+                    self.matchs_traites.add(match_id)
+                else:
+                    logger.info(f"   {compo} — On réessaiera au prochain cycle.")
 
             self.evaluate_waves(self.matches_du_jour)
         except Exception as e:
