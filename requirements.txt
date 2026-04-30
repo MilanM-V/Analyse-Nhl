@@ -8,4 +8,5 @@ plotly
 aiohttp
 beautifulsoup4
 pytest
-schedulepybaseball
+schedule
+pybaseball
