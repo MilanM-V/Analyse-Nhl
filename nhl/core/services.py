@@ -152,7 +152,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /start command."""
         if update.message:
-            await update.message.reply_text("🏒 NHL Bot V14 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/force - Lancer un scan")
+            await update.message.reply_text("🏒 NHL Bot V14 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/portfolio - Solde du portefeuille\n/force - Lancer un scan")
 
     async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /status command."""
@@ -239,6 +239,35 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text("✅ La base de données a été réinitialisée à 0.")
 
+    async def portfolio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handler for /portfolio command."""
+        import sys
+        import os
+        # Assurer l'accès à shared/ si non présent (bien que géré dans main_bot.py)
+        if str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) not in sys.path:
+            sys.path.append(str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            
+        try:
+            from shared.portfolio import Portfolio
+            portfolio = Portfolio()
+            balance = portfolio.get_balance()
+            history = portfolio.get_history(limit=5)
+            
+            msg = f"💼 <b>Portefeuille (Simulé)</b>\n"
+            msg += f"Solde Actuel : <b>{balance:.2f} U</b>\n\n"
+            msg += "Derniers paris :\n"
+            if not history:
+                msg += "<i>Aucun pari enregistré.</i>"
+            else:
+                for row in history:
+                    statut = "⏳" if row['status'] == "PENDING" else ("✅" if row['status'] == "WIN" else "❌")
+                    msg += f"{statut} {row['date_bet']} | {row['sport'].upper()} | {row['player_name']} (@{row['odds']}) - {row['stake_u']}U\n"
+        except ImportError as e:
+            msg = f"❌ Erreur de chargement du module Portfolio : {e}"
+            
+        if update.message:
+            await update.message.reply_text(msg, parse_mode="HTML")
+
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("force", force_cmd))
@@ -246,6 +275,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     app.add_handler(CallbackQueryHandler(roi_callback, pattern='^roi_'))
     app.add_handler(CommandHandler("backup", backup_cmd))
     app.add_handler(CommandHandler("resetdb", resetdb_cmd))
+    app.add_handler(CommandHandler("portfolio", portfolio_cmd))
 
     async def job_scan_cycle(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Periodic background job for scanning."""

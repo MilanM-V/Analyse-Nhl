@@ -259,26 +259,23 @@ class NhlBot:
             return
 
         waves = self.build_waves(pending_ids)
+        ready_ids = []
+        
         for wave in waves:
             wave_key = self.compos_en_memoire[wave[0]]["match_info"]["time"]
             if wave_key in self.vagues_envoyees:
                 continue
 
-            heures = [self.compos_en_memoire[mid]["match_info"]["time"].split(" ")[1] for mid in wave]
-            wave_label = heures[0] if len(heures) == 1 else f"{heures[0]}   {heures[-1]} ({len(wave)} matchs)"
-
-            if self.is_wave_complete(wave, matches_du_jour):
-                logger.info(f"   Vague {wave_label} complète   ENVOI !")
-                self.run_analysis_and_send(wave, wave_label)
+            if self.is_wave_complete(wave, matches_du_jour) or self.should_force_send(wave):
                 self.vagues_envoyees.add(wave_key)
                 for mid in wave:
                     self.matchs_envoyes.add(mid)
-            elif self.should_force_send(wave):
-                logger.info(f"   Vague {wave_label} forçage < {self.force_envoi_min_avant} min   ENVOI !")
-                self.run_analysis_and_send(wave, wave_label + " ⚠️forcé")
-                self.vagues_envoyees.add(wave_key)
-                for mid in wave:
-                    self.matchs_envoyes.add(mid)
+                    ready_ids.append(mid)
+                    
+        if ready_ids:
+            wave_label = f"Matchs du Jour ({len(ready_ids)} matchs)"
+            logger.info(f"   Vagues combinées {wave_label}   ENVOI !")
+            self.run_analysis_and_send(ready_ids, wave_label)
 
     def run_analysis_and_send(self, wave_ids: List[str], wave_label: str) -> None:
         """Performs analysis on a wave of matches and sends results.
