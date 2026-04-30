@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.base_bot import BaseSportBot
 from mlb.data.fetcher import get_todays_probables, get_pitcher_historical_stats, get_team_strikeout_rate
 from mlb.core.market_filter import evaluate_pitcher_strikeouts
-from mlb.core.odds_scraper import fetch_mlb_odds
+from shared.odds_api import fetch_mlb_odds
 from shared.telegram_hub import send_telegram
 from shared.portfolio import Portfolio
 

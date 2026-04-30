@@ -152,6 +152,7 @@ def main():
         ("⚡ + Vélocité", baseline_features + ['L5_Velo']),
         ("🌀 + SwStr%", baseline_features + ['L5_SwStr']),
         ("🔄 + Spin Rate", baseline_features + ['L5_Spin']),
+        ("⚡🔄 + Velo + Spin Rate", baseline_features + ['L5_Velo', 'L5_Spin']),
         ("👨‍⚖️ + Umpire", baseline_features + ['Umpire_K_Factor']),
         ("⚡🌀 + Velo + SwStr", baseline_features + ['L5_Velo', 'L5_SwStr']),
         ("⚡🌀🔄 + Velo+SwStr+Spin", baseline_features + ['L5_Velo', 'L5_SwStr', 'L5_Spin']),

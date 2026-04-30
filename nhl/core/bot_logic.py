@@ -13,7 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core.loaders as loaders
 import core.scraper as scraper
-import core.odds_scraper as odds_scraper
+
 import asyncio
 from core.datastore import DataStore
 from core.services import TelegramNotifier
@@ -381,10 +381,11 @@ class NhlBot:
         players_to_fetch = {r["Joueur"]: r["Equipe"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list}
         odds_map = {}
         if players_to_fetch:
-            logger.info(f"   Récupération CHIRURGICALE des cotes pour {len(players_to_fetch)} joueur(s)...")
-            odds_map = asyncio.run(odds_scraper.fetch_multiple_odds(players_to_fetch, telegram=self.telegram))
-
-            if odds_map:
+            logger.info(f"Récupération des cotes (API) pour {len(players_to_fetch)} joueurs...")
+            from shared.odds_api import fetch_nhl_odds
+            odds_map = asyncio.run(fetch_nhl_odds(players_to_fetch))
+            
+            for pick in (final_picks_but + final_picks_ast + final_picks_pts):
                 any_odds_found = any(
                     (data.get('BUTS') is not None) or
                     (data.get('ASSISTS') is not None) or
@@ -441,8 +442,7 @@ class NhlBot:
             logger.error(f"Erreur auto-résolution : {e}")
 
         if self.matchs_traites:
-            from core.services import EmailReporter
-            EmailReporter.send_session_report(self.log_path, self.players_log_path)
+
             self.matchs_traites.clear()
             self.compos_en_memoire.clear()
             self.vagues_envoyees.clear()

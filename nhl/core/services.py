@@ -1,12 +1,7 @@
 import os
 import requests
-import smtplib
 import time
 from functools import wraps
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 import logging
 from datetime import datetime
 from typing import Optional, Any, Dict, List, Callable
@@ -320,72 +315,21 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     target_time_probas = dt.time(hour=6, minute=0, tzinfo=dt.timezone.utc)
     app.job_queue.run_daily(job_recalc_probas, time=target_time_probas)
 
-    return app
-
-class EmailReporter:
-    """Service to handle sending the end-of-day stats report via email."""
-    @staticmethod
-    def send_session_report(log_path: str, players_log_path: str) -> None:
-        """
-        Sends session reports via email.
-
-        Args:
-            log_path: Path to the picks log CSV.
-            players_log_path: Path to the all players log CSV.
-        """
-        logger.info("📧 Préparation de l'envoi du rapport par mail...")
-
-        today_str = datetime.now().strftime('%Y-%m-%d')
-
-        if not os.path.exists(log_path):
-            logger.warning(f"Fichier {log_path} introuvable — rapport annulé.")
-            return
-
+    # Backup Telegram at 5:15 UTC
+    async def job_run_backup(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Lance le script de sauvegarde des bases de données."""
+        logger.info("Lancement de la sauvegarde (Backup) à 5:15 UTC...")
+        import subprocess
+        import sys
         try:
-            sender   = os.getenv("EMAIL_USER")
-            password = os.getenv("EMAIL_PASS")
-            receiver = os.getenv("EMAIL_RECEIVER")
-
-            if not sender or not password or not receiver:
-                logger.warning("Identifiants Email manquants dans le .env.")
-                return
-
-            msg = MIMEMultipart()
-            msg['From']    = sender
-            msg['To']      = receiver
-            msg['Subject'] = f"🏒 Rapport NHL Session - {today_str}"
-
-            body = (
-                f"Bonjour,\n\n"
-                f"Voici les fichiers de la session du {today_str} :\n"
-                f"  • picks_{today_str}.csv   — joueurs sélectionnés (à compléter avec colonne 'but')\n"
-                f"  • players_{today_str}.csv — tous les joueurs analysés (picks + non-picks)\n\n"
-                f"Bonne analyse !"
-            )
-            msg.attach(MIMEText(body, 'plain'))
-
-            def attach_file(filepath: str, filename: str) -> None:
-                """Attaches a file to the email message."""
-                with open(filepath, "rb") as f:
-                    part = MIMEBase("application", "octet-stream")
-                    part.set_payload(f.read())
-                    encoders.encode_base64(part)
-                    part.add_header("Content-Disposition", f"attachment; filename={filename}")
-                    msg.attach(part)
-
-            attach_file(log_path, f"picks_{today_str}.csv")
-
-            if os.path.exists(players_log_path):
-                attach_file(players_log_path, f"players_{today_str}.csv")
-            else:
-                logger.warning("players_log.csv introuvable — envoyé sans ce fichier.")
-
-            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
-            server.starttls()
-            server.login(sender, password)
-            server.send_message(msg)
-            server.quit()
-            logger.info("✅ Mail envoyé avec succès (picks + players).")
-
+            # Revenir à la racine du repo pour exécuter le script
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            backup_script = os.path.join(repo_root, "vps", "backup_manager.py")
+            subprocess.run([sys.executable, backup_script], check=False)
         except Exception as e:
-            logger.error(f"❌ Erreur lors du rapport de session : {e}")
+            logger.error(f"Échec de la sauvegarde : {e}")
+
+    target_time_backup = dt.time(hour=5, minute=15, tzinfo=dt.timezone.utc)
+    app.job_queue.run_daily(job_run_backup, time=target_time_backup)
+
+    return app
