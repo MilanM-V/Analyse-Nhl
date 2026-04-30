@@ -21,7 +21,7 @@ from config.settings import cfg
 from config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL
 from data.cache import get_pbp, get_toi_from_boxscore, cleanup_pbp_cache, FOLDER_NAME
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Fetcher")
 
 BASE      = "https://api.nhle.com/stats/rest/en"
 BASE_WEB  = "https://api-web.nhle.com"

@@ -12,7 +12,7 @@ from core.database import insert_parlay
 
 from config.settings import cfg
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Formatter")
 
 
 def find_cross_duo(list1: List[Dict], list2: List[Dict]) -> Optional[Tuple[Dict, Dict]]:

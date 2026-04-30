@@ -13,7 +13,7 @@ if hasattr(time, 'tzset'):
     time.tzset()
 
 load_dotenv()
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Scraper")
 
 import config.constants as constants
 

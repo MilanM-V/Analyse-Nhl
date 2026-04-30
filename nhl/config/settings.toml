@@ -9,7 +9,7 @@ l10_sog_min = 2.5
 l10_hdcf_min = 1.5
 home_only = false
 opp_ga_min = 2.5
-cote_min = 0.0
+cote_min = 3.00  # Sécurité : On cible le segment rentable (ROI +54%)
 
 [thresholds.passeurs]
 # OMEGA Optimal — Passeurs (+22.1 U)
@@ -18,7 +18,7 @@ l10_a_min = 0.60
 home_only = true
 atoi_min = 16.0
 opp_ga_min = 2.6
-cote_min = 0.0
+cote_min = 2.20  # Sécurité : Évite les cotes trop basses à ROI négatif
 
 [thresholds.pointeurs]
 # OMEGA Optimal — Pointeurs (+62.3 U)
@@ -27,16 +27,16 @@ l10_pts_min = 0.60
 home_only = false
 atoi_min = 17.0
 opp_ga_min = 2.6
-cote_min = 0.0
+cote_min = 1.70  # Sécurité : Break-even minimum
 
 [thresholds.general]
 atoi_min = 13.0
 
 [kelly]
 # Quarter Kelly fraction is used in bot_logic / kelly
-buteur_cap = 2.0
-passeur_cap = 3.0
-pointeur_cap = 4.0
+buteur_cap = 1.5
+passeur_cap = 2.0
+pointeur_cap = 2.0
 
 [wave]
 ecart_max_min = 5

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 from typing import Dict, Any, Optional, List
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Database")
 
 DB_PATH = "./bot_database.db"
 

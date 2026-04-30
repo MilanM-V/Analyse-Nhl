@@ -11,7 +11,7 @@ from typing import Dict, List, Any
 from core.database import insert_pick, insert_player
 from config.settings import cfg
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.LoggerCSV")
 
 
 def log_picks_to_db(

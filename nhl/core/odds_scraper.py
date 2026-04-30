@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.OddsScraper")
 
 # Configuration The Odds API
 API_KEY = os.getenv("api_odds")

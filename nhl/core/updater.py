@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from  core.database import get_connection
 from core.services import safe_get
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Updater")
 
 # Import centralisé depuis la source unique
 from config.constants import ALL_ABBRS

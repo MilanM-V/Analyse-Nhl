@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Set, Tuple
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Loaders")
 
 # Imports centralisés depuis la source unique (config/constants.py)
 from config.constants import (

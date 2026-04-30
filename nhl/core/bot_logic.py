@@ -19,13 +19,18 @@ from core.datastore import DataStore
 from core.services import TelegramNotifier
 from config.settings import cfg
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.BotLogic")
 
-class NhlBot:
+from shared.base_bot import BaseSportBot
+from shared.portfolio import Portfolio
+
+class NhlBot(BaseSportBot):
     """
     Main logic for the NHL Betting Bot.
     Handles scanning, wave management, analysis, and notification.
     """
+    sport_name = "NHL"
+
     def __init__(self, datastore: DataStore, telegram_notifier: TelegramNotifier) -> None:
         """
         Initializes the NhlBot.
@@ -34,8 +39,10 @@ class NhlBot:
             datastore: The DataStore instance for in-memory data access.
             telegram_notifier: The TelegramNotifier instance for sending alerts.
         """
+        super().__init__()
         self.datastore = datastore
         self.telegram = telegram_notifier
+        self.portfolio = Portfolio()
 
         self.matchs_traites: Set[str] = set()
         self.matches_du_jour: List[Dict[str, Any]] = []
@@ -457,9 +464,7 @@ class NhlBot:
         final_picks_pts = [p for p in final_picks_pts if is_cote_valid(p, cfg.thresholds.pointeurs.cote_min)]
 
         # Kelly sizing avec Money Management Global
-        from shared.portfolio import Portfolio
-        pf = Portfolio()
-        current_exposure = pf.get_pending_exposure()
+        current_exposure = self.portfolio.get_pending_exposure()
         max_exposure = 15.0 # Plafond maximal de la bankroll
         
         for picks_list in [final_picks_but, final_picks_ast, final_picks_pts]:

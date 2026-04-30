@@ -10,7 +10,7 @@ from telegram import Bot, Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application, CallbackQueryHandler
 import asyncio
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Services")
 
 def retry_request(max_retries: int = 3, base_delay: float = 2.0) -> Callable:
     """

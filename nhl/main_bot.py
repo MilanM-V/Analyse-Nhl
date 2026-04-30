@@ -30,7 +30,7 @@ from core.services import TelegramNotifier, create_telegram_app
 from core.bot_logic import NhlBot
 from config.settings import cfg
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL")
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 file_handler = RotatingFileHandler('bot.log', maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')

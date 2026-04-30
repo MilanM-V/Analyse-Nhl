@@ -11,7 +11,7 @@ import sys
 # Ajout du dossier racine au sys.path pour permettre l'exécution standalone
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.Cache")
 
 FOLDER_NAME = "stats"
 CACHE_DIR = os.path.join(FOLDER_NAME, "cache")

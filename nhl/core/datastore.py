@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import core.loaders as loaders
 
-logger = logging.getLogger("NHL_Bot")
+logger = logging.getLogger("NHL.DataStore")
 
 class DataStore:
     """
