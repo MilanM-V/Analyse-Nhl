@@ -8,4 +8,8 @@ plotly
 aiohttp
 beautifulsoup4
 pytest
-schedulepybaseball
+schedule
+pybaseball
+xgboost
+joblib
+scikit-learn

@@ -14,6 +14,7 @@ nhl/stats/
 mlb/stats/
 nba/stats/
 nhl/compos_live.txt
+mlb/data/*.csv
 *_stderr.log
 
 # ─── Python ────────────────────────────────────────

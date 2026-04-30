@@ -30,6 +30,9 @@ sh.setFormatter(fmt)
 logger.addHandler(fh)
 logger.addHandler(sh)
 
+import schedule
+import time
+
 def main():
     logger.info("=====================================================")
     logger.info("      DÉMARRAGE DU BOT MLB V1 (BETA)                 ")
@@ -39,12 +42,23 @@ def main():
     
     bot = MlbBot()
     
-    # Pour l'instant, on exécute un scan immédiatement au démarrage pour tester
+    # 1. Planification des scans
+    # Scan de fin d'après-midi (avant les premiers matchs)
+    schedule.every().day.at("16:30").do(bot.run_scan_cycle)
+    # Scan de soirée
+    schedule.every().day.at("22:30").do(bot.run_scan_cycle)
+    # Nettoyage et Harvester en fin de nuit (5h00 UTC)
+    schedule.every().day.at("05:00").do(bot.end_of_day_cleanup)
+    
+    logger.info("Scans programmés : 16:30, 22:30 et 05:00 (Cleanup).")
+    
+    # Exécuter un scan au démarrage pour les tests (optionnel sur VPS)
     bot.run_scan_cycle()
     
-    # La boucle infinie (ou le scheduler) viendra ici plus tard, 
-    # pour l'instant le watchdog peut s'en charger ou on mettra apscheduler comme dans NHL.
-    logger.info("Scan initial MLB terminé. (En attente d'implémentation du Scheduler permanent)")
+    # Boucle infinie pour maintenir le scheduler
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()

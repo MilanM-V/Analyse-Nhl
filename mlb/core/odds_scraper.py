@@ -26,12 +26,13 @@ async def fetch_mlb_odds(players_to_fetch: Dict[str, str]) -> Dict[str, Dict[str
         return {}
 
     sport = "baseball_mlb"
-    regions = "us,eu"
+    regions = "us,eu"  # US et EU pour avoir les autres bookmakers en backup
     # pitcher_strikeouts, batter_home_runs, batter_hits
     markets = "pitcher_strikeouts,batter_home_runs,batter_hits"
     url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={api_key}&regions={regions}&markets={markets}&oddsFormat=decimal"
 
-    odds_map: Dict[str, Dict[str, float]] = {p: {} for p in players_to_fetch}
+    # On va stocker les lignes trouvées pour chaque joueur/cat: { "Gerrit Cole": { "STRIKEOUTS": {"price": 1.85, "point": 6.5} } }
+    odds_map: Dict[str, Dict[str, Any]] = {p: {} for p in players_to_fetch}
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -46,16 +47,13 @@ async def fetch_mlb_odds(players_to_fetch: Dict[str, str]) -> Dict[str, Dict[str
                     home_team = event.get("home_team", "")
                     away_team = event.get("away_team", "")
                     
-                    # On vérifie si ce match concerne un de nos joueurs
-                    relevant_players = [
-                        p for p, t in players_to_fetch.items() 
-                        if t in home_team or t in away_team or home_team in t or away_team in t
-                    ]
+                    # On va stocker temporairement toutes les cotes trouvées pour ce match
+                    # Structure: { player: { cat: { "winamax": {"price": p, "point": p}, "best_other": {"price": p, "point": p} } } }
+                    match_odds = {p: {} for p in relevant_players}
                     
-                    if not relevant_players:
-                        continue
-                        
                     for bookmaker in event.get("bookmakers", []):
+                        bookmaker_key = bookmaker.get("key")
+                        
                         for market in bookmaker.get("markets", []):
                             market_key = market.get("key")
                             
@@ -64,7 +62,6 @@ async def fetch_mlb_odds(players_to_fetch: Dict[str, str]) -> Dict[str, Dict[str
                                 if not player_name:
                                     continue
                                     
-                                # Matcher le nom du joueur
                                 matched_player = None
                                 for rp in relevant_players:
                                     if rp.lower() in player_name.lower() or player_name.lower() in rp.lower():
@@ -74,14 +71,13 @@ async def fetch_mlb_odds(players_to_fetch: Dict[str, str]) -> Dict[str, Dict[str
                                 if not matched_player:
                                     continue
                                     
-                                # On s'intéresse uniquement aux OVER ("Over" ou "Yes")
                                 outcome_name = outcome.get("name", "").lower()
                                 if outcome_name not in ["over", "yes"]:
                                     continue
                                     
                                 price = float(outcome.get("price", 0))
+                                point = outcome.get("point") # ex: 6.5
                                 
-                                # Assigner la cote à la bonne catégorie
                                 if market_key == "pitcher_strikeouts":
                                     cat = "STRIKEOUTS"
                                 elif market_key == "batter_home_runs":
@@ -91,11 +87,51 @@ async def fetch_mlb_odds(players_to_fetch: Dict[str, str]) -> Dict[str, Dict[str
                                 else:
                                     continue
                                     
-                                current_best = odds_map[matched_player].get(cat, 0)
-                                if price > current_best:
-                                    odds_map[matched_player][cat] = price
+                                if cat not in match_odds[matched_player]:
+                                    match_odds[matched_player][cat] = {"winamax": None, "best_other": None}
+                                    
+                                if bookmaker_key == "winamax":
+                                    current_w = match_odds[matched_player][cat]["winamax"]
+                                    if current_w is None or abs(price - 1.90) < abs(current_w["price"] - 1.90):
+                                        match_odds[matched_player][cat]["winamax"] = {"price": price, "point": point}
+                                else:
+                                    current_b = match_odds[matched_player][cat]["best_other"]
+                                    if current_b is None or price > current_b["price"]:
+                                        match_odds[matched_player][cat]["best_other"] = {"price": price, "point": point}
 
-        return odds_map
+                    # Mise à jour de odds_map global avec priorité Winamax
+                    for player, cats in match_odds.items():
+                        for cat, data in cats.items():
+                            if data["winamax"] is not None:
+                                chosen = data["winamax"]
+                                bookie = "winamax"
+                            elif data["best_other"] is not None:
+                                chosen = data["best_other"]
+                                bookie = "other"
+                            else:
+                                continue
+                                
+                            current_global = odds_map[player].get(cat)
+                            # Si on n'a pas de cote globale, ou si on trouve une meilleure ligne
+                            # Note : Si on a déjà winamax, on le garde.
+                            if current_global is None:
+                                odds_map[player][cat] = {"price": chosen["price"], "point": chosen["point"], "bookie": bookie}
+                            elif current_global["bookie"] == "other" and bookie == "winamax":
+                                # On remplace la meilleure cote par Winamax si on le trouve dans un autre match (rare)
+                                odds_map[player][cat] = {"price": chosen["price"], "point": chosen["point"], "bookie": bookie}
+                            elif current_global["bookie"] == bookie and bookie == "other":
+                                # Si c'est "other", on garde la meilleure cote absolue
+                                if chosen["price"] > current_global["price"]:
+                                    odds_map[player][cat] = {"price": chosen["price"], "point": chosen["point"], "bookie": bookie}
+
+        final_odds = {p: {} for p in players_to_fetch}
+        for player, cats in odds_map.items():
+            for cat, data in cats.items():
+                final_odds[player][cat] = data["price"]
+                if data["point"]:
+                    logger.info(f"⚾ Ligne retenue pour {player} ({cat}) : Over {data['point']} @ {data['price']} (via {data['bookie']})")
+                    
+        return final_odds
     except Exception as e:
         logger.error(f"Exception lors du scraping des cotes MLB: {e}")
         return odds_map

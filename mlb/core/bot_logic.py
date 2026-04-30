@@ -55,14 +55,21 @@ class MlbBot(BaseSportBot):
             if pd.isna(pitcher) or not pitcher:
                 continue
                 
-            logger.info(f"Analyse de {pitcher} ({team}) vs {opp}...")
+            # Déterminer si le lanceur est à domicile
+            # Dans pybaseball, si l'adversaire commence par '@', le lanceur est AWAY.
+            is_home = True
+            if str(opp).startswith('@'):
+                is_home = False
+                opp = opp[1:] # Retirer le '@' pour la recherche DB
+            
+            logger.info(f"Analyse de {pitcher} ({team}) {'HOME' if is_home else 'AWAY'} vs {opp}...")
             
             # Récupérer l'historique DB du lanceur et le K% de l'équipe adverse
             p_stats = get_pitcher_historical_stats(pitcher)
             adv_k_rate = get_team_strikeout_rate(opp)
             
-            # Appliquer le filtre mathématique (Brouillon)
-            pick_k = evaluate_pitcher_strikeouts(pitcher, p_stats, adv_k_rate)
+            # Appliquer le filtre mathématique (XGBoost)
+            pick_k = evaluate_pitcher_strikeouts(pitcher, p_stats, adv_k_rate, is_home=is_home)
             
             if pick_k:
                 pick_k["Equipe"] = team
@@ -90,6 +97,7 @@ class MlbBot(BaseSportBot):
                 msg += f"🔥 <b>{p['Joueur']}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
                 msg += f"🎯 Marché : OVER Strikeouts\n"
                 msg += f"💰 Cote : <b>{p['Cote']}</b>\n"
+                msg += f"🤖 Prédiction IA : <b>{p['Predicted_K']:.1f} K</b>\n"
                 msg += f"📊 Moyenne récente : {p['Moyenne_K']:.1f} K/match\n\n"
                 
                 # Ajout fictif au portfolio (1U Flat pour l'instant)
