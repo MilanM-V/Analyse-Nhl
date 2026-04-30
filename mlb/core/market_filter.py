@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import joblib
 
-logger = logging.getLogger("MLB-Filter")
+logger = logging.getLogger("MLB.Filter")
 
 # Chemin vers le modèle
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mlb", "models", "xg_model_strikeouts.pkl")

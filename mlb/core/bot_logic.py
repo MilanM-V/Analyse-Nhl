@@ -19,7 +19,7 @@ from shared.odds_api import fetch_mlb_odds
 from shared.telegram_hub import send_telegram
 from shared.portfolio import Portfolio
 
-logger = logging.getLogger("MLB-BotLogic")
+logger = logging.getLogger("MLB.BotLogic")
 
 class MlbBot(BaseSportBot):
     """

@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 import requests
 
-logger = logging.getLogger("MLB-Fetcher")
+logger = logging.getLogger("MLB.Fetcher")
 
 # Chemin absolu vers la base de données MLB (à la racine de mlb/)
 import os
