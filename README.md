@@ -9,7 +9,7 @@
 | Sport | Status | Marchés |
 |-------|--------|---------|
 | 🏒 **NHL** | ✅ Production V18 | Passeur, Pointeur |
-| ⚾ **MLB** | ✅ Beta V2 | Strikeouts pitcher (XGBoost Statcast) |
+| ⚾ **MLB** | ✅ Beta V2 (TZ Paris) | Strikeouts pitcher (XGBoost Statcast) |
 | 🏀 **NBA** | 📋 Planifié | Combinés PRA (Points + Rebounds + Assists) |
 | ⚽ **Foot** | 💤 Futur | Marchés de niche (corners, cartons, tirs cadrés) |
 

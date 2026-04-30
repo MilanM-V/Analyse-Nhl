@@ -32,6 +32,9 @@ logger.addHandler(sh)
 
 import schedule
 import time
+if hasattr(time, 'tzset'):
+    os.environ['TZ'] = 'Europe/Paris'
+    time.tzset()
 
 def main():
     logger.info("=====================================================")
