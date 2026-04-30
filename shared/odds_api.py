@@ -107,6 +107,9 @@ class OddsAPIClient:
             # 2. Récupérer les cotes pour chaque event ciblé
             logger.info(f"Appel Odds API sur {len(target_events)} matchs ciblés pour {len(players_map)} joueurs.")
             
+            # Line Shopping : on cherche la meilleure cote parmi ces bookmakers ARJEL
+            target_bookmakers = {"winamax": "Winamax", "unibet_fr": "Unibet", "betclic": "Betclic", "parions_sport": "ParionsSport"}
+            
             for event_id in target_events:
                 odds_url = f"{BASE_URL}/{sport}/events/{event_id}/odds"
                 odds_params = {
@@ -132,7 +135,10 @@ class OddsAPIClient:
                         # Parsing des bookmakers
                         for bm in bookmakers:
                             bm_key = bm['key']
-                            is_primary = (bm_key == bookmaker)
+                            if bm_key not in target_bookmakers:
+                                continue # On ignore les bookmakers exotiques/étrangers
+                                
+                            bm_name = target_bookmakers[bm_key]
                             
                             for mkt in bm.get('markets', []):
                                 if mkt['key'] == market:
@@ -150,10 +156,15 @@ class OddsAPIClient:
                                                     if p_name not in results:
                                                         results[p_name] = {}
                                                     
-                                                    # Si on n'a pas encore de cote, ou qu'on a trouvé le bookmaker cible
                                                     market_cap = market.upper().replace('PLAYER_', '').replace('PITCHER_', '')
-                                                    if market_cap not in results[p_name] or is_primary:
-                                                        results[p_name][market_cap] = price
+                                                    
+                                                    # Si pas encore de cote, ou si la nouvelle cote est MEILLEURE (Line Shopping)
+                                                    existing_data = results[p_name].get(market_cap)
+                                                    if not existing_data or price > existing_data['price']:
+                                                        results[p_name][market_cap] = {
+                                                            "price": price,
+                                                            "bookmaker": bm_name
+                                                        }
                 except Exception as e:
                     logger.error(f"Erreur connexion Odds API pour event {event_id}: {e}")
                     

@@ -303,9 +303,40 @@ class NhlBot:
         ds = self.datastore
         TODAY = datetime.now().strftime("%Y-%m-%d")
 
-        matches_soir, compos_brutes, goalies = loaders.parse_flashscore_file(
-            self.fichier_compos_temp, ds.known_players, ds.form_data
-        )
+        matches_soir = []
+        compos_brutes = []
+        goalies = set()
+
+        for mid in wave_ids:
+            m = self.compos_en_memoire[mid]["match_info"]
+            c = self.compos_en_memoire[mid]["compo"]
+            
+            home, away = m["home"], m["away"]
+            matches_soir.append((home, away))
+            
+            # Ajouter les gardiens confirmés
+            if c.get("goalDom"): goalies.add(c["goalDom"])
+            if c.get("goalext"): goalies.add(c["goalext"])
+            
+            # Ajouter les patineurs
+            for key in ["f1_dom", "f1_ext", "f2_dom", "f2_ext"]:
+                if key in c and isinstance(c[key], list):
+                    for player in c[key]:
+                        # Basic fuzzy match or normalizer would be ideal here
+                        if player in ds.known_players:
+                            compos_brutes.append(player)
+                        else:
+                            # Try normalized match using utils
+                            from shared.utils import normalize_name
+                            n_player = normalize_name(player)
+                            matched = False
+                            for known_p in ds.known_players:
+                                if normalize_name(known_p) == n_player:
+                                    compos_brutes.append(known_p)
+                                    matched = True
+                                    break
+                            if not matched:
+                                compos_brutes.append(player)
 
         compos_filtrees = [p for p in compos_brutes if p in ds.form_data]
         home_teams = [m[0] for m in matches_soir]
@@ -396,21 +427,43 @@ class NhlBot:
                     self.telegram.send_message(f"🚨 <b>ALERTE CRITIQUE SCRAPER</b> 🚨\nLe scraper de cotes n'a trouvé absolument <b>aucune cote</b> pour l'ensemble des {len(players_to_fetch)} joueurs de la vague {wave_label}.\nThe Odds API n'a renvoyé aucune cote ou la vérification des noms d'équipe a échoué.")
 
             for p in final_picks_but:
-                p["Cote"] = odds_map.get(p["Joueur"], {}).get("BUTS")
+                odds_data = odds_map.get(p["Joueur"], {}).get("BUTS", {})
+                if isinstance(odds_data, dict):
+                    p["Cote"] = odds_data.get("price")
+                    p["Bookmaker"] = odds_data.get("bookmaker", "Inconnu")
+                else:
+                    p["Cote"] = None
+                    p["Bookmaker"] = "Inconnu"
             for p in final_picks_ast:
-                p["Cote"] = odds_map.get(p["Joueur"], {}).get("ASSISTS")
+                odds_data = odds_map.get(p["Joueur"], {}).get("ASSISTS", {})
+                if isinstance(odds_data, dict):
+                    p["Cote"] = odds_data.get("price")
+                    p["Bookmaker"] = odds_data.get("bookmaker", "Inconnu")
+                else:
+                    p["Cote"] = None
+                    p["Bookmaker"] = "Inconnu"
             for p in final_picks_pts:
-                p["Cote"] = odds_map.get(p["Joueur"], {}).get("POINTS")
+                odds_data = odds_map.get(p["Joueur"], {}).get("POINTS", {})
+                if isinstance(odds_data, dict):
+                    p["Cote"] = odds_data.get("price")
+                    p["Bookmaker"] = odds_data.get("bookmaker", "Inconnu")
+                else:
+                    p["Cote"] = None
+                    p["Bookmaker"] = "Inconnu"
 
         # Filtre Cote Minimum + EV (module extrait)
         final_picks_but = [p for p in final_picks_but if is_cote_valid(p, cfg.thresholds.buteurs.cote_min)]
         final_picks_ast = [p for p in final_picks_ast if is_cote_valid(p, cfg.thresholds.passeurs.cote_min)]
         final_picks_pts = [p for p in final_picks_pts if is_cote_valid(p, cfg.thresholds.pointeurs.cote_min)]
 
-        # Kelly sizing (module extrait)
+        # Kelly sizing avec Money Management Global
+        from shared.portfolio import Portfolio
+        pf = Portfolio()
+        current_exposure = pf.get_pending_exposure()
+        max_exposure = 15.0 # Plafond maximal de la bankroll
+        
         for picks_list in [final_picks_but, final_picks_ast, final_picks_pts]:
-            apply_kelly_to_picks(picks_list)
-
+            current_exposure = apply_kelly_to_picks(picks_list, current_exposure, max_exposure)
         # Telegram (module extrait)
         msg = format_telegram_v18(
             final_picks_but, final_picks_ast, final_picks_pts,

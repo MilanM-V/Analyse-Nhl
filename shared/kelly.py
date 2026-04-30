@@ -18,13 +18,15 @@ CATEGORY_CAPS: Dict[str, float] = {
 }
 
 
-def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str = "") -> str:
-    """Calcule la recommandation de mise fractionnée Quarter Kelly.
+def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str = "", current_exposure: float = 0.0, max_exposure: float = 15.0) -> str:
+    """Calcule la recommandation de mise fractionnée Quarter Kelly avec Money Management Global.
 
     Args:
         proba: Probabilité estimée de l'événement.
         cote: Cote décimale du bookmaker.
         categorie: Catégorie du pick (BUTEUR, PASSEUR, POINTEUR).
+        current_exposure: Exposition totale actuelle du Portfolio.
+        max_exposure: Plafond maximum autorisé (ex: 15.0 U).
 
     Returns:
         String de mise formatée (ex: "1.5 U").
@@ -51,6 +53,20 @@ def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str 
         eighth_f = f / 8.0
         units = round(eighth_f * 100 * 2) / 2  # arrondi à 0.5 près
         units = max(0.5, min(units, cap))
+        
+        # Money Management Global : on réduit la mise si on dépasse le plafond
+        if current_exposure + units > max_exposure:
+            remaining_capacity = max(0.0, max_exposure - current_exposure)
+            # Arrondi à 0.5 près
+            remaining_capacity = round(remaining_capacity * 2) / 2
+            units = min(units, remaining_capacity)
+            
+            if units <= 0:
+                logger.warning(f"Pari ignoré (Kelly {f/8.0:.2f}U) : Plafond d'exposition globale atteint ({current_exposure}/{max_exposure}U).")
+                return "0 U"
+            else:
+                logger.warning(f"Mise réduite ({units}U au lieu de cap) : Plafond global presque atteint.")
+                
         return f"{units} U"
 
     return "0 U"
@@ -72,19 +88,32 @@ def is_cote_valid(pick: dict, cote_min: float) -> bool:
     return True
 
 
-def apply_kelly_to_picks(picks_list: list) -> None:
+def apply_kelly_to_picks(picks_list: list, current_exposure: float = 0.0, max_exposure: float = 15.0) -> float:
     """Calcule et injecte la mise Kelly sur chaque pick (mutation in-place).
+    Met à jour l'exposition globale en cours.
 
     Args:
         picks_list: Liste de dicts de picks à enrichir avec 'Mise' et 'MiseNum'.
+        current_exposure: Exposition actuelle avant traitement de ces picks.
+        max_exposure: Plafond maximum autorisé.
+        
+    Returns:
+        La nouvelle exposition totale après ces picks.
     """
     for p in picks_list:
         mise_str = calculate_quarter_kelly(
             p.get('Proba', 0),
-            p.get('Cote'), p.get('Categorie', '')
+            p.get('Cote'), 
+            p.get('Categorie', ''),
+            current_exposure=current_exposure,
+            max_exposure=max_exposure
         )
         p["Mise"] = mise_str
         try:
-            p["MiseNum"] = float(mise_str.replace(" U", ""))
+            val = float(mise_str.replace(" U", ""))
+            p["MiseNum"] = val
+            current_exposure += val
         except (ValueError, AttributeError):
-            p["MiseNum"] = 1.0
+            p["MiseNum"] = 0.0
+            
+    return current_exposure

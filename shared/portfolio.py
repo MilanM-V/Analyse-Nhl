@@ -83,15 +83,23 @@ class Portfolio:
         conn.close()
         return INITIAL_BANKROLL + total_gain
 
-    def get_pending_exposure(self) -> float:
+    def get_pending_exposure(self, sport: str = None) -> float:
         """Calcule l'exposition totale sur les paris en attente.
+        
+        Args:
+            sport: Si spécifié, filtre sur un sport donné. Sinon, total global.
 
         Returns:
             Total des mises non résolues.
         """
         conn = self._get_conn()
         c = conn.cursor()
-        c.execute("SELECT COALESCE(SUM(mise), 0) FROM portfolio WHERE resolved = 0")
+        
+        if sport:
+            c.execute("SELECT COALESCE(SUM(mise), 0) FROM portfolio WHERE resolved = 0 AND sport = ?", (sport,))
+        else:
+            c.execute("SELECT COALESCE(SUM(mise), 0) FROM portfolio WHERE resolved = 0")
+            
         exposure = c.fetchone()[0]
         conn.close()
         return exposure

@@ -104,7 +104,7 @@ def format_telegram_v18(
                 msg += f"  {emoji} <i>{label} :</i>\n"
                 for r in m_picks:
                     home_icon = '\U0001f3e0' if r['IsHome'] else '\u2708\ufe0f'
-                    cote_str = f" @{r['Cote']} | Edge: {((r.get('Proba', 0) * (r.get('Cote', 1) or 1)) - 1)*100:.1f}% | Mise: {r.get('Mise', '1 U')}" if r.get('Cote') else ""
+                    cote_str = f" @{r['Cote']:.2f} chez {r.get('Bookmaker', 'Inconnu')} | Edge: {((r.get('Proba', 0) * (r.get('Cote', 1) or 1)) - 1)*100:.1f}% | Mise: {r.get('Mise', '1 U')}" if r.get('Cote') else ""
                     msg += f"  \u2022 {home_icon} <b>{r['Joueur']}</b>{cote_str}\n"
 
         m_all = [r for picks_list in [buts, assists, points]

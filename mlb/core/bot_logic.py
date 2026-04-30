@@ -85,13 +85,24 @@ class MlbBot(BaseSportBot):
             
             for pick in picks_strikeouts:
                 joueur = pick["Joueur"]
-                cote = odds_map.get(joueur, {}).get("STRIKEOUTS", 0)
-                pick["Cote"] = cote
+                odds_data = odds_map.get(joueur, {}).get("STRIKEOUTS", {})
+                
+                if isinstance(odds_data, dict):
+                    pick["Cote"] = odds_data.get("price", 0.0)
+                    pick["Bookmaker"] = odds_data.get("bookmaker", "Inconnu")
+                else:
+                    pick["Cote"] = 0.0
+                    pick["Bookmaker"] = "Inconnu"
                 
         # 4. Filtrer les picks sans cote ou avec une cote trop faible
         final_picks = [p for p in picks_strikeouts if p.get("Cote", 0) >= 1.50]
         
-        # 5. Calcul du Kelly Criterion et filtre EV
+        # 5. Calcul du Kelly Criterion et filtre EV (avec Money Management Global)
+        from shared.portfolio import Portfolio
+        pf = Portfolio()
+        current_exposure = pf.get_pending_exposure()
+        max_exposure = 15.0  # Plafond maximal de la bankroll
+
         validated_picks = []
         for p in final_picks:
             cote = p["Cote"]
@@ -117,6 +128,20 @@ class MlbBot(BaseSportBot):
                 mise = round(eighth_kelly * 100 * 2) / 2  # Arrondi à 0.5 U
                 # Plafonds MLB : min 0.5 U, max 3.0 U
                 mise = max(0.5, min(mise, 3.0))
+                
+                # Money Management Global
+                if current_exposure + mise > max_exposure:
+                    remaining_capacity = max(0.0, max_exposure - current_exposure)
+                    remaining_capacity = round(remaining_capacity * 2) / 2
+                    mise = min(mise, remaining_capacity)
+                    
+                    if mise <= 0:
+                        logger.warning(f"❌ {p['Joueur']} ignoré : Plafond d'exposition globale atteint.")
+                        continue
+                    else:
+                        logger.warning(f"⚠️ {p['Joueur']} : Mise réduite à {mise}U pour respecter le plafond global.")
+                
+                current_exposure += mise
             else:
                 mise = 0.0
                 
@@ -130,13 +155,15 @@ class MlbBot(BaseSportBot):
             msg = "⚾ <b>ALERTE MLB - STRIKEOUTS</b> ⚾\n\n"
             for p in validated_picks:
                 confiance_emoji = "🔥" if p["Confiance"] == "ELITE" else "✅" if p["Confiance"] == "ELEVEE" else "📊"
+                bookmaker = p.get("Bookmaker", "Inconnu")
                 msg += f"{confiance_emoji} <b>{p['Joueur']}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
                 msg += f"🎯 Marché : OVER Strikeouts\n"
-                msg += f"💰 Cote : <b>{p['Cote']}</b>\n"
+                msg += f"💰 Cote : <b>{p['Cote']:.2f}</b> chez <b>{bookmaker}</b>\n"
                 msg += f"🤖 Prédiction IA : <b>{p['Predicted_K']:.1f} K</b> (Proba: {p['Proba']:.0%})\n"
                 msg += f"📈 Edge : <b>+{p['EV']}%</b>\n"
                 msg += f"💵 Mise Kelly : <b>{p['Mise']} U</b>\n"
-                msg += f"📊 Moyenne récente : {p['Moyenne_K']:.1f} K/match\n\n"
+                msg += f"📊 Moyenne récente : {p['Moyenne_K']:.1f} K/match\n"
+                msg += f"📉 K-Rate Adv : {p['Adv_K_Rate']*100:.1f}%\n\n"
                 
                 # Enregistrement dans le portfolio avec la mise Kelly
                 self.portfolio.log_bet(
