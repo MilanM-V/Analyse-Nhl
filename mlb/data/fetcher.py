@@ -18,7 +18,24 @@ logger = logging.getLogger("MLB.Fetcher")
 # Chemin absolu vers la base de données MLB (à la racine de mlb/)
 import os
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mlb_database.db")
-logger.info(f"🗄️ Base de données MLB utilisée : {DB_PATH}")
+try:
+    db_size = os.path.getsize(DB_PATH)
+    logger.info(f"🗄️ Base de données MLB utilisée : {DB_PATH} ({db_size} octets)")
+    
+    # Debug schema
+    import sqlite3
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = [t[0] for t in cursor.fetchall()]
+    logger.info(f"📁 Tables en DB : {tables}")
+    
+    cursor.execute("PRAGMA table_info(mlb_pitchers)")
+    cols = [c[1] for c in cursor.fetchall()]
+    logger.info(f"📋 Colonnes mlb_pitchers : {cols}")
+    conn.close()
+except:
+    logger.error(f"❌ Impossible de lire la taille de la base : {DB_PATH}")
 
 
 def get_todays_probables(date_str: Optional[str] = None) -> pd.DataFrame:
@@ -100,11 +117,15 @@ def get_pitcher_historical_stats(player_name: str, limit: int = 5) -> Dict[str, 
         query = """
             SELECT game_date, innings_pitched, strikeouts, hits, earned_runs, bb
             FROM mlb_pitchers 
-            WHERE player_name LIKE ? 
+            WHERE TRIM(player_name) COLLATE NOCASE LIKE ? 
             ORDER BY game_date DESC 
             LIMIT ?
         """
-        df = pd.read_sql_query(query, conn, params=(f"%{player_name}%", limit))
+        cursor = conn.cursor()
+        cursor.execute(query, (f"%{player_name.strip()}%", limit))
+        rows = cursor.fetchall()
+        cols = [d[0] for d in cursor.description]
+        df = pd.DataFrame(rows, columns=cols)
         conn.close()
         
         if df.empty:
@@ -158,12 +179,16 @@ def get_team_strikeout_rate(team_abbr: str) -> float:
         query = """
             SELECT game_date, SUM(k) as team_strikeouts
             FROM mlb_batters
-            WHERE team = ?
+            WHERE TRIM(team) COLLATE NOCASE = ?
             GROUP BY game_date
             ORDER BY game_date DESC
             LIMIT 15
         """
-        df = pd.read_sql_query(query, conn, params=(team_abbr,))
+        cursor = conn.cursor()
+        cursor.execute(query, (team_abbr.strip(),))
+        rows = cursor.fetchall()
+        cols = [d[0] for d in cursor.description]
+        df = pd.DataFrame(rows, columns=cols)
         conn.close()
         
         if df.empty:
