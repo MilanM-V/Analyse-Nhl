@@ -18,8 +18,9 @@ _xgb_model = None
 if os.path.exists(MODEL_PATH):
     try:
         _xgb_model = joblib.load(MODEL_PATH)
+        logger.info(f"✅ Modèle XGBoost chargé avec succès depuis : {MODEL_PATH}")
     except Exception as e:
-        logger.error(f"Impossible de charger le modèle XGBoost : {e}")
+        logger.error(f"❌ Impossible de charger le modèle XGBoost : {e}")
 
 def evaluate_pitcher_strikeouts(pitcher_name: str, pitcher_stats: Dict[str, Any], adv_k_rate: float, is_home: bool = True) -> Optional[Dict[str, Any]]:
     """
