@@ -72,8 +72,6 @@ class MlbBot(BaseSportBot):
             # Appliquer le filtre mathématique (XGBoost)
             pick_k = evaluate_pitcher_strikeouts(pitcher, p_stats, adv_k_rate, is_home=is_home)
             
-            if pitcher == "Bryan Woo":
-                logger.info(f"DEBUG: Bryan Woo (repr: {repr(pitcher)}) -> Stats: {bool(p_stats)}, Adv K-Rate: {adv_k_rate:.2f}")
             
             if pick_k:
                 pick_k["Equipe"] = team

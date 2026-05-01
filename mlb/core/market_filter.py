@@ -18,7 +18,6 @@ _xgb_model = None
 if os.path.exists(MODEL_PATH):
     try:
         _xgb_model = joblib.load(MODEL_PATH)
-        logger.info(f"✅ Modèle XGBoost chargé avec succès depuis : {MODEL_PATH}")
     except Exception as e:
         logger.error(f"❌ Impossible de charger le modèle XGBoost : {e}")
 

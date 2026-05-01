@@ -55,12 +55,7 @@ def main():
     
     logger.info("Scans programmés : 16:30, 22:30 et 05:00 (Cleanup).")
     
-    # --- 1. Remplissage initial de la base (Backfill) ---
-    logger.info("🚀 Lancement du Backfill initial (30 jours) pour remplir la base...")
-    from mlb.core.harvester import run_harvester_backfill
-    run_harvester_backfill(days=30)
-    
-    # --- 2. Lancer un premier scan des matchs du jour ---
+    # Exécuter un scan au démarrage pour les tests (optionnel sur VPS)
     bot.run_scan_cycle()
     
     # Boucle infinie pour maintenir le scheduler

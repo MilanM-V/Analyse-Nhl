@@ -18,24 +18,6 @@ logger = logging.getLogger("MLB.Fetcher")
 # Chemin absolu vers la base de données MLB (à la racine de mlb/)
 import os
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mlb_database.db")
-try:
-    db_size = os.path.getsize(DB_PATH)
-    logger.info(f"🗄️ Base de données MLB utilisée : {DB_PATH} ({db_size} octets)")
-    
-    # Debug schema
-    import sqlite3
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = [t[0] for t in cursor.fetchall()]
-    logger.info(f"📁 Tables en DB : {tables}")
-    
-    cursor.execute("PRAGMA table_info(mlb_pitchers)")
-    cols = [c[1] for c in cursor.fetchall()]
-    logger.info(f"📋 Colonnes mlb_pitchers : {cols}")
-    conn.close()
-except:
-    logger.error(f"❌ Impossible de lire la taille de la base : {DB_PATH}")
 
 
 def get_todays_probables(date_str: Optional[str] = None) -> pd.DataFrame:
@@ -129,8 +111,6 @@ def get_pitcher_historical_stats(player_name: str, limit: int = 5) -> Dict[str, 
         conn.close()
         
         if df.empty:
-            if "Woo" in player_name:
-                logger.warning(f"🔎 [DB-DEBUG] Aucun match trouvé pour {player_name} avec LIKE %{player_name}%")
             return {}
             
         # Nettoyage des IP (Innings Pitched : '5.1' = 5 + 1/3 manches)
