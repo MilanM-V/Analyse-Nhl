@@ -185,8 +185,8 @@ class MlbBot(BaseSportBot):
         Lancement du harvester pour mettre à jour la BDD locale.
         """
         logger.info("🧹 Lancement du MLB Harvester pour mise à jour de la DB...")
-        from mlb.core.harvester import run_harvester_loop
-        run_harvester_loop()
+        from mlb.core.harvester import run_harvester_once
+        run_harvester_once()
         self.scanned_today = False
 
     def update_daily_stats(self) -> bool:

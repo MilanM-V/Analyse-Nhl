@@ -161,6 +161,17 @@ def fetch_mlb_day(date_str: str):
     sys.stdout.flush()
 
 
+def run_harvester_once() -> None:
+    """Récupère les données MLB d'hier et s'arrête (pas de boucle)."""
+    yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    logger.info(f"Déclenchement manuel de la tâche MLB quotidienne du {yesterday}...")
+    try:
+        fetch_mlb_day(yesterday)
+    except Exception as e:
+        logger.error(f"Erreur inattendue pendant la tâche MLB : {e}")
+    sys.stdout.flush()
+
+
 def run_harvester_loop() -> None:
     """Lance la boucle de collecte MLB quotidienne."""
     import schedule
