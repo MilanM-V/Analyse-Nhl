@@ -10,8 +10,8 @@ import joblib
 
 logger = logging.getLogger("MLB.Filter")
 
-# Chemin vers le modèle
-MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mlb", "models", "xg_model_strikeouts.pkl")
+# Chemin vers le modèle (plus robuste : remonte d'un cran depuis mlb/core vers mlb/)
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "xg_model_strikeouts.pkl")
 
 # On charge le modèle en mémoire une seule fois au démarrage
 _xgb_model = None
