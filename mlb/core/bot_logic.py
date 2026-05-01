@@ -76,8 +76,6 @@ class MlbBot(BaseSportBot):
             if pick_k:
                 pick_k["Equipe"] = team
                 pick_k["Adversaire"] = opp
-                pick_k["Moyenne_K"] = p_stats.get("avg_k", 0) if p_stats else 0
-                pick_k["Adv_K_Rate"] = adv_k_rate
                 picks_strikeouts.append(pick_k)
                 players_to_fetch_odds[pitcher] = team
                 
@@ -87,7 +85,7 @@ class MlbBot(BaseSportBot):
             odds_map = asyncio.run(fetch_mlb_odds(players_to_fetch_odds))
             
             for pick in picks_strikeouts:
-                joueur = pick["joueur"]
+                joueur = pick["Joueur"]
                 odds_data = odds_map.get(joueur, {}).get("STRIKEOUTS", {})
                 
                 if isinstance(odds_data, dict):
@@ -109,7 +107,7 @@ class MlbBot(BaseSportBot):
         validated_picks = []
         for p in final_picks:
             cote = p.get("Cote", 0)
-            proba = p.get("proba", 0.50)
+            proba = p.get("Proba", 0.50)
             
             # Calcul de l'Expected Value (EV)
             ev = (proba * cote) - 1.0
@@ -157,13 +155,13 @@ class MlbBot(BaseSportBot):
         if validated_picks:
             msg = "⚾ <b>ALERTE MLB - STRIKEOUTS</b> ⚾\n\n"
             for p in validated_picks:
-                confiance = p.get("confiance", "MOYENNE")
+                confiance = p.get("Confiance", "MOYENNE")
                 confiance_emoji = "🔥" if confiance == "ELITE" else "✅" if confiance == "ELEVEE" else "📊"
                 bookmaker = p.get("Bookmaker", "Inconnu")
-                msg += f"{confiance_emoji} <b>{p.get('joueur', 'Inconnu')}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
+                msg += f"{confiance_emoji} <b>{p['Joueur']}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
                 msg += f"🎯 Marché : OVER Strikeouts\n"
                 msg += f"💰 Cote : <b>{p.get('Cote', 0):.2f}</b> chez <b>{bookmaker}</b>\n"
-                msg += f"🤖 Prédiction IA : <b>{p.get('predicted_k', 0):.1f} K</b> (Proba: {p.get('proba', 0):.0%})\n"
+                msg += f"🤖 Prédiction IA : <b>{p.get('Predicted_K', 0):.1f} K</b> (Proba: {p.get('Proba', 0):.0%})\n"
                 msg += f"📈 Edge : <b>+{p['EV']}%</b>\n"
                 msg += f"💵 Mise Kelly : <b>{p['Mise']} U</b>\n"
                 msg += f"📊 Moyenne récente : {p.get('Moyenne_K', 0):.1f} K/match\n"
@@ -172,7 +170,7 @@ class MlbBot(BaseSportBot):
                 # Enregistrement dans le portfolio avec la mise Kelly
                 self.portfolio.log_bet(
                     sport="mlb",
-                    player=p.get("joueur", "Inconnu"),
+                    player=p["Joueur"],
                     market="STRIKEOUTS",
                     cote=p.get("Cote", 0),
                     mise=p["Mise"]

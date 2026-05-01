@@ -90,6 +90,7 @@ def evaluate_pitcher_strikeouts(pitcher_name: str, pitcher_stats: Dict[str, Any]
                 "Moyenne_K": pitcher_stats.get("avg_k", 0),
                 "Predicted_K": predicted_k,
                 "Proba": round(prob_over, 4),
+                "Adv_K_Rate": adv_k_rate,
             }
     except Exception as e:
         logger.error(f"Erreur lors de la prédiction pour {pitcher_name} : {e}")
