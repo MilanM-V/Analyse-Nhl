@@ -161,6 +161,18 @@ def fetch_mlb_day(date_str: str):
     sys.stdout.flush()
 
 
+def run_harvester_backfill(days: int = 30) -> None:
+    """Récupère les données MLB des X derniers jours pour remplir une base vide."""
+    logger.info(f"🔄 Lancement du Backfill MLB sur les {days} derniers jours...")
+    for i in range(1, days + 1):
+        date_to_fetch = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+        try:
+            fetch_mlb_day(date_to_fetch)
+        except Exception as e:
+            logger.error(f"Erreur Backfill pour {date_to_fetch}: {e}")
+    logger.info("✅ Backfill MLB terminé !")
+
+
 def run_harvester_once() -> None:
     """Récupère les données MLB d'hier et s'arrête (pas de boucle)."""
     yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
