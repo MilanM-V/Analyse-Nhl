@@ -83,6 +83,7 @@ class MlbBot(BaseSportBot):
         if players_to_fetch_odds:
             logger.info(f"Récupération des cotes pour {len(players_to_fetch_odds)} lanceurs...")
             odds_map = asyncio.run(fetch_mlb_odds(players_to_fetch_odds))
+            logger.info(f"Cotes récupérées pour {len(odds_map)} joueurs sur {len(players_to_fetch_odds)} demandés.")
             
             for pick in picks_strikeouts:
                 joueur = pick["Joueur"]
