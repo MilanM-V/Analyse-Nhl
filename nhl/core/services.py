@@ -199,7 +199,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
 
         from core.updater import update_pending_picks
         loop = asyncio.get_running_loop()
-        n_resolved = await loop.run_in_executor(None, update_pending_picks)
+        await loop.run_in_executor(None, update_pending_picks)
 
         from core.database import get_roi_stats
         
@@ -248,7 +248,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
             balance = portfolio.get_balance()
             history = portfolio.get_history(limit=5)
             
-            msg = f"💼 <b>Portefeuille (Simulé)</b>\n"
+            msg = "💼 <b>Portefeuille (Simulé)</b>\n"
             msg += f"Solde Actuel : <b>{balance:.2f} U</b>\n\n"
             msg += "Derniers paris :\n"
             if not history:

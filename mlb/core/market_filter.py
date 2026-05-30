@@ -7,17 +7,33 @@ import logging
 from typing import Dict, Any, Optional
 import pandas as pd
 import joblib
+import sys
 
-logger = logging.getLogger("MLB.Filter")
+# Add mlb package to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+logger = logging.getLogger("MLB-MarketFilter")
+
+# ==========================================
+# CONFIGURATION STRATÉGIQUE
+# ==========================================
+# Le marché des Home Runs a été définitivement supprimé (structurellement déficitaire).
+# Seul le marché Strikeouts est actif.
 
 # Chemin vers le modèle (plus robuste : remonte d'un cran depuis mlb/core vers mlb/)
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "xg_model_strikeouts.pkl")
 
-# On charge le modèle en mémoire une seule fois au démarrage
+# On charge les modèles en mémoire une seule fois au démarrage
 _xgb_model = None
+_threshold = 0.8
 if os.path.exists(MODEL_PATH):
     try:
-        _xgb_model = joblib.load(MODEL_PATH)
+        data = joblib.load(MODEL_PATH)
+        if isinstance(data, dict):
+            _xgb_model = data['model']
+            _threshold = data.get('threshold', 0.8)
+        else:
+            _xgb_model = data
     except Exception as e:
         logger.error(f"❌ Impossible de charger le modèle XGBoost : {e}")
 
@@ -67,13 +83,17 @@ def evaluate_pitcher_strikeouts(pitcher_name: str, pitcher_stats: Dict[str, Any]
         # Règle : on ne présélectionne que les lanceurs où l'IA prédit au moins 5.5 Strikeouts
         # pour éviter de scraper les cotes de lanceurs médiocres
         if predicted_k >= 5.5:
-            # Estimation de la probabilité que le lanceur dépasse la ligne Over 5.5 K
-            # On utilise une fonction logistique centrée sur 5.5 avec un spread calibré
-            # Plus predicted_k est élevé au-dessus de 5.5, plus la proba est forte
+            # Estimation de la probabilité que le lanceur dépasse sa ligne de base.
+            # On utilise une fonction logistique centrée sur la Ligne + Seuil dynamique
+            # Plus predicted_k est élevé au-dessus de (5.5 + seuil), plus la proba est forte.
             import math
             line = 5.5
             spread = 1.2  # Calibré pour que +2K au-dessus de la ligne ≈ 85% de proba
-            prob_over = 1.0 / (1.0 + math.exp(-(predicted_k - line) / spread))
+            
+            # Formule: si predicted_k == line + _threshold, proba = 0.5 (neutre)
+            # si predicted_k > line + _threshold, proba > 0.5 (valeur)
+            gap = predicted_k - (line + _threshold)
+            prob_over = 1.0 / (1.0 + math.exp(-gap / spread))
             
             # Niveau de confiance
             if prob_over >= 0.70:
@@ -94,5 +114,6 @@ def evaluate_pitcher_strikeouts(pitcher_name: str, pitcher_stats: Dict[str, Any]
             }
     except Exception as e:
         logger.error(f"Erreur lors de la prédiction pour {pitcher_name} : {e}")
+        
         
     return None

@@ -188,7 +188,7 @@ async def log_closing_lines() -> None:
     from core.odds_scraper import fetch_multiple_odds
     
     logger.info("[CLV] Démarrage du tracking des cotes de clôture (Closing Lines)...")
-    from datetime import datetime
+
     today_str = datetime.now().strftime("%Y-%m-%d")
     
     conn = get_connection()

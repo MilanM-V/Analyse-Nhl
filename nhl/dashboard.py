@@ -71,7 +71,7 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
     df['date'] = pd.to_datetime(df['date'])
     
     # Mapping des cotes pour les jointures (date + joueur)
-    cotes_but_dict = cotes_df_but.set_index(['date', 'joueur'])['cote'].to_dict()
+    # cotes_but_dict = cotes_df_but.set_index(['date', 'joueur'])['cote'].to_dict()
     cotes_ast_dict = cotes_df_ast.set_index(['date', 'joueur'])['cote'].to_dict()
     cotes_pts_dict = cotes_df_pts.set_index(['date', 'joueur'])['cote'].to_dict()
 
@@ -95,7 +95,7 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
         
         # Stats
         hdcf = float(row['hdcf']) if pd.notna(row['hdcf']) else 0
-        sog = float(row['sog']) if pd.notna(row['sog']) else 0
+
         atoi = float(row['atoi']) if pd.notna(row['atoi']) else 0
         opp_ga = float(row['ga_g']) if pd.notna(row['ga_g']) else 0
         season_g = float(row['season_g']) if pd.notna(row['season_g']) else 0
@@ -104,7 +104,7 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
         is_home = bool(row['is_home'])
         
         # Logs de Resultats réels
-        res_but = int(row['but']) > 0
+        # res_but = int(row['but']) > 0
         res_ast = int(row['assist']) > 0
         res_pts = int(row['point']) > 0
 

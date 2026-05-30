@@ -163,3 +163,16 @@ journalctl -u watchdog-betengine -f
 ## Licence
 
 Ce projet est sous licence MIT â€“ voir le fichier [LICENSE](LICENSE) pour plus de dÃ©tails.
+
+## Mises à jour récentes
+- Nettoyage du code et corrections Flake8.
+
+- Ajout d'un script d'évaluation des modèles (evaluate_models.py) pour la NHL.
+
+- V19: Bot propulsé par des modèles Machine Learning dynamiques (XGBoost & Logistic Regression) avec générateur de combinés (Double Passeurs).
+
+- Mise à jour du bot NHL (bot_logic.py) pour exploiter l'inférence asynchrone des modèles Scikit-Learn et XGBoost en production.
+
+- Audit statistique des algorithmes (LightGBM vs XGBoost) et des stratégies de combinés ajouté dans optimization_report.md.
+
+- Intégration de combinés synergiques Passeur-Passeur via combo_analysis.py après un test massif sur l'historique de la NHL (+123% ROI).

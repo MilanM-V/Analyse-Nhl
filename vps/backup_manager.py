@@ -108,7 +108,7 @@ def run_backup():
     zip_path = create_backup_zip()
     
     if zip_path:
-        success = send_backup_by_email(zip_path)
+        send_backup_by_email(zip_path)
         
         # Nettoyage
         try:

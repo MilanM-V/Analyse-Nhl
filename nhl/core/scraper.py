@@ -102,7 +102,7 @@ def get_scheduled_matches(url=""):
     return matches_found
 
 def _get_rotowire_soup():
-    global _ROTOWIRE_CACHE
+
     now = time.time()
     if _ROTOWIRE_CACHE["soup"] is not None and (now - _ROTOWIRE_CACHE["timestamp"] < CACHE_TTL_SECONDS):
         return _ROTOWIRE_CACHE["soup"]

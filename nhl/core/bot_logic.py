@@ -284,12 +284,8 @@ class NhlBot(BaseSportBot):
             self.run_analysis_and_send(ready_ids, wave_label)
 
     def run_analysis_and_send(self, wave_ids: List[str], wave_label: str) -> None:
-        """Performs analysis on a wave of matches and sends results.
-
-        Orchestrates the full pipeline: data loading → market filtering →
-        odds enrichment → EV validation → Kelly sizing → Telegram → logging.
-        """
-        from core.market_filter import load_dynamic_probas, evaluate_player_markets
+        """Performs analysis on a wave of matches and sends results."""
+        from core.market_filter import load_ml_models, prepare_features_for_player, evaluate_player_markets
         from core.kelly import is_cote_valid, apply_kelly_to_picks
         from core.formatter import format_telegram_v18
         from core.logger_csv import log_picks_to_db, log_picks_to_csv
@@ -321,19 +317,15 @@ class NhlBot(BaseSportBot):
             home, away = m["home"], m["away"]
             matches_soir.append((home, away))
             
-            # Ajouter les gardiens confirmés
             if c.get("goalDom"): goalies.add(c["goalDom"])
             if c.get("goalext"): goalies.add(c["goalext"])
             
-            # Ajouter les patineurs
             for key in ["f1_dom", "f1_ext", "f2_dom", "f2_ext"]:
                 if key in c and isinstance(c[key], list):
                     for player in c[key]:
-                        # Basic fuzzy match or normalizer would be ideal here
                         if player in ds.known_players:
                             compos_brutes.append(player)
                         else:
-                            # Try normalized match using utils
                             from shared.utils import normalize_name
                             n_player = normalize_name(player)
                             matched = False
@@ -354,11 +346,10 @@ class NhlBot(BaseSportBot):
         pp1_players = set(loaders.get_auto_pp1_players(ds.form_data, ds.pp_stats, list(opponents.keys())))
         seen_players: Set[str] = set()
 
-        probas = load_dynamic_probas()
+        ml_models = load_ml_models()
 
         final_picks_but: List[Dict[str, Any]] = []
         final_picks_ast: List[Dict[str, Any]] = []
-        final_picks_pts: List[Dict[str, Any]] = []
         all_evaluated_players: List[Dict[str, Any]] = []
 
         for player in compos_filtrees:
@@ -377,61 +368,75 @@ class NhlBot(BaseSportBot):
             v5_p = ds.v5_data.get(player, {})
             is_home = team in home_teams
 
-            # Filtrage par marché (module extrait)
-            cat_but, cat_ast, cat_pts = evaluate_player_markets(
+            cat_but, cat_ast = evaluate_player_markets(
                 player, p_form, v5_p, adv_stats, is_home
             )
 
+            is_pp1 = player in pp1_players
+            is_b2b = team in b2b_teams and adv not in b2b_teams
+            opp_is_b2b = adv in b2b_teams and team not in b2b_teams
+            
             common_data = {
                 "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": is_home,
                 "Pos": str(v5_p.get('Position', '')).strip() if v5_p else "",
-                "PP1": "⭐" if player in pp1_players else "",
-                "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
+                "PP1": "⭐" if is_pp1 else "",
+                "Backup": is_backup, "B2B": is_b2b,
                 "Synergie": False
             }
 
-            if cat_but:
-                p_but = common_data.copy()
-                p_but.update({"Proba": probas["buteurs"], "Categorie": cat_but})
-                final_picks_but.append(p_but)
+            proba_but, proba_ast = 0.0, 0.0
 
-            if cat_ast:
-                p_ast = common_data.copy()
-                p_ast.update({"Proba": probas["passeurs"], "Categorie": cat_ast})
-                final_picks_ast.append(p_ast)
-
-            if cat_pts:
-                p_pts = common_data.copy()
-                p_pts.update({"Proba": probas["pointeurs"], "Categorie": cat_pts})
-                final_picks_pts.append(p_pts)
+            if cat_but or cat_ast:
+                consec = int(p_form.get('ConsecGoals', 0))
+                feat_list = []
+                if 'but' in ml_models: feat_list = ml_models['but'].get('features', [])
+                elif 'ast' in ml_models: feat_list = ml_models['ast'].get('features', [])
+                
+                if feat_list:
+                    X_player = prepare_features_for_player(
+                        p_form, v5_p, adv_stats, is_home, 
+                        is_b2b, opp_is_b2b, is_pp1, consec, feat_list
+                    )
+                    
+                    if cat_but and 'but' in ml_models:
+                        m_data = ml_models['but']
+                        proba_but = float(m_data['model'].predict_proba(X_player)[0, 1])
+                        p_but = common_data.copy()
+                        p_but.update({"Proba": proba_but, "Categorie": cat_but})
+                        final_picks_but.append(p_but)
+                        
+                    if cat_ast and 'ast' in ml_models:
+                        m_data = ml_models['ast']
+                        X_pred = X_player
+                        if m_data.get('algo') == 'logreg' and 'scaler' in m_data:
+                            X_pred = m_data['scaler'].transform(X_pred)
+                        proba_ast = float(m_data['model'].predict_proba(X_pred)[0, 1])
+                        p_ast = common_data.copy()
+                        p_ast.update({"Proba": proba_ast, "Categorie": cat_ast})
+                        final_picks_ast.append(p_ast)
 
             all_evaluated_players.append({
                 "Joueur": player, "Equipe": team, "Adversaire": adv, "IsHome": is_home,
-                "Score_But": probas["buteurs"], "Score_Assist": probas["passeurs"], "Score_Point": probas["pointeurs"],
-                "Picked_But": bool(cat_but), "Picked_Assist": bool(cat_ast), "Picked_Point": bool(cat_pts),
-                "Backup": is_backup, "B2B": team in b2b_teams and adv not in b2b_teams,
+                "Score_But": proba_but, "Score_Assist": proba_ast, "Score_Point": 0.0,
+                "Picked_But": bool(cat_but), "Picked_Assist": bool(cat_ast), "Picked_Point": False,
+                "Backup": is_backup, "B2B": is_b2b,
                 "p_form": p_form, "p_v5": ds.v5_data.get(player, {}), "adv_stats": adv_stats
             })
 
-        # Odds enrichment & +EV Filtering
-        # On crée un dictionnaire {Joueur: Equipe} pour permettre au scraper d'être chirurgical (économise les crédits API)
-        players_to_fetch = {r["Joueur"]: r["Equipe"] for picks_list in (final_picks_but, final_picks_ast, final_picks_pts) for r in picks_list}
+        players_to_fetch = {r["Joueur"]: r["Equipe"] for picks_list in (final_picks_but, final_picks_ast) for r in picks_list}
         odds_map = {}
         if players_to_fetch:
             logger.info(f"Récupération des cotes (API) pour {len(players_to_fetch)} joueurs...")
             from shared.odds_api import fetch_nhl_odds
             odds_map = asyncio.run(fetch_nhl_odds(players_to_fetch))
             
-            for pick in (final_picks_but + final_picks_ast + final_picks_pts):
-                any_odds_found = any(
-                    (data.get('BUTS') is not None) or
-                    (data.get('ASSISTS') is not None) or
-                    (data.get('POINTS') is not None)
-                    for data in odds_map.values()
-                )
-                if not any_odds_found:
-                    logger.error("ALERTE CRITIQUE : AUCUNE COTE TROUVÉE POUR AUCUN JOUEUR DE LA VAGUE !")
-                    self.telegram.send_message(f"🚨 <b>ALERTE CRITIQUE SCRAPER</b> 🚨\nLe scraper de cotes n'a trouvé absolument <b>aucune cote</b> pour l'ensemble des {len(players_to_fetch)} joueurs de la vague {wave_label}.\nThe Odds API n'a renvoyé aucune cote ou la vérification des noms d'équipe a échoué.")
+            any_odds_found = any(
+                (data.get('BUTS') is not None) or (data.get('ASSISTS') is not None)
+                for data in odds_map.values()
+            )
+            if not any_odds_found:
+                logger.error("ALERTE CRITIQUE : AUCUNE COTE TROUVÉE POUR AUCUN JOUEUR DE LA VAGUE !")
+                self.telegram.send_message(f"🚨 <b>ALERTE CRITIQUE SCRAPER</b> 🚨\nLe scraper de cotes n'a trouvé absolument <b>aucune cote</b> pour l'ensemble des {len(players_to_fetch)} joueurs de la vague {wave_label}.\nThe Odds API n'a renvoyé aucune cote ou la vérification des noms d'équipe a échoué.")
 
             for p in final_picks_but:
                 odds_data = odds_map.get(p["Joueur"], {}).get("BUTS", {})
@@ -449,37 +454,25 @@ class NhlBot(BaseSportBot):
                 else:
                     p["Cote"] = None
                     p["Bookmaker"] = "Inconnu"
-            for p in final_picks_pts:
-                odds_data = odds_map.get(p["Joueur"], {}).get("POINTS", {})
-                if isinstance(odds_data, dict):
-                    p["Cote"] = odds_data.get("price")
-                    p["Bookmaker"] = odds_data.get("bookmaker", "Inconnu")
-                else:
-                    p["Cote"] = None
-                    p["Bookmaker"] = "Inconnu"
 
-        # Filtre Cote Minimum + EV (module extrait)
         final_picks_but = [p for p in final_picks_but if is_cote_valid(p, cfg.thresholds.buteurs.cote_min)]
         final_picks_ast = [p for p in final_picks_ast if is_cote_valid(p, cfg.thresholds.passeurs.cote_min)]
-        final_picks_pts = [p for p in final_picks_pts if is_cote_valid(p, cfg.thresholds.pointeurs.cote_min)]
 
-        # Kelly sizing avec Money Management Global
         current_exposure = self.portfolio.get_pending_exposure()
-        max_exposure = 15.0 # Plafond maximal de la bankroll
+        max_exposure = 15.0
         
-        for picks_list in [final_picks_but, final_picks_ast, final_picks_pts]:
+        for picks_list in [final_picks_but, final_picks_ast]:
             current_exposure = apply_kelly_to_picks(picks_list, current_exposure, max_exposure)
-        # Telegram (module extrait)
+            
         msg = format_telegram_v18(
-            final_picks_but, final_picks_ast, final_picks_pts,
+            final_picks_but, final_picks_ast, [],
             wave_label, wave_ids, self.compos_en_memoire
         )
         self.telegram.send_message(msg)
 
-        # Logging (module extrait)
         session_date = self.get_nhl_session_date()
-        log_picks_to_db(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, session_date, ds)
-        log_picks_to_csv(final_picks_but, final_picks_ast, final_picks_pts, all_evaluated_players, wave_label, session_date, self.log_path, self.players_log_path)
+        log_picks_to_db(final_picks_but, final_picks_ast, [], all_evaluated_players, wave_label, session_date, ds)
+        log_picks_to_csv(final_picks_but, final_picks_ast, [], all_evaluated_players, wave_label, session_date, self.log_path, self.players_log_path)
 
     # Plafonds exposés pour les tests (délègue au module kelly)
     from core.kelly import CATEGORY_CAPS

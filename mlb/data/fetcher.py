@@ -97,7 +97,7 @@ def get_pitcher_historical_stats(player_name: str, limit: int = 5) -> Dict[str, 
         conn = sqlite3.connect(DB_PATH)
         # Nettoyage du nom basique pour la correspondance
         query = """
-            SELECT game_date, innings_pitched, strikeouts, hits, earned_runs, bb
+            SELECT game_date, innings_pitched, strikeouts, hits, earned_runs, bb, home_runs
             FROM mlb_pitchers 
             WHERE TRIM(player_name) COLLATE NOCASE LIKE ? 
             ORDER BY game_date DESC 
@@ -133,6 +133,7 @@ def get_pitcher_historical_stats(player_name: str, limit: int = 5) -> Dict[str, 
             "games_analyzed": len(df),
             "avg_k": total_k / len(df) if len(df) > 0 else 0,
             "k_per_9": (total_k * 9) / total_ip if total_ip > 0 else 0,
+            "avg_hr_allowed": df['home_runs'].sum() / len(df) if len(df) > 0 else 0,
             "recent_games": df.to_dict('records')
         }
     except Exception as e:

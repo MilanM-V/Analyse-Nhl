@@ -41,7 +41,7 @@ def get_real_picks():
             df = pd.read_sql(q, conn)
             df['cat'] = cat
             dfs.append(df)
-        except Exception as e:
+        except Exception:
             pass
             
     conn.close()

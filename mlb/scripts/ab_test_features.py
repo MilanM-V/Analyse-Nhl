@@ -11,6 +11,11 @@ Résultat : un tableau comparatif clair pour décider.
 """
 
 import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(ROOT))
+
 import pandas as pd
 import numpy as np
 import xgboost as xgb

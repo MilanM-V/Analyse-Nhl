@@ -161,7 +161,7 @@ class OddsAPIClient:
                                 if mkt['key'] == market:
                                     for outcome in mkt.get('outcomes', []):
                                         player_api = outcome.get('description', outcome.get('name', ''))
-                                        point = outcome.get('point', 0)
+
                                         price = outcome.get('price', 0)
                                         
                                         # Seulement l'Over
@@ -232,3 +232,17 @@ async def fetch_mlb_odds(players_map: Dict[str, str]) -> Dict[str, Dict[str, flo
         return {}
         
     return await OddsAPIClient.fetch_odds('baseball_mlb', 'pitcher_strikeouts', players_map)
+
+async def fetch_mlb_batter_odds(players_map: Dict[str, str], market: str = 'batter_home_runs') -> Dict[str, Dict[str, float]]:
+    """
+    Scrape les cotes MLB pour les frappeurs (Home Runs, Hits, etc.).
+    Args:
+        players_map: Dict {Nom_Joueur: Equipe}.
+        market: Le marché ('batter_home_runs', 'batter_hits', etc.).
+    Returns:
+        Dict des cotes: {'Shohei Ohtani': {'HOME_RUNS': 3.50}}
+    """
+    if not players_map:
+        return {}
+        
+    return await OddsAPIClient.fetch_odds('baseball_mlb', market, players_map)

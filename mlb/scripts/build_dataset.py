@@ -123,9 +123,9 @@ def build_strikeout_dataset(start_date: str, end_date: str):
     # Stats du dataset
     n_umpires = final_df['umpire'].nunique()
     avg_velo = final_df['avg_release_speed'].mean()
-    logger.info(f"✅ Mise à jour SQLite terminée.")
+    logger.info("✅ Mise à jour SQLite terminée.")
     logger.info(f"   📊 {len(final_df)} matchs de lanceurs partants ajoutés.")
-    logger.info(f"   ⚡ Vélocité moyenne : {avg_velo:.1f} mph")
+    logger.info(f"   ⚡ Vélocité moyenne : {avg_velo:.1f} mph (avec {n_umpires} arbitres)")
 
 if __name__ == "__main__":
     from mlb.core.database import init_db, get_latest_game_date

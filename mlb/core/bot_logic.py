@@ -6,7 +6,7 @@ import sys
 import os
 import logging
 import asyncio
-from datetime import datetime
+from typing import Optional
 import pandas as pd
 
 # Ajout du dossier racine
@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from shared.base_bot import BaseSportBot
 from mlb.data.fetcher import get_todays_probables, get_pitcher_historical_stats, get_team_strikeout_rate
 from mlb.core.market_filter import evaluate_pitcher_strikeouts
-from shared.odds_api import fetch_mlb_odds
+from shared.odds_api import fetch_mlb_odds, fetch_mlb_batter_odds
 from shared.telegram_hub import send_telegram
 from shared.portfolio import Portfolio
 
@@ -32,11 +32,13 @@ class MlbBot(BaseSportBot):
         self.portfolio = Portfolio()
         self.scanned_today = False
         
-    def run_scan_cycle(self) -> None:
-        """
-        Cycle de scan principal, exécuté 1-2 fois par jour.
-        """
-        logger.info(f"\n--- ⚾ SCAN MLB DÉMARRÉ ({datetime.now().strftime('%H:%M:%S')}) ---")
+    def run_scan_cycle(self, date_str: Optional[str] = None) -> None:
+        """Exécute le scan complet du jour (uniquement Pitchers désormais)."""
+        self.run_pitcher_scan(date_str)
+
+    def run_pitcher_scan(self, date_str: Optional[str] = None) -> None:
+        """Analyse des Strikeouts (Pitchers)."""
+        logger.info("\n--- ⚾ SCAN MLB PITCHERS (STRIKEOUTS) ---")
         
         # 1. Récupérer les Probables Pitchers du jour
         df_probables = get_todays_probables()
@@ -159,7 +161,7 @@ class MlbBot(BaseSportBot):
                 confiance_emoji = "🔥" if confiance == "ELITE" else "✅" if confiance == "ELEVEE" else "📊"
                 bookmaker = p.get("Bookmaker", "Inconnu")
                 msg += f"{confiance_emoji} <b>{p['Joueur']}</b> ({p['Equipe']}) vs {p['Adversaire']}\n"
-                msg += f"🎯 Marché : OVER Strikeouts\n"
+                msg += "🎯 Marché : OVER Strikeouts\n"
                 msg += f"💰 Cote : <b>{p.get('Cote', 0):.2f}</b> chez <b>{bookmaker}</b>\n"
                 msg += f"🤖 Prédiction IA : <b>{p.get('Predicted_K', 0):.1f} K</b> (Proba: {p.get('Proba', 0):.0%})\n"
                 msg += f"📈 Edge : <b>+{p['EV']}%</b>\n"
@@ -180,6 +182,14 @@ class MlbBot(BaseSportBot):
             send_telegram(msg)
         else:
             logger.info("Aucun value bet MLB trouvé pour ce scan.")
+
+    def run_batter_scan(self, date_str: Optional[str] = None) -> None:
+        """
+        Analyse des Home Runs (Batters).
+        DÉSACTIVÉ : Le marché des Home Runs est structurellement déficitaire.
+        """
+        logger.info("\n--- ⚾ SCAN MLB BATTERS (HOME RUNS) DÉSACTIVÉ ---")
+        return
             
     def end_of_day_cleanup(self) -> None:
         """

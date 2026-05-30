@@ -427,7 +427,7 @@ def compute_last10_stats(all_teams: List[str], game_ids_cache: Dict[str, List[st
 
             for i, play in enumerate(plays_list):
                 t, det = play.get('typeDescKey', ''), play.get('details', {})
-                sit, per = play.get('situationCode', ''), play.get('periodDescriptor', {}).get('number', 1)
+                per = play.get('periodDescriptor', {}).get('number', 1)
 
                 if t in ('shot-on-goal', 'goal', 'missed-shot', 'blocked-shot'):
                     pid = det.get('shootingPlayerId') if t == 'blocked-shot' else (det.get('shootingPlayerId') or det.get('scoringPlayerId'))

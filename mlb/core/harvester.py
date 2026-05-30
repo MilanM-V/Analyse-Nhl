@@ -68,9 +68,13 @@ def init_db():
 def fetch_mlb_day(date_str: str):
     """
     Récupère les scores et stats individuelles (Boxscore) d'une journée précise.
-    date_str format: YYYY-MM-DD
     """
+    init_db() # Sécurité
     logger.info(f"Début du scraping MLB API pour la date : {date_str}")
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
     url_sched = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}"
     
     try:

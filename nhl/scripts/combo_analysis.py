@@ -1,9 +1,8 @@
 """
-Analyse exhaustive de toutes les combinaisons possibles de combinés:
-- Duo Passeurs (intra-match et inter-match)
-- Duo Pointeurs (intra-match et inter-match)
-- Duo Mixte Passeur+Pointeur (intra-match et inter-match)
-- Duo Mixte même joueur (Passeur ET Pointeur sur le même joueur)
+Analyse exhaustive des combinés synergiques (Même équipe):
+- Buteur + Passeur (Même équipe)
+- Passeur + Passeur (Même équipe)
+- Buteur + Buteur (Même équipe)
 """
 import sqlite3
 import pandas as pd
@@ -21,13 +20,13 @@ def load_ev_picks():
     """Charge les picks EV+ avec vraies cotes, classés par date."""
     conn = sqlite3.connect(DB_PATH)
     models = {}
-    for cat in ['ast', 'pts']:
-        path = os.path.join(MODELS_DIR, f'xg_model_{cat}.pkl')
+    for cat in ['but', 'ast']:
+        path = os.path.join(MODELS_DIR, f'ml_model_{cat}.pkl')
         if os.path.exists(path):
             models[cat] = joblib.load(path)
 
     all_picks = []
-    for table, cat, target_col in [("picks_assists", "ast", "assist"), ("picks_points", "pts", "point")]:
+    for table, cat, target_col in [("picks", "but", "but"), ("picks_assists", "ast", "assist")]:
         q = f"""
             SELECT p.date, p.joueur, p.equipe, p.adversaire, p.cote, p.{target_col} as result,
                    pl.ixg, pl.hdcf, pl.sog, pl.atoi, pl.season_g, pl.season_a, pl.season_pts,
@@ -45,23 +44,43 @@ def load_ev_picks():
             continue
 
         m_data = models[cat]
-        feats = m_data['features']
+        if 'features_list' in m_data:
+            feats = m_data['features_list']
+            # We must map df_f correctly based on features_list
+            # But wait, in historical mode we might not have all features.
+            # I will use the exact logic from market_filter.py for historical data
+            pass
+        else:
+            feats = m_data['features']
 
         df_f = pd.DataFrame()
         for col in ['ixg', 'hdcf', 'sog', 'atoi']:
             df_f[f'{col}_l10'] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        for col in ['season_g', 'season_a', 'season_pts', 'ga_g', 'hdca_g']:
-            df_f[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            df_f[col] = pd.to_numeric(df[col], errors='coerce').fillna(0) # Also raw
+        for col in ['season_g', 'season_a', 'season_pts', 'ga_g', 'hdca_g', 'pk_pct', 'cf_pct', 'pdo']:
+            if col in df.columns:
+                df_f[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            else:
+                df_f[col] = 0.0
         for col in ['pp1', 'is_home']:
             df_f[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
         df_f['is_b2b'] = pd.to_numeric(df['b2b'], errors='coerce').fillna(0).astype(int)
         df_f['opp_is_b2b'] = pd.to_numeric(df.get('opp_b2b', 0), errors='coerce').fillna(0).astype(int)
         df_f['consec_goals'] = pd.to_numeric(df.get('consec_goals', 0), errors='coerce').fillna(0)
-        df_f['ixg_x_hdcf'] = df_f['ixg_l10'] * df_f['hdcf_l10']
-        df_f['sog_x_atoi'] = df_f['sog_l10'] * df_f['atoi_l10']
-        df_f['ixg_x_ga'] = df_f['ixg_l10'] * df_f['ga_g']
+        df_f['ixg_x_hdcf'] = df_f['ixg'] * df_f['hdcf']
+        df_f['sog_x_atoi'] = df_f['sog'] * df_f['atoi']
+        df_f['ixg_x_ga'] = df_f['ixg'] * df_f['ga_g']
+
+        # Ensure all required features are present
+        for f in feats:
+            if f not in df_f.columns:
+                df_f[f] = 0
 
         X = df_f[feats].values
+        
+        if 'scaler' in m_data:
+            X = m_data['scaler'].transform(X)
+            
         probas = m_data['model'].predict_proba(X)[:, 1]
         evs = (probas * df['cote'].values) - 1.0
 
@@ -87,38 +106,24 @@ def simulate_combos(df):
 
     for date, day_group in df.groupby('date'):
         day = day_group.to_dict('records')
+        buts = [p for p in day if p['cat'] == 'but']
         asts = [p for p in day if p['cat'] == 'ast']
-        pts = [p for p in day if p['cat'] == 'pts']
 
-        # --- INTRA-MATCH ---
-        # Passeur + Pointeur MEME match (non contradictoire)
-        for a in asts:
-            for p in pts:
-                if a['match'] == p['match'] and a['joueur'] != p['joueur']:
-                    _add_combo(results, "INTRA Passeur+Pointeur (meme match)", a, p)
+        # Synergistic Buteur + Passeur (Même équipe, joueurs différents)
+        for b in buts:
+            for a in asts:
+                if b['equipe'] == a['equipe'] and b['joueur'] != a['joueur']:
+                    _add_combo(results, "SYNERGIE Buteur + Passeur", b, a)
 
-        # Passeur + Pointeur MEME JOUEUR (le joueur fait une passe OU un point - ce sont 2 paris séparés)
-        for a in asts:
-            for p in pts:
-                if a['joueur'] == p['joueur']:
-                    _add_combo(results, "MEME JOUEUR (Passe+Point)", a, p)
-
-        # --- INTER-MATCH ---
-        # Passeur + Passeur matchs différents
+        # Synergistic Passeur + Passeur (Même équipe)
         for a1, a2 in combinations(asts, 2):
-            if a1['match'] != a2['match']:
-                _add_combo(results, "INTER Passeur+Passeur (matchs diff)", a1, a2)
-
-        # Pointeur + Pointeur matchs différents
-        for p1, p2 in combinations(pts, 2):
-            if p1['match'] != p2['match']:
-                _add_combo(results, "INTER Pointeur+Pointeur (matchs diff)", p1, p2)
-
-        # Passeur + Pointeur matchs différents
-        for a in asts:
-            for p in pts:
-                if a['match'] != p['match']:
-                    _add_combo(results, "INTER Passeur+Pointeur (matchs diff)", a, p)
+            if a1['equipe'] == a2['equipe']:
+                _add_combo(results, "SYNERGIE Passeur + Passeur", a1, a2)
+                
+        # Synergistic Buteur + Buteur (Même équipe)
+        for b1, b2 in combinations(buts, 2):
+            if b1['equipe'] == b2['equipe']:
+                _add_combo(results, "SYNERGIE Buteur + Buteur", b1, b2)
 
     return results
 

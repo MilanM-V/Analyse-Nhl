@@ -9,6 +9,11 @@ V2 Features : is_home, L5_K9, Opp_L10_K, L5_Velo, L5_SwStr%, Umpire_K_Factor
 """
 
 import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(ROOT))
+
 import pandas as pd
 import numpy as np
 import xgboost as xgb
@@ -68,6 +73,15 @@ def feature_engineering(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df['L5_SwStr'] = 0
         logger.warning("Colonne 'swinging_strike_pct' absente — L5_SwStr mis à 0.")
+        
+    # 2.5 Spin Rate
+    has_spin = 'avg_spin_rate' in df.columns
+    if has_spin:
+        df['L5_Spin'] = df.groupby('player_name')['avg_spin_rate'].transform(
+            lambda x: x.shift(1).rolling(5, min_periods=1).mean()
+        )
+    else:
+        df['L5_Spin'] = 0
     
     # 3. Umpire K-Factor : Moyenne historique de K par match quand cet arbitre officie
     has_umpire = 'umpire' in df.columns
@@ -115,8 +129,8 @@ def train_and_backtest():
         logger.error("Pas assez de données pour entraîner le modèle.")
         return
         
-    # 2. Préparation pour XGBoost — V2 Features
-    features = ['is_home', 'L5_K9', 'Opp_L10_K', 'L5_Velo', 'L5_SwStr', 'Umpire_K_Factor']
+    # 2. Préparation pour XGBoost — Features Championnes (A/B Test)
+    features = ['is_home', 'L5_K9', 'Opp_L10_K', 'L5_Spin']
     X = df_train[features]
     y = df_train['strikeouts']
     
@@ -136,50 +150,52 @@ def train_and_backtest():
     rmses = []
     maes = []
     
-    profit_u = 0.0
-    paris_joues = 0
-    paris_gagnes = 0
+    # --- GRID SEARCH POUR LE SEUIL (THRESHOLD) OPTIMAL ---
+    logger.info("=== RECHERCHE DU SEUIL OPTIMAL (GRID SEARCH) ===")
+    thresholds = [0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5]
+    best_roi = -999.0
+    best_th = 0.0
     
-    for train_index, test_index in tscv.split(X):
-        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+    for th in thresholds:
+        profit_u = 0.0
+        paris_joues = 0
+        paris_gagnes = 0
         
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
-        
-        rmses.append(np.sqrt(mean_squared_error(y_test, preds)))
-        maes.append(mean_absolute_error(y_test, preds))
-        
-        # --- SIMULATION ROI (1 Unité) ---
-        lignes_bookmaker = np.round(X_test['L5_K9'])
-        
-        for i in range(len(preds)):
-            pred_k = preds[i]
-            ligne = lignes_bookmaker.iloc[i]
-            vrai_k = y_test.iloc[i]
+        for train_index, test_index in tscv.split(X):
+            X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+            y_train, y_test = y.iloc[train_index], y.iloc[test_index]
             
-            # Si l'IA prédit que le lanceur fera au moins 0.8 K de plus que sa ligne, on parie "OVER"
-            if pred_k >= ligne + 0.8:
-                paris_joues += 1
-                if vrai_k > ligne:
-                    profit_u += 0.85  # Gain net (Cote 1.85 - 1U mise)
-                    paris_gagnes += 1
-                else:
-                    profit_u -= 1.0   # Perte de la mise
-                    
-    logger.info("=== RÉSULTATS BACKTEST V2 (Validation Croisée) ===")
-    logger.info(f"Erreur Absolue Moyenne (MAE) : {np.mean(maes):.2f} Strikeouts")
-    logger.info(f"RMSE : {np.mean(rmses):.2f}")
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+            
+            lignes_bookmaker = np.round(X_test['L5_K9'])
+            
+            for i in range(len(preds)):
+                pred_k = preds[i]
+                ligne = lignes_bookmaker.iloc[i]
+                vrai_k = y_test.iloc[i]
+                
+                if pred_k >= ligne + th:
+                    paris_joues += 1
+                    if vrai_k > ligne:
+                        profit_u += 0.85
+                        paris_gagnes += 1
+                    else:
+                        profit_u -= 1.0
+                        
+        if paris_joues > 0:
+            roi = (profit_u / paris_joues) * 100
+            winrate = (paris_gagnes / paris_joues) * 100
+            logger.info(f"Seuil +{th:.1f} -> Paris: {paris_joues:3d} | Winrate: {winrate:4.1f}% | Profit: {profit_u:+5.2f} U | ROI: {roi:+5.1f}%")
+            if roi > best_roi and paris_joues >= 20: # Min 20 paris pour être significatif
+                best_roi = roi
+                best_th = th
+                
+    logger.info(f"🏆 SEUIL OPTIMAL TROUVÉ : +{best_th:.1f} K (ROI: {best_roi:+.1f}%)")
     
-    logger.info("=== SIMULATION DE PORTEFEUILLE (Flat Betting 1U) ===")
-    if paris_joues > 0:
-        winrate = (paris_gagnes / paris_joues) * 100
-        roi = (profit_u / paris_joues) * 100
-        logger.info(f"Paris joués : {paris_joues}")
-        logger.info(f"Winrate : {winrate:.1f}% ({paris_gagnes} Gagnés / {paris_joues - paris_gagnes} Perdus)")
-        logger.info(f"Profit : {profit_u:+.2f} Unités (ROI: {roi:+.1f}%)")
-    else:
-        logger.info("Aucun pari n'a validé les critères du modèle.")
+    # On sauvegarde le threshold optimal dans le fichier pour l'inférence
+    global OPTIMAL_THRESHOLD
+    OPTIMAL_THRESHOLD = best_th
     
     # 4. Entraînement final sur tout le dataset
     model.fit(X, y)
@@ -194,8 +210,8 @@ def train_and_backtest():
         
     # 5. Sauvegarde
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    joblib.dump(model, MODEL_PATH)
-    logger.info(f"✅ Modèle V2 sauvegardé dans {MODEL_PATH}")
+    joblib.dump({'model': model, 'threshold': OPTIMAL_THRESHOLD}, MODEL_PATH)
+    logger.info(f"✅ Modèle V2 et Seuil ({OPTIMAL_THRESHOLD}) sauvegardés dans {MODEL_PATH}")
 
 if __name__ == "__main__":
     train_and_backtest()
