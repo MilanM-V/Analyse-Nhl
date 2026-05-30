@@ -2,7 +2,7 @@
 config/settings.py — Charge le fichier TOML de configuration et expose les valeurs.
 
 Usage:
-    from config.settings import cfg
+    from nhl.config.settings import cfg
     print(cfg.thresholds.buteurs.elite_qs)  # 9.75
 """
 

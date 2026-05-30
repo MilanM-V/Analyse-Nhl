@@ -176,3 +176,10 @@ Ce projet est sous licence MIT â€“ voir le fichier [LICENSE](LICENSE) pour plus 
 - Audit statistique des algorithmes (LightGBM vs XGBoost) et des stratégies de combinés ajouté dans optimization_report.md.
 
 - Intégration de combinés synergiques Passeur-Passeur via combo_analysis.py après un test massif sur l'historique de la NHL (+123% ROI).
+
+
+## 2026-05-31 - Bug Fixes
+- Fixed ModuleNotFoundError by replacing local imports (from core, data, config) with absolute imports (from nhl.core, etc.).
+- Fixed AssertionError in test_bot_logic (BUTEUR cap to 1.5).
+- Fixed SessionNotCreatedException in test_dfo by forcing webdriver version_main=148.
+- Updated test fixtures to use correct monkeypatch targets.

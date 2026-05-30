@@ -10,7 +10,7 @@ import joblib
 import numpy as np
 from typing import Dict, Any, Optional, Tuple
 
-from config.settings import cfg
+from nhl.config.settings import cfg
 
 logger = logging.getLogger("NHL.Filter")
 

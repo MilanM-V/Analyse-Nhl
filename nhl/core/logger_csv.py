@@ -8,8 +8,8 @@ import csv
 import logging
 from typing import Dict, List, Any
 
-from core.database import insert_pick, insert_player
-from config.settings import cfg
+from nhl.core.database import insert_pick, insert_player
+from nhl.config.settings import cfg
 
 logger = logging.getLogger("NHL.LoggerCSV")
 

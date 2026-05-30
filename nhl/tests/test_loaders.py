@@ -1,7 +1,7 @@
 import pytest
 import os
 import pandas as pd
-from core.loaders import (
+from nhl.core.loaders import (
     clean_team_name, load_goalie_stats, load_on_ice_stats, 
     load_v5_base_stats, load_recent_form, load_matchup_data_mp
 )

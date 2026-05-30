@@ -8,7 +8,7 @@ from pathlib import Path
 
 # ─── PATH SETUP (Multi-Sport Architecture) ───────────────────────────────────
 # Ensures imports work regardless of how this script is launched:
-#   - SPORT_DIR (nhl/) → makes 'from config.settings import cfg' work
+#   - SPORT_DIR (nhl/) → makes 'from nhl.config.settings import cfg' work
 #   - REPO_ROOT        → makes 'from shared.telegram_hub import ...' work
 _SPORT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SPORT_DIR.parent
@@ -25,10 +25,10 @@ from dotenv import load_dotenv
 # Load .env from repo root (secrets are shared across all sports)
 load_dotenv(_REPO_ROOT / ".env")
 
-from core.datastore import DataStore
-from core.services import TelegramNotifier, create_telegram_app
-from core.bot_logic import NhlBot
-from config.settings import cfg
+from nhl.core.datastore import DataStore
+from nhl.core.services import TelegramNotifier, create_telegram_app
+from nhl.core.bot_logic import NhlBot
+from nhl.config.settings import cfg
 
 logger = logging.getLogger("NHL")
 logger.setLevel(logging.INFO)
@@ -46,7 +46,7 @@ if hasattr(time, 'tzset'):
 
 def main():
     # Initialisation minimale avant le try global
-    from core.database import init_db
+    from nhl.core.database import init_db
     init_db()  # Auto-migration de la BDD lors du push serveur
     
     if not os.path.exists("./stats"):

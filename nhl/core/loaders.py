@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional, Set, Tuple
 logger = logging.getLogger("NHL.Loaders")
 
 # Imports centralisés depuis la source unique (config/constants.py)
-from config.constants import (
+from nhl.config.constants import (
     TEAM_FULL_TO_ABBR as TEAM_MAPPING,
     TEAM_ABBR_TO_FULL as REVERSE_TEAM_MAPPING,
     TEAM_CLEANER,

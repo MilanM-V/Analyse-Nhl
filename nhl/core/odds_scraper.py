@@ -122,7 +122,7 @@ async def fetch_multiple_odds(players_to_teams: Dict[str, str], telegram=None) -
         logger.error(f"[Odds API] Erreur : {e}")
         return {name: {"player": name, "BUTS": None, "ASSISTS": None, "POINTS": None} for name in players_to_teams}
 
-    from config.constants import TEAM_FULL_TO_ABBR
+    from nhl.config.constants import TEAM_FULL_TO_ABBR
     import unicodedata
 
     def normalize(text: str) -> str:

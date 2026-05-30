@@ -2,16 +2,16 @@ import pytest
 import sqlite3
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from core.database import init_db, insert_pick, get_roi_stats, get_connection
+from nhl.core.database import init_db, insert_pick, get_roi_stats, get_connection
 
 
 @pytest.fixture
 def test_db(tmp_path, monkeypatch):
     """Crée une base de données SQLite temporaire pour les tests."""
     db_path = str(tmp_path / "test_bot.db")
-    monkeypatch.setattr("core.database.DB_PATH", db_path)
+    monkeypatch.setattr("nhl.core.database.DB_PATH", db_path)
     init_db()
     return db_path
 

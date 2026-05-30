@@ -1,5 +1,5 @@
 import logging
-from core.updater import update_pending_picks
+from nhl.core.updater import update_pending_picks
 
 # Configurer les logs pour voir ce que fait l'updater
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

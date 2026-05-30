@@ -15,9 +15,9 @@ import core.loaders as loaders
 import core.scraper as scraper
 
 import asyncio
-from core.datastore import DataStore
-from core.services import TelegramNotifier
-from config.settings import cfg
+from nhl.core.datastore import DataStore
+from nhl.core.services import TelegramNotifier
+from nhl.config.settings import cfg
 
 logger = logging.getLogger("NHL.BotLogic")
 
@@ -97,7 +97,7 @@ class NhlBot(BaseSportBot):
                 logger.info(f"\n[{now.strftime('%H:%M:%S')}] MISE À JOUR API NHL EN COURS...")
 
             try:
-                from data.fetcher import update_all_stats_sync
+                from nhl.data.fetcher import update_all_stats_sync
                 update_all_stats_sync()
                 
                 ok2, ko2 = self._check_csv_integrity()
@@ -285,10 +285,10 @@ class NhlBot(BaseSportBot):
 
     def run_analysis_and_send(self, wave_ids: List[str], wave_label: str) -> None:
         """Performs analysis on a wave of matches and sends results."""
-        from core.market_filter import load_ml_models, prepare_features_for_player, evaluate_player_markets
-        from core.kelly import is_cote_valid, apply_kelly_to_picks
-        from core.formatter import format_telegram_v18
-        from core.logger_csv import log_picks_to_db, log_picks_to_csv
+        from nhl.core.market_filter import load_ml_models, prepare_features_for_player, evaluate_player_markets
+        from nhl.core.kelly import is_cote_valid, apply_kelly_to_picks
+        from nhl.core.formatter import format_telegram_v18
+        from nhl.core.logger_csv import log_picks_to_db, log_picks_to_csv
 
         logger.info(f"\n--- ANALYSE VAGUE {wave_label} ---")
 
@@ -475,17 +475,17 @@ class NhlBot(BaseSportBot):
         log_picks_to_csv(final_picks_but, final_picks_ast, [], all_evaluated_players, wave_label, session_date, self.log_path, self.players_log_path)
 
     # Plafonds exposés pour les tests (délègue au module kelly)
-    from core.kelly import CATEGORY_CAPS
+    from nhl.core.kelly import CATEGORY_CAPS
 
     def _calculate_quarter_kelly(self, proba: float, cote: float, categorie: str = "") -> str:
         """Proxy vers core.kelly.calculate_quarter_kelly pour compatibilité."""
-        from core.kelly import calculate_quarter_kelly
+        from nhl.core.kelly import calculate_quarter_kelly
         return calculate_quarter_kelly(proba, cote, categorie)
 
     def end_of_day_cleanup(self) -> None:
         """Resolves pending picks and cleans up session data."""
         try:
-            from core.updater import update_pending_picks
+            from nhl.core.updater import update_pending_picks
             logger.info("🔄 Auto-résolution des résultats dans la DB avant le rapport final...")
             update_pending_picks()
         except Exception as e:

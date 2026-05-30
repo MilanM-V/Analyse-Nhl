@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from data.fetcher import api_get
+from nhl.data.fetcher import api_get
 
 def test_api_get_success():
     """Vérifie que la requête retourne du JSON en cas de succès 200."""
@@ -18,7 +18,7 @@ def test_api_get_success():
     
     asyncio.run(run_test())
 
-@patch('data.fetcher.asyncio.sleep')
+@patch('nhl.data.fetcher.asyncio.sleep')
 def test_api_get_retry_429(mock_sleep):
     """Vérifie que le système effectue un retry exponentiel en cas de HTTP 429."""
     async def run_test():

@@ -9,12 +9,12 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from  core.database import get_connection
-from core.services import safe_get
+from nhl.core.services import safe_get
 
 logger = logging.getLogger("NHL.Updater")
 
 # Import centralisé depuis la source unique
-from config.constants import ALL_ABBRS
+from nhl.config.constants import ALL_ABBRS
 
 def normalize_name(name):
     """Supprime les accents et normalise le texte pour faciliter la comparaison."""
@@ -184,8 +184,8 @@ async def log_closing_lines() -> None:
     Can be run as a cron job 10 minutes before matches start to get the actual CLV.
     """
     import asyncio
-    from core.database import get_connection
-    from core.odds_scraper import fetch_multiple_odds
+    from nhl.core.database import get_connection
+    from nhl.core.odds_scraper import fetch_multiple_odds
     
     logger.info("[CLV] Démarrage du tracking des cotes de clôture (Closing Lines)...")
 

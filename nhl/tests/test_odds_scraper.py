@@ -1,9 +1,9 @@
 import pytest
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from core.odds_scraper import normalize_name_for_url
+from nhl.core.odds_scraper import normalize_name_for_url
 
 
 class TestNormalizeNameForUrl:
@@ -20,20 +20,20 @@ class TestOddsAPIStructure:
     """Vérifie que la structure du module Odds API est cohérente."""
 
     def test_cache_structure(self):
-        from core.odds_scraper import _CACHE
+        from nhl.core.odds_scraper import _CACHE
         assert "data" in _CACHE
         assert "timestamp" in _CACHE
 
     def test_api_key_env_var(self):
         """Vérifie que la variable d'env est lue (peut être None en test)."""
-        from core.odds_scraper import API_KEY
+        from nhl.core.odds_scraper import API_KEY
         # API_KEY peut être None en CI, mais ne doit pas crasher
         assert API_KEY is None or isinstance(API_KEY, str)
 
     def test_fetch_multiple_odds_no_key(self):
         """Sans clé API, retourne des résultats vides avec la structure correcte."""
         import asyncio
-        from core.odds_scraper import fetch_multiple_odds
+        from nhl.core.odds_scraper import fetch_multiple_odds
         
         # Simuler sans clé API
         import core.odds_scraper as ods

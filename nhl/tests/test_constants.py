@@ -1,5 +1,5 @@
 import pytest
-from config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL, ALL_ABBRS
+from nhl.config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL, ALL_ABBRS
 
 def test_team_mapping_count():
     """Vérifie qu'on a bien toutes les équipes NHL (32 franchises actives + 1 de renommée ou extension)."""

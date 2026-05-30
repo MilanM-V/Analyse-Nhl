@@ -1,4 +1,4 @@
-from core.updater import match_player_name
+from nhl.core.updater import match_player_name
 
 def test_matching():
     test_cases = [

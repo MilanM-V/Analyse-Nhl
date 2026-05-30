@@ -197,11 +197,11 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
 
         await query.edit_message_text(text=f"⏳ Calcul du ROI ({label})... Validation API en cours.")
 
-        from core.updater import update_pending_picks
+        from nhl.core.updater import update_pending_picks
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, update_pending_picks)
 
-        from core.database import get_roi_stats
+        from nhl.core.database import get_roi_stats
         
         msg = f"💰 <b>ROI ({label})</b> :\n\n"
         msg += get_roi_stats("picks", "but", days) + "\n"
@@ -228,7 +228,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         """Handler for /resetdb command."""
         if update.message:
             await update.message.reply_text("⚠️ Suppression de la base de données SQLite en cours...")
-        from core.database import reset_db
+        from nhl.core.database import reset_db
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, reset_db)
         if update.message:
@@ -284,7 +284,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
 
     async def job_log_closing_lines(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Tracks the closing lines (CLV) before evening matches start."""
-        from core.updater import log_closing_lines
+        from nhl.core.updater import log_closing_lines
         await log_closing_lines()
 
     async def job_recalc_probas(context: ContextTypes.DEFAULT_TYPE) -> None:

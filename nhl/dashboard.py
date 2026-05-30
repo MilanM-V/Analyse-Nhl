@@ -7,9 +7,9 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config.settings import cfg
-from core.market_filter import evaluate_player_markets, load_dynamic_probas
-from core.kelly import calculate_quarter_kelly, CATEGORY_CAPS
+from nhl.config.settings import cfg
+from nhl.core.market_filter import evaluate_player_markets, load_dynamic_probas
+from nhl.core.kelly import calculate_quarter_kelly, CATEGORY_CAPS
 
 # Compatibilité r/w TOML
 try:
@@ -48,7 +48,7 @@ def load_and_simulate(unit_value_euro: float, mode_filter: str = "all"):
     if not os.path.exists(DB_PATH) or not os.path.exists(SETTINGS_PATH):
         return pd.DataFrame(), {}
 
-    # La config est chargée globalement via 'from config.settings import cfg'
+    # La config est chargée globalement via 'from nhl.config.settings import cfg'
     # 'probas' est chargé dynamiquement via import. On peut s'en passer ici.
 
     # Connexion DB : On charge TOUS les joueurs évalués

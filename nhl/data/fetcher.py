@@ -17,9 +17,9 @@ import pandas as pd
 from collections import defaultdict
 from typing import Dict, List, Any, Set
 
-from config.settings import cfg
-from config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL
-from data.cache import get_pbp, get_toi_from_boxscore, cleanup_pbp_cache, FOLDER_NAME
+from nhl.config.settings import cfg
+from nhl.config.constants import TEAM_FULL_TO_ABBR, TEAM_ABBR_TO_FULL
+from nhl.data.cache import get_pbp, get_toi_from_boxscore, cleanup_pbp_cache, FOLDER_NAME
 
 logger = logging.getLogger("NHL.Fetcher")
 

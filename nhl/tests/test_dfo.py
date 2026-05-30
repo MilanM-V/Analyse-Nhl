@@ -10,7 +10,7 @@ def test_dfo():
     if not chrome_path:
         pytest.skip("Chrome executable introuvable sur cette machine.")
     options.binary_location = chrome_path
-    driver = uc.Chrome(options=options)
+    driver = uc.Chrome(options=options, version_main=148)
     
     driver.get("https://www.dailyfaceoff.com/teams/washington-capitals/line-combinations")
     time.sleep(3)

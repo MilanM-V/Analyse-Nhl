@@ -27,7 +27,7 @@ async def get_pbp(session, game_id, api_get_func):
         with open(cache_path) as f:
             return json.load(f)
             
-    from config.settings import cfg
+    from nhl.config.settings import cfg
     url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play"
     data = await api_get_func(session, url)
     if data:

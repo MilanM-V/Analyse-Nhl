@@ -1,11 +1,11 @@
 import pytest
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from core.bot_logic import NhlBot
-from core.datastore import DataStore
-from core.services import TelegramNotifier
+from nhl.core.bot_logic import NhlBot
+from nhl.core.datastore import DataStore
+from nhl.core.services import TelegramNotifier
 from unittest.mock import MagicMock
 
 
@@ -22,11 +22,11 @@ class TestQuarterKelly:
     """Tests du calcul de mise (Quarter Kelly)."""
 
     def test_kelly_buteur_cap(self, bot):
-        """BUTEUR plafonné à 3.0 U."""
+        """BUTEUR plafonné à 1.5 U."""
         result = bot._calculate_quarter_kelly(proba=0.55, cote=2.5, categorie="BUTEUR")
         if result != "0 U":
             units = float(result.replace(" U", ""))
-            assert units <= 3.0, f"BUTEUR ne doit JAMAIS dépasser 3.0 U, got {units}"
+            assert units <= 1.5, f"BUTEUR ne doit JAMAIS dépasser 1.5 U, got {units}"
 
     def test_kelly_negative_value(self, bot):
         """Proba faible + grosse cote = value négative → retourne '0 U'."""
@@ -54,7 +54,7 @@ class TestCategoryCaps:
         assert "POINTEUR" in NhlBot.CATEGORY_CAPS
 
     def test_caps_values(self):
-        assert NhlBot.CATEGORY_CAPS["BUTEUR"] == 3.0
+        assert NhlBot.CATEGORY_CAPS["BUTEUR"] == 1.5
         assert NhlBot.CATEGORY_CAPS["PASSEUR"] == 2.0
         assert NhlBot.CATEGORY_CAPS["POINTEUR"] == 2.0
 

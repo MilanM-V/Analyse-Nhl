@@ -8,9 +8,9 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
 import core.loaders as loaders
-from core.database import insert_parlay
+from nhl.core.database import insert_parlay
 
-from config.settings import cfg
+from nhl.config.settings import cfg
 
 logger = logging.getLogger("NHL.Formatter")
 
