@@ -37,10 +37,11 @@ def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str 
     b = cote - 1.0
     p = proba
 
-    # Pénalité pour les défenseurs : leur taux de conversion réel
-    # est inférieur aux forwards (tirs lointains)
-    if categorie == "DÉFENSEUR":
-        p = p * 0.6
+    # NOTE (V2): La pénalité défenseur (p * 0.6) a été supprimée.
+    # Le modèle calibré (CalibratedClassifierCV isotonique) produit
+    # des probabilités déjà ajustées par position via les features
+    # (ixg, sog, hdcf sont naturellement plus bas pour les D-men).
+    # Garder le patch en plus = double pénalité injustifiée.
 
     q = 1.0 - p
     f = (p * b - q) / b
@@ -81,9 +82,17 @@ def is_cote_valid(pick: dict, cote_min: float) -> bool:
         return False
         
     ev = (pick["Proba"] * pick["Cote"]) - 1.0
-    # FILTRE EV STRICT (Nouveau Cerveau IA) : Rejet si EV < 5%
-    if ev < 0.05:
-        logger.debug(f"Pari Rejeté (-EV / Marge Faible) : {pick['Joueur']} (EV: {ev*100:.1f}%)")
+    # FILTRE EV ADAPTATIF (P9) : Seuil dynamique selon la hauteur de la cote
+    cote = pick["Cote"]
+    if cote < 2.00:
+        min_ev = 0.08   # 8% pour contrer le vig bookmaker sur les petites cotes
+    elif cote <= 3.50:
+        min_ev = 0.05   # 5% zone standard
+    else:
+        min_ev = 0.10   # 10% pour compenser la forte variance sur les grosses cotes
+
+    if ev < min_ev:
+        logger.debug(f"Pari Rejeté (EV {ev*100:.1f}% < requis {min_ev*100:.0f}%) : {pick['Joueur']} @ {cote:.2f}")
         return False
     return True
 

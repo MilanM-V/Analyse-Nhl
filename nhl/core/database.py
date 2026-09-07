@@ -102,6 +102,7 @@ def init_db() -> None:
         ("hdcf", "REAL DEFAULT 0"),
         ("sog", "REAL DEFAULT 0"),
         ("atoi", "REAL DEFAULT 0"),
+        ("goalie_sv_pct", "REAL DEFAULT NULL"),  # P5: Save % du gardien adverse
     ]
     
     for table in tables_to_fix:

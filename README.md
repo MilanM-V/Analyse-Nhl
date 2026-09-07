@@ -183,3 +183,17 @@ Ce projet est sous licence MIT – voir le fichier [LICENSE](LICENSE) pour plus 
 - Fixed AssertionError in test_bot_logic (BUTEUR cap to 1.5).
 - Fixed SessionNotCreatedException in test_dfo by forcing webdriver version_main=148.
 - Updated test fixtures to use correct monkeypatch targets.
+
+## 2026-09-07 - V20: ML Refactoring & Multi-Boosting Ensemble
+- **P1/P2**: Correction data leakage — holdout temporel strict + scale_pos_weight dynamique + calibration isotonique.
+- **P3/P6**: Scripts d'analyse statistique avancee (clv_analysis.py, significance_tests.py).
+- **P4**: Walk-Forward Backtest 100% Out-of-Sample jour par jour avec re-entrainement periodique.
+- **P5**: Features cles implied_prob et goalie_weakness.
+- **P8 (Multi-Boosting Ensemble)**: Benchmark comparatif de XGBoost, LightGBM et CatBoost sous TimeSeriesSplit.
+  - Buteurs : CatBoost champion absolu (AUC 0.6678, Brier 0.1509).
+  - Passeurs : LightGBM champion (Brier 0.2352).
+  - Architecture d'Ensemble deployee (NHLEnsembleClassifier dans nhl/core/ensemble_model.py) combinant les 3 algorithmes avec calibration isotonique.
+- **P7 (Optuna Tuning)**: nhl/scripts/tune_hyperparams.py pour l'optimisation bayesienne des hyperparametres.
+- **P9 (Seuils EV Adaptatifs)**: Seuils dynamiques selon la cote dans shared/kelly.py et settings.toml.
+- **P10 (Features Trios & On-Ice)**: is_top6, linemate_synergy et team_scoring_env deployes.
+- **Resultat Walk-Forward Final**: +26.06 U (+32.4% ROI global), Max Drawdown -9.52 U.

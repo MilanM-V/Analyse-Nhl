@@ -13,3 +13,7 @@ pybaseball
 xgboost
 joblib
 scikit-learn
+scipy
+optuna
+lightgbm
+catboost

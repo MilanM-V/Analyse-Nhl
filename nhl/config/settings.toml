@@ -32,6 +32,14 @@ cote_min = 1.70  # Sécurité : Break-even minimum
 [thresholds.general]
 atoi_min = 13.0
 
+[thresholds.ev_adaptive]
+# Seuils EV dynamiques selon la cote (P9)
+low_odds_cutoff = 2.00
+low_odds_min_ev = 0.08   # 8% minimum pour contrer le vig bookmaker
+mid_odds_cutoff = 3.50
+mid_odds_min_ev = 0.05   # 5% zone standard
+high_odds_min_ev = 0.10  # 10% pour compenser la forte variance
+
 [kelly]
 # Quarter Kelly fraction is used in bot_logic / kelly
 buteur_cap = 1.5

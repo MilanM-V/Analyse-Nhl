@@ -42,8 +42,26 @@ def load_ml_models() -> Dict[str, Any]:
 
 def prepare_features_for_player(p_form: Dict[str, Any], v5_p: Dict[str, Any], adv_stats: Dict[str, Any], 
                                 is_home: bool, b2b: bool, opp_b2b: bool, pp1: bool, consec_goals: int, 
-                                features_list: list) -> np.ndarray:
-    """Prépare le vecteur de features pour un joueur pour l'inférence ML."""
+                                features_list: list, cote: float = None,
+                                goalie_sv_pct: float = None) -> np.ndarray:
+    """Prépare le vecteur de features pour un joueur pour l'inférence ML.
+
+    Args:
+        p_form: Stats récentes (last 10 games).
+        v5_p: Stats saison complète.
+        adv_stats: Stats de l'équipe adverse.
+        is_home: True si le joueur joue à domicile.
+        b2b: True si l'équipe joue un back-to-back.
+        opp_b2b: True si l'adversaire joue un back-to-back.
+        pp1: True si le joueur est sur le PP1.
+        consec_goals: Nombre de matchs consécutifs avec but.
+        features_list: Liste ordonnée des features pour le modèle.
+        cote: Cote décimale du bookmaker (optionnel, pour implied_prob).
+        goalie_sv_pct: Save % du gardien adverse (optionnel, ex: 0.915).
+
+    Returns:
+        np.ndarray de shape (1, n_features) prêt pour predict_proba.
+    """
     # Extractions
     ixg_l10 = float(p_form.get('L10_ixG_G', 0))
     hdcf_l10 = float(p_form.get('L10_iHDCF_G', 0))
@@ -80,11 +98,43 @@ def prepare_features_for_player(p_form: Dict[str, Any], v5_p: Dict[str, Any], ad
         'consec_goals': float(consec_goals),
         'ixg_x_hdcf': ixg_x_hdcf,
         'sog_x_atoi': sog_x_atoi,
-        'ixg_x_ga': ixg_x_ga
+        'ixg_x_ga': ixg_x_ga,
+        # === NOUVELLES FEATURES (P5) ===
+        # Cote implicite du marché : feature #1 en paris sportifs.
+        # Capture l'opinion agrégée de milliers de parieurs/modèles.
+        'implied_prob': (1.0 / cote) if (cote and cote > 1.05) else 0.0,
+        # Gardien adverse : faiblesse = 1 - SV%.
+        # Plus le gardien est faible, plus la valeur est élevée.
+        'goalie_weakness': (
+            (1.0 - goalie_sv_pct)
+            if (goalie_sv_pct and goalie_sv_pct > 0)
+            else 0.08  # Default league average (1 - 0.920)
+        ),
+        # === NOUVELLES FEATURES (P10 — Synergies de Trios & On-Ice) ===
+        'is_top6': 1.0 if (atoi_l10 >= 17.0 or pp1) else 0.0,
+        'linemate_synergy': (season_g + season_a) * (1.0 if pp1 else 0.0),
+        'team_scoring_env': ga_g * hdca_g,
     }
     
     # Construire le vecteur exact dans l'ordre du modèle
     return np.array([[feat_dict.get(f, 0.0) for f in features_list]])
+
+
+def get_adaptive_ev_threshold(cote: float, default_ev: float = 0.05) -> float:
+    """Calcule le seuil EV adaptatif selon la cote décimale (P9).
+
+    - Cote basse (< 2.00) : Seuil 8% (contrer le vig élevé et marge de bruit)
+    - Cote médiane (2.00 - 3.50) : Seuil 5% (zone de compromis optimale)
+    - Cote haute (> 3.50) : Seuil 10% (contrer le long-shot bias et forte variance)
+    """
+    if not cote or cote <= 1.05:
+        return default_ev
+    if cote < 2.00:
+        return 0.08
+    elif cote <= 3.50:
+        return 0.05
+    else:
+        return 0.10
 
 
 def evaluate_player_markets(
