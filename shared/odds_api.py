@@ -175,13 +175,25 @@ class OddsAPIClient:
                                                     
                                                     market_cap = market.upper().replace('PLAYER_', '').replace('PITCHER_', '')
                                                     
-                                                    # Si pas encore de cote, ou si la nouvelle cote est MEILLEURE (Line Shopping)
+                                                    # Priorité absolue à Winamax (bookmaker principal de l'utilisateur)
                                                     existing_data = results[p_name].get(market_cap)
-                                                    if not existing_data or price > existing_data['price']:
+                                                    is_wm = (bm_key == "winamax")
+                                                    
+                                                    if is_wm:
+                                                        # Winamax est prioritaire absolu
                                                         results[p_name][market_cap] = {
                                                             "price": price,
-                                                            "bookmaker": bm_name
+                                                            "bookmaker": "Winamax",
+                                                            "is_winamax": True
                                                         }
+                                                    elif not existing_data or not existing_data.get('is_winamax'):
+                                                        # Fallback si Winamax n'a pas encore coté ce joueur
+                                                        if not existing_data or price > existing_data['price']:
+                                                            results[p_name][market_cap] = {
+                                                                "price": price,
+                                                                "bookmaker": bm_name,
+                                                                "is_winamax": False
+                                                            }
                 except Exception as e:
                     logger.error(f"Erreur connexion Odds API pour event {event_id}: {e}")
                     
@@ -212,11 +224,17 @@ async def fetch_nhl_odds(players_map: Dict[str, str]) -> Dict[str, Dict[str, flo
     for name in players_map.keys():
         final_results[name] = {}
         if name in res_buteur and 'GOAL_SCORER_ANYTIME' in res_buteur[name]:
-            final_results[name]['BUTEUR'] = res_buteur[name]['GOAL_SCORER_ANYTIME']
+            data_but = res_buteur[name]['GOAL_SCORER_ANYTIME']
+            final_results[name]['BUTEUR'] = data_but
+            final_results[name]['BUTS'] = data_but
         if name in res_assist and 'ASSISTS' in res_assist[name]:
-            final_results[name]['PASSEUR'] = res_assist[name]['ASSISTS']
+            data_ast = res_assist[name]['ASSISTS']
+            final_results[name]['PASSEUR'] = data_ast
+            final_results[name]['ASSISTS'] = data_ast
         if name in res_points and 'POINTS' in res_points[name]:
-            final_results[name]['POINTEUR'] = res_points[name]['POINTS']
+            data_pts = res_points[name]['POINTS']
+            final_results[name]['POINTEUR'] = data_pts
+            final_results[name]['POINTS'] = data_pts
             
     return final_results
 

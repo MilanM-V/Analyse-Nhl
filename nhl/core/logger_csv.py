@@ -96,7 +96,8 @@ def log_picks_to_db(
             "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0) if adv else 0,
             "cf_pct": adv.get("CF_pct", 50) if adv else 50, "hdca_g": adv.get("HDCA_G", 0) if adv else 0,
             "pk_pct": adv.get("PK%", 80) if adv else 80,
-            "consec_goals": f.get("ConsecGoals", 0), "game_mode": cfg.api.mode
+            "consec_goals": f.get("ConsecGoals", 0), "game_mode": cfg.api.mode,
+            "cote": p.get("Cote"), "goalie_sv_pct": p.get("goalie_sv_pct")
         })
 
 

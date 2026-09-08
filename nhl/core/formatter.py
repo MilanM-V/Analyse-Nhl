@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
-import core.loaders as loaders
+import nhl.core.loaders as loaders
 from nhl.core.database import insert_parlay
 
 from nhl.config.settings import cfg
@@ -124,73 +124,51 @@ def _build_parlays_section(
 ) -> str:
     """Construit la section combinés du message Telegram et insère en DB.
 
-    Args:
-        buts: Picks buteurs.
-        assists: Picks passeurs.
-        points: Picks pointeurs.
-        wave_label: Label de la vague.
-
-    Returns:
-        Section HTML des combinés.
+    Utilise parlay_engine pour générer :
+    1. INTRA-MATCH Synergique (Passeur + Buteur PP1).
+    2. INTER-MATCH Sécurisé (Double Passeurs sur matchs distincts).
     """
+    from nhl.core.parlay_engine import generate_correlated_parlays, generate_dual_assist_parlays
+
     msg = ""
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    best_pts = get_best_per_match(points)
-    best_ast = get_best_per_match(assists)
-    best_but = get_best_per_match(buts)
-
-    best_pts.sort(key=lambda x: -((x.get('Proba', 0) * x.get('Cote', 1)) - 1.0))
-    best_ast.sort(key=lambda x: -((x.get('Proba', 0) * x.get('Cote', 1)) - 1.0))
-    best_but.sort(key=lambda x: -((x.get('Proba', 0) * x.get('Cote', 1)) - 1.0))
-
-    def _add_combo(p1: Dict, p2: Dict, label: str, emoji: str, type_combo: str, mise: float, p3: Dict = None) -> str:
-        """Helper pour formatter un combiné et l'insérer en DB."""
-        legs = [p1, p2] + ([p3] if p3 else [])
-        cote_combo = round(p1['Cote'] * p2['Cote'] * (p3['Cote'] if p3 else 1.0), 2)
+    def _add_combo(p1_name: str, p1_cote: float, p2_name: str, p2_cote: float, 
+                   label: str, emoji: str, type_combo: str, mise: float, cote_combo: float, ev: float) -> str:
         s = f"<b>{emoji} {label} :</b>\n"
-        for leg in legs:
-            s += f"  \u2022 {leg['Joueur']} @{leg['Cote']}\n"
-        s += f"  => <b>Cote Combo : @{cote_combo}</b> | Mise: {mise} U\n\n"
+        s += f"  • {p1_name} @{p1_cote:.2f}\n"
+        s += f"  • {p2_name} @{p2_cote:.2f}\n"
+        s += f"  => <b>Cote Combo : @{cote_combo:.2f}</b> | EV: +{ev*100:.1f}% | Mise: {mise} U\n\n"
         insert_parlay({
             "date": today_str, "vague": wave_label, "type_combo": type_combo,
-            "leg1_joueur": p1['Joueur'], "leg2_joueur": p2['Joueur'],
-            "leg3_joueur": p3['Joueur'] if p3 else None,
+            "leg1_joueur": p1_name, "leg2_joueur": p2_name,
+            "leg3_joueur": None,
             "cote_totale": cote_combo, "mise": mise
         })
         return s
 
-    # Combinés classés par ROI prouvé (Audit V4)
-    # Note: "Même Joueur Passe+Point" supprimé car Passe = Point automatiquement
-    # 1. Intra-Match Passeur+Pointeur (+50.3% ROI)
-    # 2. Inter-Match Passeur+Passeur (+22.6% ROI)
-    # 3. Inter-Match Passeur+Pointeur (+13.4% ROI)
     parlays_added = 0
 
-    # 1. INTRA-MATCH : Passeur + Pointeur même match (ROI +50.3%)
-    for a in best_ast:
-        if parlays_added >= 3:
-            break
-        match_a = f"{a['Equipe']}-{a.get('Adversaire', '')}"
-        for p in best_pts:
-            if a['Joueur'] != p['Joueur'] and a.get('Cote') and p.get('Cote'):
-                match_p = f"{p['Equipe']}-{p.get('Adversaire', '')}"
-                if match_a == match_p:
-                    msg += _add_combo(a, p, "INTRA-MATCH Passeur+Pointeur (ROI +50%)", "\U0001f525", "INTRA_AST_PTS", 0.5)
-                    parlays_added += 1
-                    break
-
-    # 2. INTER-MATCH : Passeur + Passeur matchs différents (ROI +22.6%)
-    dast = find_cross_duo(best_ast, best_ast)
-    if dast and parlays_added < 3:
-        msg += _add_combo(dast[0], dast[1], "INTER-MATCH Double Passeurs (ROI +23%)", "\U0001f170\ufe0f", "INTER_DOUBLE_AST", 0.5)
+    # 1. INTRA-MATCH : Synergie Passeur + Buteur (Winamax MyMatch)
+    sg_parlays = generate_correlated_parlays(buts, assists, min_combined_ev=0.15)
+    for p in sg_parlays[:2]:
+        msg += _add_combo(
+            p["leg1_joueur"], p["leg1_cote"], p["leg2_joueur"], p["leg2_cote"],
+            f"WINAMAX MYMATCH — Synergie {p['equipe']} ({p['note']})",
+            "🔥", p["type"], p["mise"], p["cote_totale"], p["ev"]
+        )
         parlays_added += 1
 
-    # 3. INTER-MATCH : Passeur + Pointeur matchs différents (ROI +13.4%)
-    booster = find_cross_duo(best_ast, best_pts)
-    if booster and parlays_added < 3:
-        msg += _add_combo(booster[0], booster[1], "INTER-MATCH Passeur+Pointeur (ROI +13%)", "\U0001f3af", "INTER_AST_PTS", 0.5)
-        parlays_added += 1
+    # 2. INTER-MATCH : Double Passeurs (Winamax Combiné Sécurisé)
+    cross_parlays = generate_dual_assist_parlays(assists, min_combined_ev=0.15)
+    for p in cross_parlays[:1]:
+        if parlays_added < 3:
+            msg += _add_combo(
+                p["leg1_joueur"], p["leg1_cote"], p["leg2_joueur"], p["leg2_cote"],
+                "WINAMAX COMBINÉ — Double Passeurs Élite",
+                "🅰️", p["type"], p["mise"], p["cote_totale"], p["ev"]
+            )
+            parlays_added += 1
 
     if parlays_added == 0:
         msg += "  <i>Aucun combiné EV+ possible pour cette vague.</i>\n"

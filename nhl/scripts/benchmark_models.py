@@ -36,14 +36,44 @@ FEATURES_BASE = [
     'season_g', 'season_a', 'season_pts',
     'ga_g', 'hdca_g', 'pp1', 'is_home',
     'is_b2b', 'opp_is_b2b', 'consec_goals',
-    'ixg_x_hdcf', 'sog_x_atoi', 'ixg_x_ga'
+    'ixg_x_hdcf', 'sog_x_atoi', 'ixg_x_ga',
+    'is_top6', 'linemate_synergy', 'team_scoring_env',
+    'implied_prob', 'goalie_weakness'
 ]
 FEATURES_BUT = [f for f in FEATURES_BASE if f != 'season_a']
 FEATURES_AST = FEATURES_BASE
 
 
-def load_clean_data():
+def load_clean_data(use_historical: bool = False):
     """Charge et prépare les features chronologiquement."""
+    if use_historical:
+        parquet_path = os.path.join(ROOT, "data", "historical_dataset.parquet")
+        if os.path.exists(parquet_path):
+            print(f"Chargement du super-dataset Parquet ({parquet_path})...")
+            df = pd.read_parquet(parquet_path)
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date').reset_index(drop=True)
+            # Colonnes manquantes dans le Parquet (pas de cotes historiques)
+            if 'implied_prob' not in df.columns:
+                df['implied_prob'] = 0.0
+            if 'goalie_weakness' not in df.columns:
+                df['goalie_weakness'] = 0.08
+            feat_but = [
+                'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10', 'l10_g',
+                'season_g', 'season_pts', 'ixg_x_hdcf', 'sog_x_atoi',
+                'is_top6', 'prior_g60', 'prior_sog60', 'prior_sh_pct',
+                'opp_xga_60', 'opp_hdca_60', 'opp_goalie_gsax_60', 'team_xg_60',
+                'ixg_x_opp_xga', 'is_home', 'implied_prob', 'goalie_weakness'
+            ]
+            feat_ast = [
+                'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10', 'l10_g', 'l10_a',
+                'season_g', 'season_a', 'season_pts', 'ixg_x_hdcf', 'sog_x_atoi',
+                'is_top6', 'prior_g60', 'prior_a60', 'prior_sog60',
+                'opp_xga_60', 'opp_hdca_60', 'opp_goalie_gsax_60', 'team_xg_60',
+                'ixg_x_opp_xga', 'is_home', 'implied_prob', 'goalie_weakness'
+            ]
+            return df, feat_but, feat_ast
+
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql("SELECT * FROM players WHERE but IS NOT NULL AND but != ''", conn)
     conn.close()
@@ -65,6 +95,15 @@ def load_clean_data():
     df['ixg_x_hdcf'] = df['ixg_l10'] * df['hdcf_l10']
     df['sog_x_atoi'] = df['sog_l10'] * df['atoi_l10']
     df['ixg_x_ga'] = df['ixg_l10'] * df['ga_g']
+
+    df['is_top6'] = ((df['atoi_l10'] >= 17.0) | (df['pp1'] == 1)).astype(int)
+    df['linemate_synergy'] = (df['season_g'] + df['season_a']) * df['pp1']
+    df['team_scoring_env'] = df['ga_g'] * df['hdca_g']
+
+    df['cote'] = pd.to_numeric(df.get('cote', np.nan), errors='coerce')
+    df['implied_prob'] = np.where((df['cote'] > 1.05) & (df['cote'].notna()), 1.0 / df['cote'], 0.0)
+    df['goalie_sv_pct'] = pd.to_numeric(df.get('goalie_sv_pct', np.nan), errors='coerce')
+    df['goalie_weakness'] = np.where(df['goalie_sv_pct'] > 0, 1.0 - df['goalie_sv_pct'], 0.08)
 
     df['target_but'] = (pd.to_numeric(df['but'], errors='coerce').fillna(0) > 0).astype(int)
     df['target_ast'] = (pd.to_numeric(df['assist'], errors='coerce').fillna(0) > 0).astype(int)
@@ -219,9 +258,15 @@ def benchmark_market(df: pd.DataFrame, features: list, target_col: str, market_n
 
 
 if __name__ == "__main__":
-    print("Chargement des données pour le Benchmark...")
-    df = load_clean_data()
-    print(f"{len(df)} échantillons chargés.")
+    use_hist = "--historical" in sys.argv
+    print(f"Chargement des données pour le Benchmark ({'HISTORIQUE MULTI-SAISONS' if use_hist else 'DB COURANTE'})...")
+    if use_hist:
+        df, feat_but, feat_ast = load_clean_data(use_historical=True)
+    else:
+        df = load_clean_data(use_historical=False)
+        feat_but = FEATURES_BUT
+        feat_ast = FEATURES_AST
+    print(f"{len(df):,} échantillons chargés.")
 
-    res_but, weights_but, meta_but = benchmark_market(df, FEATURES_BUT, 'target_but', 'Buteurs')
-    res_ast, weights_ast, meta_ast = benchmark_market(df, FEATURES_AST, 'target_ast', 'Passeurs')
+    res_but, weights_but, meta_but = benchmark_market(df, feat_but, 'target_but', 'Buteurs')
+    res_ast, weights_ast, meta_ast = benchmark_market(df, feat_ast, 'target_ast', 'Passeurs')

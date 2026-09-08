@@ -29,6 +29,7 @@ class DataStore:
         self.v5_data: Dict[str, Dict[str, Any]] = {}
         self.goalie_stats: Dict[str, Dict[str, Any]] = {}
         self.pk_stats: Dict[str, float] = {}
+        self.priors: Dict[str, Any] = {}
         self.known_players: List[str] = []
 
     def load_all_data(self) -> None:
@@ -42,6 +43,10 @@ class DataStore:
         self.v5_data = loaders.load_v5_base_stats(f'{self.data_dir}/Player Season Totals.csv', self.oi_data)
         self.goalie_stats = loaders.load_goalie_stats(f'{self.data_dir}/goalies.csv')
         self.pk_stats = loaders.load_pk_stats(f'{self.data_dir}/pk.csv')
+        
+        # Load Bayesian Priors from Cache
+        priors_path = os.path.join(os.path.dirname(self.data_dir), "nhl", "data", "priors_cache.json")
+        self.priors = loaders.load_bayesian_priors(priors_path)
 
         # Inject PK stats into matchups
         for team_abbr, pk_pct in self.pk_stats.items():

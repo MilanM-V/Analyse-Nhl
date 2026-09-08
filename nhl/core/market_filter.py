@@ -43,7 +43,8 @@ def load_ml_models() -> Dict[str, Any]:
 def prepare_features_for_player(p_form: Dict[str, Any], v5_p: Dict[str, Any], adv_stats: Dict[str, Any], 
                                 is_home: bool, b2b: bool, opp_b2b: bool, pp1: bool, consec_goals: int, 
                                 features_list: list, cote: float = None,
-                                goalie_sv_pct: float = None) -> np.ndarray:
+                                goalie_sv_pct: float = None, player_name: str = "",
+                                priors_data: Dict[str, Any] = None) -> np.ndarray:
     """Prépare le vecteur de features pour un joueur pour l'inférence ML.
 
     Args:
@@ -58,6 +59,8 @@ def prepare_features_for_player(p_form: Dict[str, Any], v5_p: Dict[str, Any], ad
         features_list: Liste ordonnée des features pour le modèle.
         cote: Cote décimale du bookmaker (optionnel, pour implied_prob).
         goalie_sv_pct: Save % du gardien adverse (optionnel, ex: 0.915).
+        player_name: Nom du joueur pour chercher ses priors.
+        priors_data: Dictionnaire des priors chargé depuis priors_cache.json.
 
     Returns:
         np.ndarray de shape (1, n_features) prêt pour predict_proba.
@@ -80,6 +83,21 @@ def prepare_features_for_player(p_form: Dict[str, Any], v5_p: Dict[str, Any], ad
     sog_x_atoi = sog_l10 * atoi_l10
     ixg_x_ga = ixg_l10 * ga_g
     
+    # Priors
+    if not priors_data:
+        priors_data = {"defaults": {"prior_g60": 0.55, "prior_a60": 0.94, "prior_sog60": 5.0, "prior_sh_pct": 0.095}, "players": {}}
+    defs = priors_data.get("defaults", {})
+    p_priors = priors_data.get("players", {}).get(player_name, {})
+    
+    prior_g60 = p_priors.get('prior_g60', defs.get('prior_g60', 0.55))
+    prior_a60 = p_priors.get('prior_a60', defs.get('prior_a60', 0.94))
+    prior_sog60 = p_priors.get('prior_sog60', defs.get('prior_sog60', 5.0))
+    prior_sh_pct = p_priors.get('prior_sh_pct', defs.get('prior_sh_pct', 0.095))
+
+    opp_xga_60 = float(adv_stats.get('xGA_60', 2.8)) # Ou utiliser GA_G comme proxy
+    opp_hdca_60 = float(adv_stats.get('HDCA_G', 0.85))
+    ixg_x_opp_xga = ixg_l10 * (opp_xga_60 / 2.8)
+    
     # Mapper toutes les features vers un dictionnaire
     feat_dict = {
         'ixg_l10': ixg_l10,
@@ -99,6 +117,15 @@ def prepare_features_for_player(p_form: Dict[str, Any], v5_p: Dict[str, Any], ad
         'ixg_x_hdcf': ixg_x_hdcf,
         'sog_x_atoi': sog_x_atoi,
         'ixg_x_ga': ixg_x_ga,
+        'prior_g60': prior_g60,
+        'prior_a60': prior_a60,
+        'prior_sog60': prior_sog60,
+        'prior_sh_pct': prior_sh_pct,
+        'opp_xga_60': opp_xga_60,
+        'opp_hdca_60': opp_hdca_60,
+        'opp_goalie_gsax_60': 0.0, # Simplification pour le live
+        'team_xg_60': 2.8,
+        'ixg_x_opp_xga': ixg_x_opp_xga,
         # === NOUVELLES FEATURES (P5) ===
         # Cote implicite du marché : feature #1 en paris sportifs.
         # Capture l'opinion agrégée de milliers de parieurs/modèles.
@@ -169,26 +196,20 @@ def evaluate_player_markets(
     p_atoi = float(p_form.get('ATOI', 0))
     pos = str(v5_p.get('Position', '')).strip() if v5_p else ""
 
-    # Mode Playoff : On ignore le filtre "Home Only" pour augmenter le volume
+    # Mode Playoff / Modern Scanning : On ouvre l'évaluation à tout le Top 9 actif (ATOI >= 13.5 min ou PP1)
     is_playoff = (cfg.api.mode == "playoff")
+    is_top9 = (p_atoi >= 13.5)
 
-    # Buteurs
+    # Buteurs : Attaquants actifs (Défenseurs toujours strictement exclus)
     cat_but = None
-    if (is_home or is_playoff or not cfg.thresholds.buteurs.home_only) and \
-       pos not in ('D', 'LD', 'RD') and \
-       season_g >= cfg.thresholds.buteurs.season_g_min and \
-       l10_sog >= cfg.thresholds.buteurs.l10_sog_min and \
-       l10_hdcf >= cfg.thresholds.buteurs.l10_hdcf_min and \
-       opp_ga >= cfg.thresholds.buteurs.opp_ga_min:
-        cat_but = "BUTEUR"
+    if pos not in ('D', 'LD', 'RD') and (is_top9 or season_g >= 0.20):
+        if (is_home or is_playoff or not cfg.thresholds.buteurs.home_only):
+            cat_but = "BUTEUR"
 
-    # Passeurs
+    # Passeurs : Joueurs avec temps de glace significatif
     cat_ast = None
-    if (is_home or is_playoff or not cfg.thresholds.passeurs.home_only) and \
-       season_a >= cfg.thresholds.passeurs.season_a_min and \
-       l10_a >= cfg.thresholds.passeurs.l10_a_min and \
-       p_atoi >= cfg.thresholds.passeurs.atoi_min and \
-       opp_ga >= cfg.thresholds.passeurs.opp_ga_min:
-        cat_ast = "PASSEUR"
+    if is_top9 or season_a >= 0.30:
+        if (is_home or is_playoff or not cfg.thresholds.passeurs.home_only):
+            cat_ast = "PASSEUR"
 
     return cat_but, cat_ast

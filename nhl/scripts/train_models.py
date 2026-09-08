@@ -34,28 +34,45 @@ MODELS_DIR = os.path.join(ROOT, "models")
 
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-# Features propres sans fuite de données (avec synergies de trios P10)
+# Features de production standard (DB courante)
 FEATURES_BASE = [
     'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10',
     'season_g', 'season_a', 'season_pts',
     'ga_g', 'hdca_g', 'pp1', 'is_home',
     'is_b2b', 'opp_is_b2b', 'consec_goals',
     'ixg_x_hdcf', 'sog_x_atoi', 'ixg_x_ga',
-    'is_top6', 'linemate_synergy', 'team_scoring_env'
+    'is_top6', 'linemate_synergy', 'team_scoring_env',
+    'implied_prob', 'goalie_weakness'
 ]
 FEATURES_BUT = [f for f in FEATURES_BASE if f != 'season_a']
 FEATURES_AST = FEATURES_BASE
+
+# Features pour le super-dataset historique multi-saisons (avec priors vétérans et contexte équipe/gardien)
+FEATURES_HIST_BASE = [
+    'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10', 'l10_g', 'l10_a',
+    'season_g', 'season_a', 'season_pts', 'ixg_x_hdcf', 'sog_x_atoi',
+    'is_top6', 'prior_g60', 'prior_a60', 'prior_sog60', 'prior_sh_pct',
+    'opp_xga_60', 'opp_hdca_60', 'opp_goalie_gsax_60', 'team_xg_60',
+    'ixg_x_opp_xga', 'is_home', 'implied_prob', 'goalie_weakness'
+]
+FEATURES_HIST_BUT = [f for f in FEATURES_HIST_BASE if f not in ['season_a', 'l10_a', 'prior_a60']]
+FEATURES_HIST_AST = [f for f in FEATURES_HIST_BASE if f not in ['prior_sh_pct']]
 
 # Holdout : les 30 derniers jours ne sont JAMAIS utilisés pour l'entraînement
 HOLDOUT_DAYS = 30
 
 
-def load_clean_data():
-    """Charge les données depuis la DB et prépare les features.
+def load_clean_data(use_historical: bool = False):
+    """Charge les données depuis SQLite ou le super-dataset Parquet multi-saisons."""
+    if use_historical:
+        parquet_path = os.path.join(ROOT, "data", "historical_dataset.parquet")
+        if os.path.exists(parquet_path):
+            print(f"Chargement du super-dataset Parquet ({parquet_path})...")
+            df = pd.read_parquet(parquet_path)
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date').reset_index(drop=True)
+            return df, FEATURES_HIST_BUT, FEATURES_HIST_AST
 
-    Returns:
-        pd.DataFrame trié chronologiquement avec features et targets.
-    """
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql(
         "SELECT * FROM players WHERE but IS NOT NULL AND but != ''", conn
@@ -106,6 +123,13 @@ def load_clean_data():
     df['linemate_synergy'] = (df['season_g'] + df['season_a']) * df['pp1']
     df['team_scoring_env'] = df['ga_g'] * df['hdca_g']
 
+    # Nouvelles features quantitatives (P5)
+    df['cote'] = pd.to_numeric(df.get('cote', np.nan), errors='coerce')
+    df['implied_prob'] = np.where((df['cote'] > 1.05) & (df['cote'].notna()), 1.0 / df['cote'], 0.0)
+    
+    df['goalie_sv_pct'] = pd.to_numeric(df.get('goalie_sv_pct', np.nan), errors='coerce')
+    df['goalie_weakness'] = np.where(df['goalie_sv_pct'] > 0, 1.0 - df['goalie_sv_pct'], 0.08)
+
     # Targets binaires
     df['target_but'] = (
         pd.to_numeric(df['but'], errors='coerce').fillna(0) > 0
@@ -114,7 +138,7 @@ def load_clean_data():
         pd.to_numeric(df['assist'], errors='coerce').fillna(0) > 0
     ).astype(int)
 
-    return df
+    return df, FEATURES_BUT, FEATURES_AST
 
 
 def train_with_holdout(df, features, target_col, model_name):
@@ -214,11 +238,12 @@ def train_with_holdout(df, features, target_col, model_name):
 
 
 if __name__ == "__main__":
-    print("Chargement des données...")
-    df = load_clean_data()
-    print(f"{len(df)} échantillons chargés avec chronologie respectée.")
+    use_hist = "--historical" in sys.argv
+    print(f"Chargement des données ({'HISTORIQUE MULTI-SAISONS' if use_hist else 'DB COURANTE'})...")
+    df, feat_but, feat_ast = load_clean_data(use_historical=use_hist)
+    print(f"{len(df):,} échantillons chargés avec chronologie respectée.")
 
-    train_with_holdout(df, FEATURES_BUT, 'target_but', 'but')
-    train_with_holdout(df, FEATURES_AST, 'target_ast', 'ast')
+    train_with_holdout(df, feat_but, 'target_but', 'but')
+    train_with_holdout(df, feat_ast, 'target_ast', 'ast')
     print("\nLes pointeurs sont volontairement ignorés "
           "(ROI systématiquement négatif).")

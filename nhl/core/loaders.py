@@ -313,3 +313,23 @@ def get_b2b_teams(match_filepath: str, today_str: str) -> List[str]:
     except Exception as e:
         logger.warning(f"get_b2b_teams error: {e}")
         return []
+
+def load_bayesian_priors(filepath: str) -> Dict[str, Any]:
+    """
+    Loads bayesian priors from the JSON cache file.
+    
+    Args:
+        filepath: Path to priors_cache.json
+        
+    Returns:
+        Dict containing 'defaults' and 'players' priors.
+    """
+    try:
+        import json
+        if os.path.exists(filepath):
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {"defaults": {"prior_g60": 0.55, "prior_a60": 0.94, "prior_sog60": 5.0, "prior_sh_pct": 0.095}, "players": {}}
+    except Exception as e:
+        logger.warning(f"load_bayesian_priors error: {e}")
+        return {"defaults": {"prior_g60": 0.55, "prior_a60": 0.94, "prior_sog60": 5.0, "prior_sh_pct": 0.095}, "players": {}}

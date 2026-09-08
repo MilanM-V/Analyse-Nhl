@@ -131,7 +131,7 @@ class NHLEnsembleClassifier(BaseEstimator, ClassifierMixin):
         y_val_oof = y[first_val_idx:]
 
         for name, model in base_models.items():
-            calibrated = CalibratedClassifierCV(model, method='isotonic', cv=tscv)
+            calibrated = CalibratedClassifierCV(model, method='sigmoid', cv=tscv)
             calibrated.fit(X, y)
             self.calibrated_models_[name] = calibrated
 

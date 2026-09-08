@@ -18,7 +18,7 @@ CATEGORY_CAPS: Dict[str, float] = {
 }
 
 
-def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str = "", current_exposure: float = 0.0, max_exposure: float = 15.0) -> str:
+def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str = "", current_exposure: float = 0.0, max_exposure: float = 15.0, brier_penalty: float = 0.0) -> str:
     """Calcule la recommandation de mise fractionnée Quarter Kelly avec Money Management Global.
 
     Args:
@@ -27,6 +27,7 @@ def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str 
         categorie: Catégorie du pick (BUTEUR, PASSEUR, POINTEUR).
         current_exposure: Exposition totale actuelle du Portfolio.
         max_exposure: Plafond maximum autorisé (ex: 15.0 U).
+        brier_penalty: Pénalité appliquée au diviseur Kelly (ex: 4.0 pour réduire la mise en période d'incertitude).
 
     Returns:
         String de mise formatée (ex: "1.5 U").
@@ -50,9 +51,16 @@ def calculate_quarter_kelly(proba: float, cote: Optional[float], categorie: str 
     cap = CATEGORY_CAPS.get(categorie, 2.0)
 
     if f > 0:
-        # Fraction très prudente (1/8ème) car les cotes réelles ont beaucoup de variance
-        eighth_f = f / 8.0
-        units = round(eighth_f * 100 * 2) / 2  # arrondi à 0.5 près
+        ev = (p * cote) - 1.0
+        # Fraction Kelly dynamique : 1/6ème sur les Passeurs à fort Edge (EV >= 12%)
+        # et 1/8ème pour les autres marchés à plus forte variance
+        if categorie == "PASSEUR" and ev >= 0.12:
+            fraction = 6.0 + brier_penalty
+        else:
+            fraction = 8.0 + brier_penalty
+
+        kelly_stake = f / fraction
+        units = round(kelly_stake * 100 * 2) / 2  # arrondi à 0.5 près
         units = max(0.5, min(units, cap))
         
         # Money Management Global : on réduit la mise si on dépasse le plafond
@@ -97,7 +105,7 @@ def is_cote_valid(pick: dict, cote_min: float) -> bool:
     return True
 
 
-def apply_kelly_to_picks(picks_list: list, current_exposure: float = 0.0, max_exposure: float = 15.0) -> float:
+def apply_kelly_to_picks(picks_list: list, current_exposure: float = 0.0, max_exposure: float = 15.0, brier_penalty: float = 0.0) -> float:
     """Calcule et injecte la mise Kelly sur chaque pick (mutation in-place).
     Met à jour l'exposition globale en cours.
 
@@ -105,6 +113,7 @@ def apply_kelly_to_picks(picks_list: list, current_exposure: float = 0.0, max_ex
         picks_list: Liste de dicts de picks à enrichir avec 'Mise' et 'MiseNum'.
         current_exposure: Exposition actuelle avant traitement de ces picks.
         max_exposure: Plafond maximum autorisé.
+        brier_penalty: Pénalité optionnelle augmentant le diviseur.
         
     Returns:
         La nouvelle exposition totale après ces picks.
@@ -115,7 +124,8 @@ def apply_kelly_to_picks(picks_list: list, current_exposure: float = 0.0, max_ex
             p.get('Cote'), 
             p.get('Categorie', ''),
             current_exposure=current_exposure,
-            max_exposure=max_exposure
+            max_exposure=max_exposure,
+            brier_penalty=brier_penalty
         )
         p["Mise"] = mise_str
         try:
