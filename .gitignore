@@ -1,30 +1,47 @@
+# ─── Secrets & Environment ─────────────────────────
 .env
-bot.log
-watchdog.log
-stats/
-compos_live.txt
-analyse/
-tests/
-__pycache__/
+
+# ─── Databases ─────────────────────────────────────
 *.db
 *.sqlite
 *.sqlite3
 
+# ─── Logs ──────────────────────────────────────────
 *.log
+
+# ─── Generated Data ────────────────────────────────
+nhl/stats/
+mlb/stats/
+nba/stats/
+nhl/compos_live.txt
+mlb/data/*.csv
+*_stderr.log
+
+# ─── Python ────────────────────────────────────────
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ─── Text files (keep requirements.txt) ───────────
 *.txt
 !requirements.txt
-.context/
-# Infrastructure IA
+!PROJECT_VISION.md
+!VPS_WATCHDOG.md
+
+# ─── Infrastructure IA ────────────────────────────
 .antigravity/
 .clinerules
 .cursorrules
+.windsurfrules
 conductor/
 .context/
 AGENTS.md
 CLAUDE.md
-CONTEXT.md  
+CONTEXT.md
 memory/
 artifacts/
+
+# ─── GitHub & misc ────────────────────────────────
 .github/
-.windsurfrules
 comparaison/
+analyse/

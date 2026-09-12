@@ -9,3 +9,11 @@ aiohttp
 beautifulsoup4
 pytest
 schedule
+pybaseball
+xgboost
+joblib
+scikit-learn
+scipy
+optuna
+lightgbm
+catboost

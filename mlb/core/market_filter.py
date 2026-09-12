@@ -1,0 +1,119 @@
+"""
+mlb/core/market_filter.py — Moteur de filtrage des paris MLB.
+"""
+
+import os
+import logging
+from typing import Dict, Any, Optional
+import pandas as pd
+import joblib
+import sys
+
+# Add mlb package to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+logger = logging.getLogger("MLB-MarketFilter")
+
+# ==========================================
+# CONFIGURATION STRATÉGIQUE
+# ==========================================
+# Le marché des Home Runs a été définitivement supprimé (structurellement déficitaire).
+# Seul le marché Strikeouts est actif.
+
+# Chemin vers le modèle (plus robuste : remonte d'un cran depuis mlb/core vers mlb/)
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "xg_model_strikeouts.pkl")
+
+# On charge les modèles en mémoire une seule fois au démarrage
+_xgb_model = None
+_threshold = 0.8
+if os.path.exists(MODEL_PATH):
+    try:
+        data = joblib.load(MODEL_PATH)
+        if isinstance(data, dict):
+            _xgb_model = data['model']
+            _threshold = data.get('threshold', 0.8)
+        else:
+            _xgb_model = data
+    except Exception as e:
+        logger.error(f"❌ Impossible de charger le modèle XGBoost : {e}")
+
+def evaluate_pitcher_strikeouts(pitcher_name: str, pitcher_stats: Dict[str, Any], adv_k_rate: float, is_home: bool = True) -> Optional[Dict[str, Any]]:
+    """
+    Évalue les Strikeouts attendus d'un lanceur en utilisant le modèle XGBoost.
+    
+    Args:
+        pitcher_name: Nom du lanceur.
+        pitcher_stats: Stats historiques (k_per_9, etc.).
+        adv_k_rate: Taux de strikeout moyen de l'équipe adverse (K/match).
+        is_home: Si le lanceur joue à domicile.
+        
+    Returns:
+        Dictionnaire avec les détails du pick si intéressant, None sinon.
+    """
+    if not _xgb_model or not pitcher_stats:
+        return None
+        
+    # Les features requises par notre modèle V2:
+    # ['is_home', 'L5_K9', 'Opp_L10_K', 'L5_Velo', 'L5_SwStr', 'Umpire_K_Factor']
+    k9 = pitcher_stats.get("k_per_9", 0)
+    
+    # Création du DataFrame pour la prédiction (V2 features avec fallback)
+    features = pd.DataFrame([{
+        'is_home': int(is_home),
+        'L5_K9': k9,
+        'Opp_L10_K': adv_k_rate,
+        'L5_Velo': pitcher_stats.get("avg_velo", 93.0),       # Fallback: vélocité moyenne MLB
+        'L5_SwStr': pitcher_stats.get("swstr_pct", 0.11),     # Fallback: SwStr% moyen MLB (~11%)
+        'Umpire_K_Factor': pitcher_stats.get("umpire_k_factor", 1.0),  # Fallback: arbitre neutre
+        'L5_Spin': pitcher_stats.get("avg_spin_rate", 2250.0), # Fallback: spin rate moyen MLB (~2250 RPM)
+    }])
+    
+    # Si le modèle n'a que 3 features (V1), on ne passe que celles-là
+    try:
+        expected_features = _xgb_model.get_booster().feature_names
+        if expected_features:
+            features = features[[f for f in expected_features if f in features.columns]]
+    except Exception:
+        pass  # Si on ne peut pas lire les features du modèle, on envoie tout
+    
+    try:
+        # Prédiction du nombre exact de Strikeouts
+        predicted_k = float(_xgb_model.predict(features)[0])
+        
+        # Règle : on ne présélectionne que les lanceurs où l'IA prédit au moins 5.5 Strikeouts
+        # pour éviter de scraper les cotes de lanceurs médiocres
+        if predicted_k >= 5.5:
+            # Estimation de la probabilité que le lanceur dépasse sa ligne de base.
+            # On utilise une fonction logistique centrée sur la Ligne + Seuil dynamique
+            # Plus predicted_k est élevé au-dessus de (5.5 + seuil), plus la proba est forte.
+            import math
+            line = 5.5
+            spread = 1.2  # Calibré pour que +2K au-dessus de la ligne ≈ 85% de proba
+            
+            # Formule: si predicted_k == line + _threshold, proba = 0.5 (neutre)
+            # si predicted_k > line + _threshold, proba > 0.5 (valeur)
+            gap = predicted_k - (line + _threshold)
+            prob_over = 1.0 / (1.0 + math.exp(-gap / spread))
+            
+            # Niveau de confiance
+            if prob_over >= 0.70:
+                confiance = "ELITE"
+            elif prob_over >= 0.55:
+                confiance = "ELEVEE"
+            else:
+                confiance = "STANDARD"
+            
+            return {
+                "Joueur": pitcher_name,
+                "Marche": "STRIKEOUTS",
+                "Confiance": confiance,
+                "Moyenne_K": pitcher_stats.get("avg_k", 0),
+                "Predicted_K": predicted_k,
+                "Proba": round(prob_over, 4),
+                "Adv_K_Rate": adv_k_rate,
+            }
+    except Exception as e:
+        logger.error(f"Erreur lors de la prédiction pour {pitcher_name} : {e}")
+        
+        
+    return None
