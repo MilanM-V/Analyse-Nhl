@@ -298,10 +298,12 @@ def health_check(processes: Dict[str, Optional[subprocess.Popen]]) -> None:
             logger.warning(
                 f"⚠️ Bot {sport.upper()} mort (code {exit_code}), redémarrage..."
             )
-            send_watchdog_alert(
-                f"⚠️ Bot <b>{sport.upper()}</b> crashé (code {exit_code}) — "
-                f"Redémarrage automatique"
-            )
+            # Ne pas spammer Telegram si le bot a été arrêté proprement (0) ou via SIGTERM (-15 / 15)
+            if exit_code not in (0, 15, -15):
+                send_watchdog_alert(
+                    f"⚠️ Bot <b>{sport.upper()}</b> crashé (code {exit_code}) — "
+                    f"Redémarrage automatique"
+                )
             processes[sport] = start_bot(sport)
 
 
