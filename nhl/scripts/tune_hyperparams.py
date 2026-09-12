@@ -40,42 +40,31 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "optimal_hyperparams.json")
 
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
-FEATURES_BASE = [
-    'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10',
-    'season_g', 'season_a', 'season_pts',
-    'ga_g', 'hdca_g', 'pp1', 'is_home',
-    'is_b2b', 'opp_is_b2b', 'consec_goals',
-    'ixg_x_hdcf', 'sog_x_atoi', 'ixg_x_ga'
+FEATURES_BUT = [
+    'ixg_l10', 'sog_l10', 'atoi_l10', 'l10_g', 'l10_a', 
+    'hdcf_l10', 'season_g', 'season_a', 'season_pts', 'sog_x_atoi', 'ixg_x_hdcf',
+    'ga_g', 'hdca_g', 'pp1', 'is_home', 'is_b2b', 'opp_is_b2b', 'opp_goalie_gsax_60',
+    'consec_goals', 'linemate_synergy', 'team_scoring_env', 'ixg_x_ga'
 ]
-FEATURES_BUT = [f for f in FEATURES_BASE if f != 'season_a']
-FEATURES_AST = FEATURES_BASE
+FEATURES_AST = FEATURES_BUT.copy()
+FEATURES_PTS = FEATURES_BUT.copy()
 
 
 def load_clean_data():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("SELECT * FROM players WHERE but IS NOT NULL AND but != ''", conn)
-    conn.close()
+    parquet_path = os.path.join(ROOT, "data", "historical_dataset.parquet")
+    df = pd.read_parquet(parquet_path)
 
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date').reset_index(drop=True)
 
-    for col in ['ixg', 'hdcf', 'sog', 'atoi']:
-        df[f'{col}_l10'] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    for col in ['season_g', 'season_a', 'season_pts', 'ga_g', 'hdca_g']:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    # Conversion des colonnes en numérique
+    for col in FEATURES_BUT:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    df['pp1'] = pd.to_numeric(df['pp1'], errors='coerce').fillna(0).astype(int)
-    df['is_home'] = pd.to_numeric(df['is_home'], errors='coerce').fillna(0).astype(int)
-    df['is_b2b'] = pd.to_numeric(df['b2b'], errors='coerce').fillna(0).astype(int)
-    df['opp_is_b2b'] = pd.to_numeric(df.get('opp_b2b', 0), errors='coerce').fillna(0).astype(int)
-    df['consec_goals'] = pd.to_numeric(df.get('consec_goals', 0), errors='coerce').fillna(0)
-
-    df['ixg_x_hdcf'] = df['ixg_l10'] * df['hdcf_l10']
-    df['sog_x_atoi'] = df['sog_l10'] * df['atoi_l10']
-    df['ixg_x_ga'] = df['ixg_l10'] * df['ga_g']
-
-    df['target_but'] = (pd.to_numeric(df['but'], errors='coerce').fillna(0) > 0).astype(int)
-    df['target_ast'] = (pd.to_numeric(df['assist'], errors='coerce').fillna(0) > 0).astype(int)
+    df['target_but'] = (pd.to_numeric(df['I_F_goals'], errors='coerce').fillna(0) > 0).astype(int)
+    df['target_ast'] = ((pd.to_numeric(df['I_F_primaryAssists'], errors='coerce').fillna(0) + pd.to_numeric(df['I_F_secondaryAssists'], errors='coerce').fillna(0)) > 0).astype(int)
+    df['target_pts'] = ((df['I_F_goals'].fillna(0) + df['I_F_primaryAssists'].fillna(0) + df['I_F_secondaryAssists'].fillna(0)) >= 1).astype(int)
     return df
 
 
@@ -161,7 +150,8 @@ def run_tuning(n_trials=20):
 
     markets = [
         ('but', FEATURES_BUT, 'target_but', 'BUTEURS'),
-        ('ast', FEATURES_AST, 'target_ast', 'PASSEURS')
+        ('ast', FEATURES_AST, 'target_ast', 'PASSEURS'),
+        ('pts', FEATURES_PTS, 'target_pts', 'POINTS')
     ]
 
     for market_key, features, target_col, label in markets:

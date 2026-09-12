@@ -205,3 +205,7 @@ Ce projet est sous licence MIT â voir le fichier [LICENSE](LICENSE) pour pl
 - **Staking Kelly Dynamique (`shared/kelly.py`)** : Kelly 1/6ème sur les passes à fort Edge ($EV \ge 12\%$) et 1/8ème sur les buts (cap hard à 2.5 U).
 - **Modèle Empirique Winamax sur 7 Saisons (`simulate_historical_odds.py`)** : Calibrage par régression sur les 235 cotes réelles de `nhl/bot_database.db` (MAE 0.40 buts, 0.15 passes). Bilan sur 19 167 paris : **+2 246.34 U (+2 246.34 €)** de profit net cumulé (**+13.2% ROI global net**, soit **+320.91 U / saison**).
 
+
+## R�sultats du Backtest (2023-2025)
+L'algorithme NHL a �t� test� avec l'API The-Odds-API sur plus de 5000 paris virtuels. ROI Global valid� en Out-of-Sample: **+37.9%**. Les Assists performent � +54.5% de ROI.
+

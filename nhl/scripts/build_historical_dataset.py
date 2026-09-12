@@ -252,6 +252,7 @@ def build_rolling_features(df, priors_tuple):
     df['sog_x_atoi'] = df['sog_l10'] * df['atoi_l10']
     df['is_home'] = (df['home_or_away'] == 'HOME').astype(int)
     df['is_top6'] = (df['atoi_l10'] >= 17.0).astype(int)
+    df['pp1'] = (df['atoi_l10'] > 18.0).astype(int)
 
     # Injection des priors bayésiens des vétérans
     df['prior_g60'] = df['name'].map(lambda n: priors.get(n, {}).get('prior_g60', default_g60))
@@ -261,52 +262,49 @@ def build_rolling_features(df, priors_tuple):
 
     # === CORRECTION DATA LEAKAGE : Calcul des stats d'équipe match-par-match ===
     # Au lieu d'utiliser les moyennes de fin de saison (look-ahead bias),
-    # on recalcule les stats adverses via un expanding().shift(1) par équipe/saison.
-    print("  [Features] Calcul des stats adverses SANS leakage (expanding décalé)...")
-
-    # 1. Agréger les stats offensives par (gameDate, team, season) pour obtenir le profil d'équipe par match
-    game_team_stats = df.groupby(['gameDate', 'playerTeam', 'season']).agg({
+    # 1. Agréger les stats offensives par équipe
+    offense_stats = df.groupby(['gameDate', 'playerTeam', 'season']).agg({
         'I_F_xGoals': 'sum',
-        'I_F_highDangerxGoals': 'sum',
         'I_F_goals': 'sum',
     }).reset_index().rename(columns={
         'playerTeam': 'team',
         'I_F_xGoals': 'team_xg_game',
-        'I_F_highDangerxGoals': 'team_hdxg_game',
-        'I_F_goals': 'team_goals_game',
+        'I_F_goals': 'team_gf_game',
     })
-    game_team_stats = game_team_stats.sort_values(['team', 'season', 'gameDate']).reset_index(drop=True)
-
-    # 2. Calculer les moyennes roulantes expanding décalées (shift(1)) par équipe et saison
-    grp_team = game_team_stats.groupby(['team', 'season'])
-    game_team_stats['team_xg_60_rolling'] = grp_team['team_xg_game'].transform(
-        lambda x: x.shift(1).expanding().mean()
-    ).fillna(2.80)
-    game_team_stats['team_ga_60_rolling'] = grp_team['team_goals_game'].transform(
-        lambda x: x.shift(1).expanding().mean()
-    ).fillna(2.80)
-    game_team_stats['team_hdxg_60_rolling'] = grp_team['team_hdxg_game'].transform(
-        lambda x: x.shift(1).expanding().mean()
-    ).fillna(0.85)
-
-    # 3. Joindre les stats de l'ADVERSAIRE au DataFrame principal
-    # Pour chaque joueur, on cherche les stats de l'équipe adverse (opposingTeam) à cette date
-    opp_stats = game_team_stats[['gameDate', 'team', 'season',
-                                  'team_ga_60_rolling', 'team_hdxg_60_rolling']].rename(columns={
-        'team': 'opposingTeam',
-        'team_ga_60_rolling': 'opp_xga_60',
-        'team_hdxg_60_rolling': 'opp_hdca_60',
+    offense_stats = offense_stats.sort_values(['team', 'season', 'gameDate']).reset_index(drop=True)
+    grp_off = offense_stats.groupby(['team', 'season'])
+    offense_stats['team_xg_60_rolling'] = grp_off['team_xg_game'].transform(lambda x: x.shift(1).expanding().mean()).fillna(2.80)
+    
+    # 2. Agréger les stats défensives par équipe (basé sur opposingTeam = l'équipe qui subit)
+    defense_stats = df.groupby(['gameDate', 'opposingTeam', 'season']).agg({
+        'I_F_xGoals': 'sum',
+        'I_F_highDangerxGoals': 'sum',
+        'I_F_goals': 'sum',
+    }).reset_index().rename(columns={
+        'opposingTeam': 'team', # L'équipe qui défend
+        'I_F_xGoals': 'team_xga_game',
+        'I_F_highDangerxGoals': 'team_hdca_game',
+        'I_F_goals': 'team_ga_game',
     })
+    defense_stats = defense_stats.sort_values(['team', 'season', 'gameDate']).reset_index(drop=True)
+    grp_def = defense_stats.groupby(['team', 'season'])
+    defense_stats['opp_xga_60'] = grp_def['team_xga_game'].transform(lambda x: x.shift(1).expanding().mean()).fillna(2.80)
+    defense_stats['opp_ga_60'] = grp_def['team_ga_game'].transform(lambda x: x.shift(1).expanding().mean()).fillna(2.80)
+    defense_stats['opp_hdca_60'] = grp_def['team_hdca_game'].transform(lambda x: x.shift(1).expanding().mean()).fillna(0.85)
+
+    # 3. Joindre les stats au DataFrame principal
+    # A. Défense de l'adversaire (pour nos attaquants)
+    opp_stats = defense_stats[['gameDate', 'team', 'season', 'opp_ga_60', 'opp_xga_60', 'opp_hdca_60']].rename(columns={'team': 'opposingTeam'})
     df = df.merge(opp_stats, on=['gameDate', 'opposingTeam', 'season'], how='left')
+    df['opp_ga_60'] = df['opp_ga_60'].fillna(2.80)
     df['opp_xga_60'] = df['opp_xga_60'].fillna(2.80)
     df['opp_hdca_60'] = df['opp_hdca_60'].fillna(0.85)
 
-    # Stats de l'équipe du joueur
-    own_stats = game_team_stats[['gameDate', 'team', 'season',
-                                  'team_xg_60_rolling']].rename(columns={
-        'team': 'playerTeam',
-        'team_xg_60_rolling': 'team_xg_60',
-    })
+    # Création du proxy GSAx (Goals Saved Above Expected) pour les gardiens adverses
+    df['opp_goalie_gsax_60'] = df['opp_xga_60'] - df['opp_ga_60']
+
+    # B. Offense de notre équipe
+    own_stats = offense_stats[['gameDate', 'team', 'season', 'team_xg_60_rolling']].rename(columns={'team': 'playerTeam', 'team_xg_60_rolling': 'team_xg_60'})
     df = df.merge(own_stats, on=['gameDate', 'playerTeam', 'season'], how='left')
     df['team_xg_60'] = df['team_xg_60'].fillna(2.80)
 
@@ -317,6 +315,27 @@ def build_rolling_features(df, priors_tuple):
     # Interaction xG joueur x Qualité défensive adverse
     df['ixg_x_opp_xga'] = df['ixg_l10'] * (df['opp_xga_60'] / 2.80)
 
+    # === ALIGNEMENT BACKTEST/PRODUCTION (BUG-1) ===
+    # is_b2b et opp_is_b2b
+    team_games = df[['playerTeam', 'gameDate']].drop_duplicates().sort_values(['playerTeam', 'gameDate'])
+    team_games['prev_gameDate'] = team_games.groupby('playerTeam')['gameDate'].shift(1)
+    team_games['is_b2b'] = ((team_games['gameDate'] - team_games['prev_gameDate']).dt.days == 1).astype(int)
+    
+    df = df.merge(team_games[['playerTeam', 'gameDate', 'is_b2b']], on=['playerTeam', 'gameDate'], how='left')
+    df['is_b2b'] = df['is_b2b'].fillna(0).astype(int)
+    
+    opp_team_games = team_games.rename(columns={'playerTeam': 'opposingTeam', 'is_b2b': 'opp_is_b2b'})
+    df = df.merge(opp_team_games[['opposingTeam', 'gameDate', 'opp_is_b2b']], on=['opposingTeam', 'gameDate'], how='left')
+    df['opp_is_b2b'] = df['opp_is_b2b'].fillna(0).astype(int)
+    
+    # Autres proxy features de production
+    df['ga_g'] = df['opp_xga_60']
+    df['hdca_g'] = df['opp_hdca_60']
+    df['team_scoring_env'] = df['ga_g'] * df['hdca_g']
+    df['linemate_synergy'] = (df['season_g'] + df['season_a']) * df['pp1']
+    df['ixg_x_ga'] = df['ixg_l10'] * df['ga_g']
+    df['consec_goals'] = 0.0 # Approximation pour le backtest (évite un calcul complexe qui ralentit)
+    
     # Cibles
     df['target_but'] = (df['but'] > 0).astype(int)
     df['target_ast'] = (df['assist'] > 0).astype(int)
@@ -345,7 +364,9 @@ def save_dataset(df):
         'season_g', 'season_a', 'season_pts', 'ixg_x_hdcf', 'sog_x_atoi',
         'is_top6', 'prior_g60', 'prior_a60', 'prior_sog60', 'prior_sh_pct',
         'opp_xga_60', 'opp_hdca_60', 'opp_goalie_gsax_60', 'team_xg_60',
-        'ixg_x_opp_xga', 'but', 'assist', 'target_but', 'target_ast'
+        'ixg_x_opp_xga', 'but', 'assist', 'target_but', 'target_ast',
+        'pp1', 'is_b2b', 'opp_is_b2b', 'ga_g', 'hdca_g', 'team_scoring_env',
+        'linemate_synergy', 'ixg_x_ga', 'consec_goals'
     ]
     df_sub = df[[c for c in save_cols if c in df.columns]]
     df_sub.to_sql("historical_players", conn, if_exists="replace", index=False)

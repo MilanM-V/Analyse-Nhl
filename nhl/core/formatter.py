@@ -149,26 +149,31 @@ def _build_parlays_section(
 
     parlays_added = 0
 
+    all_parlays = []
+
     # 1. INTRA-MATCH : Synergie Passeur + Buteur (Winamax MyMatch)
     sg_parlays = generate_correlated_parlays(buts, assists, min_combined_ev=0.15)
-    for p in sg_parlays[:2]:
-        msg += _add_combo(
-            p["leg1_joueur"], p["leg1_cote"], p["leg2_joueur"], p["leg2_cote"],
-            f"WINAMAX MYMATCH — Synergie {p['equipe']} ({p['note']})",
-            "🔥", p["type"], p["mise"], p["cote_totale"], p["ev"]
-        )
-        parlays_added += 1
+    for p in sg_parlays:
+        p['_label'] = f"WINAMAX MYMATCH — Synergie {p['equipe']} ({p['note']})"
+        p['_emoji'] = "🔥"
+        all_parlays.append(p)
 
     # 2. INTER-MATCH : Double Passeurs (Winamax Combiné Sécurisé)
     cross_parlays = generate_dual_assist_parlays(assists, min_combined_ev=0.15)
-    for p in cross_parlays[:1]:
-        if parlays_added < 3:
-            msg += _add_combo(
-                p["leg1_joueur"], p["leg1_cote"], p["leg2_joueur"], p["leg2_cote"],
-                "WINAMAX COMBINÉ — Double Passeurs Élite",
-                "🅰️", p["type"], p["mise"], p["cote_totale"], p["ev"]
-            )
-            parlays_added += 1
+    for p in cross_parlays:
+        p['_label'] = "WINAMAX COMBINÉ — Double Passeurs Élite"
+        p['_emoji'] = "🅰️"
+        all_parlays.append(p)
+
+    all_parlays.sort(key=lambda x: x['ev'], reverse=True)
+
+    if all_parlays:
+        best_p = all_parlays[0]
+        msg += _add_combo(
+            best_p["leg1_joueur"], best_p["leg1_cote"], best_p["leg2_joueur"], best_p["leg2_cote"],
+            best_p['_label'], best_p['_emoji'], best_p["type"], best_p["mise"], best_p["cote_totale"], best_p["ev"]
+        )
+        parlays_added += 1
 
     if parlays_added == 0:
         msg += "  <i>Aucun combiné EV+ possible pour cette vague.</i>\n"

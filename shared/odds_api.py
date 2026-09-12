@@ -107,24 +107,9 @@ class OddsAPIClient:
             # 2. Récupérer les cotes pour chaque event ciblé
             logger.info(f"Appel Odds API sur {len(target_events)} matchs ciblés pour {len(players_map)} joueurs.")
             
-            # Line Shopping : on cherche la meilleure cote parmi ces bookmakers (ARJEL + Internationaux)
+            # L'utilisateur ne parie QUE sur Winamax
             target_bookmakers = {
-                "winamax": "Winamax", 
-                "unibet_fr": "Unibet", 
-                "betclic": "Betclic", 
-                "parions_sport": "ParionsSport",
-                "pinnacle": "Pinnacle",
-                "williamhill": "William Hill",
-                "888sport": "888Sport",
-                "betfair_ex_eu": "Betfair",
-                "coolbet": "Coolbet",
-                "bwin": "Bwin",
-                "marathonbet": "MarathonBet",
-                "draftkings": "DraftKings",
-                "fanduel": "FanDuel",
-                "betmgm": "BetMGM",
-                "caesars": "Caesars",
-                "betrivers": "BetRivers"
+                "winamax": "Winamax"
             }
             
             for event_id in target_events:

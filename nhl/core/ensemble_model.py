@@ -66,24 +66,26 @@ class NHLEnsembleClassifier(BaseEstimator, ClassifierMixin):
         cat_p = {
             'iterations': 100, 'depth': 3, 'learning_rate': 0.05,
             'scale_pos_weight': scale_pos, 'random_seed': self.random_state,
-            'verbose': False
+            'verbose': False, 'thread_count': -1
         }
         if 'CatBoost' in opt_params:
             cat_p.update(opt_params['CatBoost'])
             cat_p['scale_pos_weight'] = scale_pos
             cat_p['verbose'] = False
+            cat_p['thread_count'] = -1
         cat = CatBoostClassifier(**cat_p)
 
         # 2. LightGBM
         lgb_p = {
             'n_estimators': 100, 'max_depth': 3, 'num_leaves': 7, 'learning_rate': 0.05,
             'scale_pos_weight': scale_pos, 'random_state': self.random_state,
-            'subsample': 0.8, 'colsample_bytree': 0.8, 'verbose': -1
+            'subsample': 0.8, 'colsample_bytree': 0.8, 'verbose': -1, 'n_jobs': -1
         }
         if 'LightGBM' in opt_params:
             lgb_p.update(opt_params['LightGBM'])
             lgb_p['scale_pos_weight'] = scale_pos
             lgb_p['verbose'] = -1
+            lgb_p['n_jobs'] = -1
         lgb = LGBMClassifier(**lgb_p)
 
         # 3. XGBoost
@@ -91,13 +93,14 @@ class NHLEnsembleClassifier(BaseEstimator, ClassifierMixin):
             'n_estimators': 100, 'max_depth': 3, 'learning_rate': 0.05,
             'scale_pos_weight': scale_pos, 'eval_metric': 'logloss',
             'random_state': self.random_state, 'subsample': 0.8, 'colsample_bytree': 0.8,
-            'verbosity': 0
+            'verbosity': 0, 'n_jobs': -1
         }
         if 'XGBoost' in opt_params:
             xgb_p.update(opt_params['XGBoost'])
             xgb_p['scale_pos_weight'] = scale_pos
             xgb_p['eval_metric'] = 'logloss'
             xgb_p['verbosity'] = 0
+            xgb_p['n_jobs'] = -1
         xgb = XGBClassifier(**xgb_p)
 
         return {'CatBoost': cat, 'LightGBM': lgb, 'XGBoost': xgb}
@@ -114,48 +117,16 @@ class NHLEnsembleClassifier(BaseEstimator, ClassifierMixin):
 
         base_models = self._init_base_models(scale_pos)
         self.models_ = base_models
-        oof_preds = {name: np.zeros(n_samples) for name in base_models}
-
-        # 1. Génération Out-of-Fold temporelle
-        for train_idx, val_idx in tscv.split(X):
-            X_tr, y_tr = X[train_idx], y[train_idx]
-            X_val = X[val_idx]
-            fold_models = self._init_base_models(scale_pos)
-            for name, model in fold_models.items():
-                model.fit(X_tr, y_tr)
-                oof_preds[name][val_idx] = model.predict_proba(X_val)[:, 1]
-
         # 2. Entraînement et calibration de chaque modèle complet
-        brier_scores = {}
-        first_val_idx = list(tscv.split(X))[0][1][0]
-        y_val_oof = y[first_val_idx:]
-
         for name, model in base_models.items():
-            calibrated = CalibratedClassifierCV(model, method='sigmoid', cv=tscv)
+            calibrated = CalibratedClassifierCV(model, method='sigmoid', cv=tscv, n_jobs=None)
             calibrated.fit(X, y)
             self.calibrated_models_[name] = calibrated
 
-            oof_slice = oof_preds[name][first_val_idx:]
-            brier_scores[name] = brier_score_loss(y_val_oof, oof_slice)
-
-        # Identification du meilleur modèle individuel (Champion)
-        self.best_model_name_ = min(brier_scores, key=brier_scores.get)
-
-        # 3. Optimisation des poids de Blending (convexe sur Brier)
-        X_oof_matrix = np.column_stack([oof_preds[name][first_val_idx:] for name in base_models])
-
-        def brier_objective(weights):
-            w = np.array(weights)
-            w = w / np.sum(w)
-            pred = sum(w[i] * X_oof_matrix[:, i] for i in range(len(w)))
-            return brier_score_loss(y_val_oof, pred)
-
+        # 3. Poids égaux pour aller plus vite (au lieu du blending OOF)
         n_models = len(base_models)
-        init_w = [1.0 / n_models] * n_models
-        bounds = [(0, 1) for _ in range(n_models)]
-        cons = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
-        opt_res = minimize(brier_objective, init_w, bounds=bounds, constraints=cons)
-        self.weights_ = opt_res.x / np.sum(opt_res.x)
+        self.weights_ = np.array([1.0 / n_models] * n_models)
+        self.best_model_name_ = 'CatBoost' # Default fallback
 
         return self
 

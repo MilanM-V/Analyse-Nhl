@@ -77,7 +77,7 @@ def generate_correlated_parlays(
                     "cote_totale": combined_odds,
                     "proba_jointe": round(joint_prob, 3),
                     "ev": round(combined_ev, 3),
-                    "mise": min(0.5, max_stake),
+                    "mise": 0.25,  # Mise fixée à 0.25U pour les paris Fun/Combinés (Phase 4)
                     "note": f"Synergie {'PP1' if is_joint_pp1 else 'Ligne 5v5'}"
                 })
                 
@@ -135,7 +135,7 @@ def generate_dual_assist_parlays(
                 "cote_totale": combined_odds,
                 "proba_jointe": round(prob_joint, 3),
                 "ev": round(combined_ev, 3),
-                "mise": min(1.0, max_stake),
+                "mise": 0.25,  # Mise fixée à 0.25U pour les paris Fun/Combinés (Phase 4)
                 "note": "Indépendance parfaite + Double Edge"
             })
             break  # On ne retient que le meilleur duo pour ne pas sur-exposer

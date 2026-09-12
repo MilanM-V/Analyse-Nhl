@@ -38,19 +38,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(ROOT, "bot_database.db")
 
 FEATURES_BUT = [
-    'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10', 'l10_g',
-    'season_g', 'season_pts', 'ixg_x_hdcf', 'sog_x_atoi',
-    'is_top6', 'prior_g60', 'prior_sog60', 'prior_sh_pct',
-    'opp_xga_60', 'opp_hdca_60', 'opp_goalie_gsax_60', 'team_xg_60',
-    'ixg_x_opp_xga', 'is_home', 'implied_prob', 'goalie_weakness'
+    'ixg_l10', 'sog_l10', 'atoi_l10', 'l10_g', 'l10_a', 
+    'hdcf_l10', 'season_g', 'season_a', 'season_pts', 'sog_x_atoi', 'ixg_x_hdcf',
+    'ga_g', 'hdca_g', 'pp1', 'is_home', 'is_b2b', 'opp_is_b2b', 'opp_goalie_gsax_60',
+    'consec_goals', 'linemate_synergy', 'team_scoring_env', 'ixg_x_ga'
 ]
 FEATURES_AST = [
-    'ixg_l10', 'hdcf_l10', 'sog_l10', 'atoi_l10', 'l10_g', 'l10_a',
-    'season_g', 'season_a', 'season_pts', 'ixg_x_hdcf', 'sog_x_atoi',
-    'is_top6', 'prior_g60', 'prior_a60', 'prior_sog60',
-    'opp_xga_60', 'opp_hdca_60', 'opp_goalie_gsax_60', 'team_xg_60',
-    'ixg_x_opp_xga', 'is_home', 'implied_prob', 'goalie_weakness'
+    'ixg_l10', 'sog_l10', 'atoi_l10', 'l10_g', 'l10_a', 
+    'hdcf_l10', 'season_g', 'season_a', 'season_pts', 'sog_x_atoi', 'ixg_x_hdcf',
+    'ga_g', 'hdca_g', 'pp1', 'is_home', 'is_b2b', 'opp_is_b2b', 'opp_goalie_gsax_60',
+    'consec_goals', 'linemate_synergy', 'team_scoring_env', 'ixg_x_ga'
 ]
+FEATURES_PTS = FEATURES_AST.copy()
 
 # Minimum de jours d'historique avant de commencer à prédire
 MIN_TRAIN_SAMPLES = 200
@@ -58,90 +57,93 @@ MIN_TRAIN_SAMPLES = 200
 RETRAIN_INTERVAL = 7
 
 
+import unicodedata
+import string
+
+def normalize_name(name):
+    if not isinstance(name, str): return ""
+    name = ''.join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
+    name = name.lower()
+    for p in string.punctuation: name = name.replace(p, ' ')
+    parts = name.split()
+    if len(parts) >= 2: return f"{parts[0][0]} {' '.join(parts[1:])}"
+    return name.replace(' ', '')
+
 def load_all_data():
-    """Charge le super-dataset historique (300K+ lignes) + les cotes réelles depuis sqlite."""
+    """Charge le super-dataset historique (300K+ lignes) + les cotes réelles depuis sqlite & API Historique."""
     # 1. Charger le super-dataset
     parquet_path = os.path.join(ROOT, "data", "historical_dataset.parquet")
     print(f"  [DATA] Chargement de {parquet_path}...")
     df = pd.read_parquet(parquet_path)
     df['date'] = pd.to_datetime(df['date'])
     df = df.sort_values('date').reset_index(drop=True)
+    df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
+    df['player_norm'] = df['joueur'].apply(normalize_name)
 
-    # 2. Charger les cotes depuis la base de production
+    # 2. Charger les cotes depuis la base de production (bot_database)
     conn = sqlite3.connect(DB_PATH)
-    odds = {}
+    odds = {'but': pd.DataFrame(columns=['date', 'joueur', 'cote', 'result']), 
+            'ast': pd.DataFrame(columns=['date', 'joueur', 'cote', 'result']),
+            'pts': pd.DataFrame(columns=['date', 'joueur', 'cote', 'result'])}
     queries = [
         ("picks", "but", "but"),
         ("picks_assists", "ast", "assist"),
     ]
     for table, cat, target in queries:
         try:
-            q = (
-                f"SELECT date, joueur, cote, {target} as result "
-                f"FROM {table} WHERE cote IS NOT NULL AND cote > 1.05"
-            )
+            q = f"SELECT date, joueur, cote, {target} as result FROM {table} WHERE cote IS NOT NULL AND cote > 1.05"
             df_q = pd.read_sql(q, conn)
             df_q['date'] = pd.to_datetime(df_q['date']).dt.strftime('%Y-%m-%d')
             odds[cat] = df_q.drop_duplicates(subset=['date', 'joueur']).reset_index(drop=True)
         except Exception:
-            odds[cat] = pd.DataFrame()
-
-    try:
-        df_players_cote = pd.read_sql(
-            "SELECT date, joueur, cote FROM players WHERE cote IS NOT NULL AND cote > 1.05",
-            conn
-        )
-        df_players_cote['date'] = pd.to_datetime(df_players_cote['date']).dt.strftime('%Y-%m-%d')
-        df_players_cote = df_players_cote.drop_duplicates(subset=['date', 'joueur']).reset_index(drop=True)
-    except Exception:
-        df_players_cote = pd.DataFrame()
+            pass
     conn.close()
 
-    # 3. Unifier les cotes
-    n_picks_but = len(odds.get('but', []))
-    n_picks_ast = len(odds.get('ast', []))
-    n_players_cote = len(df_players_cote)
-    print(f"  [COTES] Source picks(but): {n_picks_but} | picks_assists: {n_picks_ast} | players.cote: {n_players_cote}")
-
-    all_odds_parts = []
-    for cat_key in ['but', 'ast']:
-        if not odds.get(cat_key, pd.DataFrame()).empty:
-            part = odds[cat_key][['date', 'joueur', 'cote']].copy()
-            part['source'] = cat_key
-            all_odds_parts.append(part)
-    if not df_players_cote.empty:
-        part = df_players_cote[['date', 'joueur', 'cote']].copy()
-        part['source'] = 'players'
-        all_odds_parts.append(part)
-
-    if all_odds_parts:
-        all_odds_unified = pd.concat(all_odds_parts, ignore_index=True)
-        all_odds_unified = all_odds_unified.drop_duplicates(subset=['date', 'joueur'], keep='first')
-    else:
-        all_odds_unified = pd.DataFrame(columns=['date', 'joueur', 'cote', 'source'])
-
-    print(f"  [COTES] Total cotes unifiées (dédupliquées): {len(all_odds_unified)}")
-
-    # 4. Injecter implied_prob dans df (pour les features du modèle)
-    df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
-    df = df.merge(
-        all_odds_unified[['date', 'joueur', 'cote']].rename(columns={'date': 'date_str', 'cote': 'cote_merged'}),
-        on=['date_str', 'joueur'], how='left'
-    )
-    
-    if 'cote' in df.columns:
-        df['cote_final'] = df['cote_merged'].combine_first(pd.to_numeric(df['cote'], errors='coerce'))
-    else:
-        df['cote_final'] = df['cote_merged']
+    # 3. Charger les cotes historiques The-Odds-API
+    hist_odds_path = os.path.join(ROOT, "data", "odds", "historical_odds_parsed.csv")
+    if os.path.exists(hist_odds_path):
+        df_hist_odds = pd.read_csv(hist_odds_path)
+        print(f"  [COTES] Chargement de {len(df_hist_odds)} cotes historiques depuis l'API.")
         
-    df['implied_prob'] = np.where(
-        (df['cote_final'] > 1.05) & (df['cote_final'].notna()),
-        1.0 / df['cote_final'], 0.0
-    )
+        # Séparer but, ast et pts
+        df_hist_but = df_hist_odds[df_hist_odds['market'] == 'but'].copy()
+        df_hist_ast = df_hist_odds[df_hist_odds['market'] == 'ast'].copy()
+        df_hist_pts = df_hist_odds[df_hist_odds['market'] == 'pts'].copy()
+        
+        df_unique = df[['date_str', 'player_norm', 'joueur']].drop_duplicates()
+        
+        for df_h, cat in [(df_hist_but, 'but'), (df_hist_ast, 'ast'), (df_hist_pts, 'pts')]:
+            merged = df_h.merge(df_unique, left_on=['date', 'player_norm'], right_on=['date_str', 'player_norm'], how='inner')
+            merged = merged[['date_str', 'joueur', 'median_odds']].rename(columns={'date_str': 'date', 'median_odds': 'cote'})
+            merged['result'] = 0 # Placeholder, on a les vrais target dans df de toute facon
+            
+            # Ajouter aux odds de prod existantes
+            odds[cat] = pd.concat([odds[cat], merged], ignore_index=True).drop_duplicates(subset=['date', 'joueur'], keep='first')
+            
+    print(f"  [COTES] Source unifiée picks(but): {len(odds['but'])} | picks_assists: {len(odds['ast'])} | picks_points: {len(odds['pts'])}")
+
+    # 4. Injecter implied_prob_but, implied_prob_ast, implied_prob_pts dans df (pour les features du modèle)
+    df = df.merge(odds['but'][['date', 'joueur', 'cote']].rename(columns={'date': 'date_str', 'cote': 'cote_but'}), on=['date_str', 'joueur'], how='left')
+    df = df.merge(odds['ast'][['date', 'joueur', 'cote']].rename(columns={'date': 'date_str', 'cote': 'cote_ast'}), on=['date_str', 'joueur'], how='left')
+    df = df.merge(odds['pts'][['date', 'joueur', 'cote']].rename(columns={'date': 'date_str', 'cote': 'cote_pts'}), on=['date_str', 'joueur'], how='left')
+
+    df['implied_prob_but'] = np.where(df['cote_but'].notna(), 1.0 / df['cote_but'], 0.0)
+    df['implied_prob_ast'] = np.where(df['cote_ast'].notna(), 1.0 / df['cote_ast'], 0.0)
+    df['implied_prob_pts'] = np.where(df['cote_pts'].notna(), 1.0 / df['cote_pts'], 0.0)
+    
+    # Pour le modèle, la feature s'appelle toujours 'implied_prob'. 
+    # Pendant le split, on va utiliser la probabilité du marché actuel (fait plus loin ou par le modèle).
+    # En fait, dans walk_forward, la colonne s'appelle 'implied_prob'.
+    # Il faudra écraser 'implied_prob' juste avant l'entraînement. 
+    # Pour l'instant, on laisse par défaut sur BUT.
+    df['implied_prob'] = df['implied_prob_but']
+    
+    # Générer target_pts
+    df['target_pts'] = ((df['I_F_goals'] + df['I_F_primaryAssists'] + df['I_F_secondaryAssists']) >= 1).astype(int)
+
     if 'goalie_weakness' not in df.columns:
         df['goalie_weakness'] = 0.08
 
-    # Nettoyage des positions
     if 'position' not in df.columns or df['position'].isnull().all():
         skaters_csv = os.path.join(ROOT, "data", "skaters.csv")
         if os.path.exists(skaters_csv):
@@ -150,7 +152,7 @@ def load_all_data():
         else:
             df['position'] = 'F'
 
-    return df, odds, all_odds_unified
+    return df, odds, pd.DataFrame()
 
 
 def kelly_eighth(proba: float, cote: float, cap: float = 2.0) -> float:
@@ -231,7 +233,7 @@ def walk_forward(df, all_odds_unified, features, target_col, cat_name,
 
             try:
                 if use_ensemble:
-                    current_model = NHLEnsembleClassifier(market=cat_name, mode='ensemble', n_splits=3)
+                    current_model = NHLEnsembleClassifier(market=cat_name, mode='ensemble', n_splits=2)
                     current_model.fit(X_past, y_past)
                 else:
                     scale_pos = (len(y_past) - sum(y_past)) / max(1, sum(y_past))
@@ -249,7 +251,10 @@ def walk_forward(df, all_odds_unified, features, target_col, cat_name,
 
                 last_train_date = day
                 n_retrains += 1
-            except Exception:
+                if n_retrains % 5 == 0:
+                    print(f"  [{cat_name.upper()}] Progession: {day} (Retrain #{n_retrains})")
+            except Exception as e:
+                print(f"  [{cat_name.upper()}] Erreur lors du retrain: {e}")
                 continue
 
         # Prédiction sur le jour J
@@ -261,18 +266,14 @@ def walk_forward(df, all_odds_unified, features, target_col, cat_name,
 
         # Matching avec les cotes réelles (format YYYY-MM-DD string)
         day_str = str(day)  # datetime.date -> 'YYYY-MM-DD'
-        result_col = 'assist' if 'ast' in target_col else 'but'
-
+        
+        # Phase 1: Collecter tous les paris potentiels du jour
+        daily_bets = []
         for idx_in_today, (_, row) in enumerate(df_today.iterrows()):
             proba = float(probas[idx_in_today])
             joueur = row['joueur']
 
-            result_val = pd.to_numeric(
-                row.get(result_col, 0), errors='coerce'
-            )
-            if pd.isna(result_val):
-                continue
-            result_int = int(result_val > 0)
+            result_int = int(row[target_col])
 
             # Chercher la cote dans le DataFrame unifié
             odds_match = all_odds_unified[
@@ -283,25 +284,64 @@ def walk_forward(df, all_odds_unified, features, target_col, cat_name,
             if odds_match.empty:
                 continue
 
-            n_with_odds += 1
             cote = float(odds_match.iloc[0]['cote'])
+            # [FIX-BUG-2] Plafonner les cotes extrêmes qui détruisent le P&L (max 25.0)
+            if cote > 25.0:
+                continue
+                
+            # [PHASE 1] Filtre de sûreté : on ignore si la probabilité de base est trop faible
+            # Uniquement pour BUT (l'application sur AST tuait le ROI)
+            if cat_name.lower() == 'but' and proba < 0.12:
+                continue
+
+            n_with_odds += 1
             ev = proba * cote - 1.0
 
             required_ev = get_adaptive_ev_threshold(cote, ev_threshold) if adaptive_ev else ev_threshold
 
             if ev >= required_ev:
-                mise = kelly_eighth(proba, cote)
+                mise = kelly_eighth(proba, cote, cap=2.0)
                 won = result_int > 0
                 gain = (cote * mise - mise) if won else -mise
                 n_ev_passed += 1
 
-                results.append({
+                is_safe = proba >= 0.60 or ev >= 0.20
+                daily_bets.append({
                     'date': day, 'joueur': joueur, 'cat': cat_name,
                     'proba': proba, 'cote': cote, 'ev': ev,
                     'mise': mise, 'gain': gain, 'won': won,
+                    'is_safe': is_safe
                 })
             else:
                 n_ev_rejected += 1
+                
+        # Phase 2: Appliquer les limites de bankroll (BUG-5)
+        MAX_DAILY_BETS = 15
+        MAX_DAILY_EXPOSURE = 20.0
+        
+        if daily_bets:
+            # Trier par EV décroissant pour garder les meilleurs paris
+            daily_bets.sort(key=lambda x: x['ev'], reverse=True)
+            
+            total_exposure = 0.0
+            accepted_bets = []
+            
+            for bet in daily_bets:
+                if len(accepted_bets) >= MAX_DAILY_BETS:
+                    break
+                
+                # Ajuster la mise si on dépasse la limite d'exposition
+                if total_exposure + bet['mise'] > MAX_DAILY_EXPOSURE:
+                    allowed_mise = MAX_DAILY_EXPOSURE - total_exposure
+                    if allowed_mise < 0.5:
+                        break # Pas assez de budget pour ce pari (mise min 0.5)
+                    bet['mise'] = allowed_mise
+                    bet['gain'] = (bet['cote'] * bet['mise'] - bet['mise']) if bet['won'] else -bet['mise']
+                    
+                total_exposure += bet['mise']
+                accepted_bets.append(bet)
+                
+            results.extend(accepted_bets)
 
     print(f"  Re-entraînements: {n_retrains}")
     print(f"  Joueurs avec cote trouvée: {n_with_odds}")
@@ -319,14 +359,18 @@ def run_full_backtest(use_ensemble: bool = False, adaptive_ev: bool = False):
     configs = [
         ('but', FEATURES_BUT, 'target_but'),
         ('ast', FEATURES_AST, 'target_ast'),
+        ('pts', FEATURES_PTS, 'target_pts'),
     ]
 
     for cat, features, target_col in configs:
         # Règle de production : les défenseurs sont interdits sur les Buteurs (market_filter.py)
-        df_cat = df[df['position'] != 'D'].copy() if cat == 'but' else df
+        df_cat = df[df['position'] != 'D'].copy() if cat == 'but' else df.copy()
+        
+        # S'assurer d'utiliser la bonne probabilité implicite pour ce marché
+        df_cat['implied_prob'] = df_cat[f'implied_prob_{cat}']
 
         results = walk_forward(
-            df_cat, all_odds_unified, features, target_col, cat,
+            df_cat, odds[cat], features, target_col, cat,
             use_ensemble=use_ensemble, adaptive_ev=adaptive_ev
         )
         if not results.empty:
@@ -387,11 +431,31 @@ def run_full_backtest(use_ensemble: bool = False, adaptive_ev: bool = False):
     print(f"    Drawdown Max:   {df_all['drawdown'].min():.2f} U")
     print(f"    Sharpe Ratio:   {sharpe:.3f}")
 
+    # Sauvegarde des prédictions pour le simulateur de combinés
+    csv_path = os.path.join(ROOT, "data", "backtest_predictions.csv")
+    df_all.to_csv(csv_path, index=False)
+    print(f"\n  [SAUVEGARDE] Prédictions exportées vers {csv_path} pour l'analyse des combinés.")
+
+    # --- PARIS SAFE ---
+    df_safe = df_all[df_all['is_safe'] == True]
+    if not df_safe.empty:
+        safe_mise = df_safe['mise'].sum()
+        safe_gain = df_safe['gain'].sum()
+        safe_roi = (safe_gain / safe_mise * 100) if safe_mise > 0 else 0
+        safe_wr = (df_safe['won'].sum() / len(df_safe) * 100)
+        print(f"\n  {'-' * 50}")
+        print(f"  PARIS SAFE (Proba >= 60% OU EV >= 20%)")
+        print(f"  {'-' * 50}")
+        print(f"    Paris Total:    {len(df_safe)}")
+        print(f"    Win Rate:       {safe_wr:.1f}%")
+        print(f"    P&L Final:      {safe_gain:+.2f} U")
+        print(f"    ROI Safe:       {safe_roi:+.1f}%")
+
     # P&L cumulé par semaine (pour visualiser la tendance)
-    df_all['week'] = pd.to_datetime(
-        df_all['date']
-    ).dt.isocalendar().week.astype(int)
-    weekly = df_all.groupby('week')['gain'].sum()
+    # [FIX-BUG-3] Utiliser year et week pour ne pas fusionner les années
+    df_all['year'] = pd.to_datetime(df_all['date']).dt.isocalendar().year
+    df_all['week'] = pd.to_datetime(df_all['date']).dt.isocalendar().week
+    weekly = df_all.groupby(['year', 'week'])['gain'].sum()
     winning_weeks = (weekly > 0).sum()
     total_weeks = len(weekly)
     print(f"    Semaines +:     {winning_weeks}/{total_weeks} "

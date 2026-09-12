@@ -460,11 +460,12 @@ class NhlBot(BaseSportBot):
                     proba_but = float(ml_models['but']['model'].predict_proba(X_player)[0, 1])
                     p["Proba"] = proba_but
                     
-                    # Update all_evaluated_players score
-                    for ep in all_evaluated_players:
-                        if ep["Joueur"] == p["Joueur"]: ep["Score_But"] = proba_but
+                    # Filtre strict Buteur (Phase 4)
+                    if proba_but >= 0.15:
+                        for ep in all_evaluated_players:
+                            if ep["Joueur"] == p["Joueur"]: ep["Score_But"] = proba_but
 
-                    final_picks_but.append(p)
+                        final_picks_but.append(p)
 
         for p in candidates_ast:
             odds_data = odds_map.get(p["Joueur"], {}).get("ASSISTS", {})
