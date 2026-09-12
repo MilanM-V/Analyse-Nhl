@@ -198,11 +198,10 @@ async def fetch_nhl_odds(players_map: Dict[str, str]) -> Dict[str, Dict[str, flo
     # Récupérer en parallèle les 3 marchés
     tasks = [
         OddsAPIClient.fetch_odds('icehockey_nhl', 'player_goal_scorer_anytime', players_map),
-        OddsAPIClient.fetch_odds('icehockey_nhl', 'player_assists', players_map),
-        OddsAPIClient.fetch_odds('icehockey_nhl', 'player_points', players_map)
+        OddsAPIClient.fetch_odds('icehockey_nhl', 'player_assists', players_map)
     ]
     
-    res_buteur, res_assist, res_points = await asyncio.gather(*tasks)
+    res_buteur, res_assist = await asyncio.gather(*tasks)
     
     # Fusion des résultats
     final_results = {}
@@ -216,10 +215,6 @@ async def fetch_nhl_odds(players_map: Dict[str, str]) -> Dict[str, Dict[str, flo
             data_ast = res_assist[name]['ASSISTS']
             final_results[name]['PASSEUR'] = data_ast
             final_results[name]['ASSISTS'] = data_ast
-        if name in res_points and 'POINTS' in res_points[name]:
-            data_pts = res_points[name]['POINTS']
-            final_results[name]['POINTEUR'] = data_pts
-            final_results[name]['POINTS'] = data_pts
             
     return final_results
 
