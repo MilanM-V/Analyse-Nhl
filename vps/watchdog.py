@@ -25,9 +25,14 @@ from typing import Dict, Set, Optional
 # ==========================================
 # CONFIG
 # ==========================================
-REPO_DIR = "/opt/Analyse-Nhl-test"
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VENV_PYTHON = f"{REPO_DIR}/venv/bin/python3"
-GIT_BRANCH = "test"
+
+try:
+    _r = subprocess.run(["git", "branch", "--show-current"], cwd=REPO_DIR, capture_output=True, text=True)
+    GIT_BRANCH = _r.stdout.strip() or "main"
+except Exception:
+    GIT_BRANCH = "main"
 CHECK_INTERVAL = 900  # 15 minutes
 LOG_FILE = f"{REPO_DIR}/watchdog.log"
 
