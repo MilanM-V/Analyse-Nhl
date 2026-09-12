@@ -40,7 +40,7 @@ class OddsAPIClient:
             # Alerte si on passe sous les 50 crédits (et qu'on ne l'a pas encore envoyée)
             if remaining < 50 and not cls._quota_alert_sent:
                 logger.warning(f"⚠️ QUOTA THE ODDS API CRITIQUE : {remaining} restants !")
-                send_telegram(f"⚠️ <b>ALERTE THE ODDS API</b>\n\nIl ne te reste que <b>{remaining} requêtes</b> pour ce mois-ci sur ton compte The Odds API ! Le bot risque de s'arrêter bientôt.")
+                send_telegram(f"⚠️ <b>ALERTE THE ODDS API</b>\n\nIl ne te reste que <b>{remaining} requêtes</b> pour ce mois-ci sur ton compte The Odds API ! Le bot risque de s'arrêter bientôt.", recipient="admin")
                 cls._quota_alert_sent = True
                 
         except ValueError:

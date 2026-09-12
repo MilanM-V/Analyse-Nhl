@@ -179,7 +179,7 @@ class MlbBot(BaseSportBot):
                 )
                 
             logger.info("Envoi Telegram MLB...")
-            send_telegram(msg)
+            send_telegram(msg, recipient="admin")
         else:
             logger.info("Aucun value bet MLB trouvé pour ce scan.")
 

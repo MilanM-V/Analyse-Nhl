@@ -144,11 +144,28 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
 
     app = ApplicationBuilder().token(token).build()
 
+    def admin_only(func):
+        @wraps(func)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            admin_id = os.getenv("TELEGRAM_ADMIN_ID")
+            if not admin_id:
+                if update.message:
+                    await update.message.reply_text("❌ Sécurité: TELEGRAM_ADMIN_ID non configuré. Commandes bloquées.")
+                return
+            if str(update.effective_user.id) != admin_id:
+                if update.message:
+                    await update.message.reply_text("❌ Accès refusé : Vous n'êtes pas l'administrateur de ce bot.")
+                return
+            return await func(update, context)
+        return wrapper
+
+    @admin_only
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /start command."""
         if update.message:
-            await update.message.reply_text("🏒 NHL Bot V14 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/portfolio - Solde du portefeuille\n/force - Lancer un scan")
+            await update.message.reply_text("🏒 NHL Bot V14 Actif ! Commandes:\n/status - État du bot\n/roi - Statistiques SQLite\n/portfolio - Solde\n/deposit - Ajouter des fonds\n/withdraw - Retirer des fonds\n/pause - Stopper les envois\n/resume - Reprendre\n/force - Lancer un scan")
 
+    @admin_only
     async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /status command."""
         n_match_total = len(nhl_bot.matches_du_jour)
@@ -162,6 +179,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text(f"📊 Status:\nMatchs détectés aujourd'hui: {n_match_total}\nMatchs avec compos traitées: {n_match_traites}\nCompos en attente de vague: {compo_en_attente}")
 
+    @admin_only
     async def force_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /force command."""
         if update.message:
@@ -172,6 +190,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text("✅ Fin du scan forcé.")
 
+    @admin_only
     async def roi_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /roi command."""
         keyboard = [
@@ -188,6 +207,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text("⏳ Sélectionnez la période pour le calcul du ROI :", reply_markup=reply_markup)
 
+    @admin_only
     async def roi_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         await query.answer()
@@ -206,11 +226,17 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         msg = f"💰 <b>ROI ({label})</b> :\n\n"
         msg += get_roi_stats("picks", "but", days) + "\n"
         msg += get_roi_stats("picks_assists", "assist", days) + "\n"
-        msg += get_roi_stats("picks_points", "point", days)
+        
+        # Ajout du ROI des combinés (Phase 4)
+        try:
+            msg += get_roi_stats("parlays", "combo", days)
+        except Exception:
+            pass
         
         await query.edit_message_text(text=msg, parse_mode="HTML")
 
 
+    @admin_only
     async def backup_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /backup command."""
         if update.message:
@@ -224,6 +250,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         elif update.message:
             await update.message.reply_text("❌ Base de données introuvable.")
 
+    @admin_only
     async def resetdb_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /resetdb command."""
         if update.message:
@@ -234,6 +261,7 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text("✅ La base de données a été réinitialisée à 0.")
 
+    @admin_only
     async def portfolio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handler for /portfolio command."""
         import sys
@@ -263,6 +291,46 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
         if update.message:
             await update.message.reply_text(msg, parse_mode="HTML")
 
+    @admin_only
+    async def pause_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        nhl_bot.is_paused = True
+        if update.message:
+            await update.message.reply_text("⏸️ Le bot est en PAUSE. Le scan continuera en fond mais aucun pari ne sera envoyé.")
+
+    @admin_only
+    async def resume_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        nhl_bot.is_paused = False
+        if update.message:
+            await update.message.reply_text("▶️ Le bot a REPRIS. Les envois sont réactivés.")
+
+    @admin_only
+    async def deposit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not context.args:
+            await update.message.reply_text("Usage: /deposit <montant>")
+            return
+        try:
+            amount = float(context.args[0])
+            from shared.portfolio import Portfolio
+            p = Portfolio()
+            p.deposit(amount)
+            await update.message.reply_text(f"✅ {amount} U ajoutés. Nouveau solde : {p.get_balance():.2f} U")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erreur : {e}")
+
+    @admin_only
+    async def withdraw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not context.args:
+            await update.message.reply_text("Usage: /withdraw <montant>")
+            return
+        try:
+            amount = float(context.args[0])
+            from shared.portfolio import Portfolio
+            p = Portfolio()
+            p.withdraw(amount)
+            await update.message.reply_text(f"✅ {amount} U retirés. Nouveau solde : {p.get_balance():.2f} U")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erreur : {e}")
+
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("force", force_cmd))
@@ -271,6 +339,10 @@ def create_telegram_app(nhl_bot: Any) -> Optional[Application]:
     app.add_handler(CommandHandler("backup", backup_cmd))
     app.add_handler(CommandHandler("resetdb", resetdb_cmd))
     app.add_handler(CommandHandler("portfolio", portfolio_cmd))
+    app.add_handler(CommandHandler("pause", pause_cmd))
+    app.add_handler(CommandHandler("resume", resume_cmd))
+    app.add_handler(CommandHandler("deposit", deposit_cmd))
+    app.add_handler(CommandHandler("withdraw", withdraw_cmd))
 
     async def job_scan_cycle(context: ContextTypes.DEFAULT_TYPE) -> None:
         """Periodic background job for scanning."""
