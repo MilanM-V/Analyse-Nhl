@@ -104,6 +104,36 @@ class Portfolio:
         conn.close()
         return exposure
 
+    def deposit(self, amount: float) -> float:
+        """Ajoute des fonds manuellement au solde."""
+        if amount <= 0: raise ValueError("Le montant doit être positif.")
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO portfolio
+               (timestamp, sport, player, market, cote, mise, gain, solde_apres, resolved)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (datetime.now().isoformat(), "deposit", "ADMIN", "DEPOSIT", 1.0, 0.0, amount, self.get_balance() + amount)
+        )
+        conn.commit()
+        conn.close()
+        return self.get_balance()
+
+    def withdraw(self, amount: float) -> float:
+        """Retire des fonds manuellement du solde."""
+        if amount <= 0: raise ValueError("Le montant doit être positif.")
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO portfolio
+               (timestamp, sport, player, market, cote, mise, gain, solde_apres, resolved)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (datetime.now().isoformat(), "withdraw", "ADMIN", "WITHDRAW", 1.0, 0.0, -amount, self.get_balance() - amount)
+        )
+        conn.commit()
+        conn.close()
+        return self.get_balance()
+
     def log_bet(
         self,
         sport: str,
