@@ -80,7 +80,7 @@ def main():
         logger.info("Le bot est en attente...")
 
         if telegram_app is not None:
-            from telegram.error import Conflict
+            from telegram.error import Conflict, NetworkError
             try:
                 telegram_app.run_polling(drop_pending_updates=True)
             except KeyboardInterrupt:
@@ -88,8 +88,10 @@ def main():
                 sys.exit(0)
             except Conflict:
                 logger.error("🛑 ERREUR CRITIQUE : Un autre bot utilise déjà ce token Telegram !")
-                logger.error("👉 Solution : Ferme tous tes autres terminaux/consoles qui font tourner le bot, puis relance.")
                 sys.exit(1)
+            except NetworkError as e:
+                logger.warning(f"⚠️ Déconnexion Telegram (NetworkError) : {e}. Redémarrage silencieux par le watchdog.")
+                sys.exit(1) # Le watchdog va relancer, mais on n'envoie pas de crash alert!
         else:
             # Mode sans Telegram : boucle de scan manuelle
             logger.info("Mode sans Telegram : boucle de scan toutes les 15 minutes.")
