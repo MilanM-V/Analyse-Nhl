@@ -47,7 +47,7 @@ LOG_FILE = f"{REPO_DIR}/watchdog.log"
 # Bots à gérer : {nom_sport: chemin du script relatif à REPO_DIR}
 SPORT_BOTS: Dict[str, str] = {
     "nhl": "nhl/main_bot.py",
-    "mlb": "mlb/main_bot.py",
+    # "mlb": "mlb/main_bot.py",  # Désactivé temporairement pour économiser les crédits API
     # "nba": "nba/main_bot.py",  # Décommenter quand prêt
 }
 
@@ -266,10 +266,13 @@ def send_watchdog_alert(message: str) -> None:
         message: Message HTML à envoyer.
     """
     token = os.environ.get("TELEGRAM_TOKEN")
-    # Envoi à l'Admin en priorité (pour ne pas polluer le channel public)
-    chat_id = os.environ.get("TELEGRAM_ADMIN_ID") or os.environ.get("TELEGRAM_CHAT_ID")
+    # Envoi strict à l'Admin. Aucun fallback sur le canal public.
+    chat_id = os.environ.get("TELEGRAM_ADMIN_ID")
+    
     if not token or not chat_id:
+        logger.error("TELEGRAM_ADMIN_ID manquant. Alerte Watchdog ignorée pour ne pas polluer le canal.")
         return
+        
     try:
         import requests
         requests.post(
@@ -298,10 +301,27 @@ def health_check(processes: Dict[str, Optional[subprocess.Popen]]) -> None:
             logger.warning(
                 f"⚠️ Bot {sport.upper()} mort (code {exit_code}), redémarrage..."
             )
-            send_watchdog_alert(
-                f"⚠️ Bot <b>{sport.upper()}</b> crashé (code {exit_code}) — "
-                f"Redémarrage automatique"
-            )
+            # Ne pas spammer Telegram si le bot a été arrêté proprement (0) ou via SIGTERM (-15 / 15)
+            if exit_code not in (0, 15, -15):
+                error_context = ""
+                stderr_path = os.path.join(REPO_DIR, f"{sport}_stderr.log")
+                if os.path.exists(stderr_path):
+                    try:
+                        with open(stderr_path, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            if lines:
+                                # Garde les 10 dernières lignes pour avoir la stacktrace
+                                last_lines = "".join(lines[-10:]).strip()
+                                # Échappement basique pour le mode HTML de Telegram
+                                last_lines = last_lines.replace("<", "&lt;").replace(">", "&gt;")
+                                error_context = f"\n\n<b>Log d'erreur ({sport}_stderr.log) :</b>\n<code>{last_lines}</code>"
+                    except:
+                        pass
+                        
+                send_watchdog_alert(
+                    f"⚠️ Bot <b>{sport.upper()}</b> crashé (code {exit_code}) — "
+                    f"Redémarrage automatique{error_context}"
+                )
             processes[sport] = start_bot(sport)
 
 
