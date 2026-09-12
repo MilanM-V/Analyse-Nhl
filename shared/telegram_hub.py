@@ -27,6 +27,7 @@ def send_telegram(
     parse_mode: str = "HTML",
     token: Optional[str] = None,
     chat_id: Optional[str] = None,
+    recipient: str = "channel",
 ) -> bool:
     """Envoie un message Telegram via HTTP POST direct.
 
@@ -34,16 +35,25 @@ def send_telegram(
         message: Le message à envoyer (HTML ou texte brut).
         parse_mode: Mode de parsing ('HTML' ou 'Markdown').
         token: Token du bot (par défaut: variable d'env TELEGRAM_TOKEN).
-        chat_id: ID du chat (par défaut: variable d'env TELEGRAM_CHAT_ID).
+        chat_id: ID du chat direct (écrase recipient si fourni).
+        recipient: "channel" ou "admin" (détermine la var d'env à utiliser).
 
     Returns:
         True si le message a été envoyé, False sinon.
     """
     token = token or os.getenv("TELEGRAM_TOKEN")
-    chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID")
+    
+    if not chat_id:
+        if recipient == "admin":
+            chat_id = os.getenv("TELEGRAM_ADMIN_ID")
+            if not chat_id:
+                # Fallback to chat_id if admin is not set
+                chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        else:
+            chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     if not token or not chat_id or token == "TELEGRAM_BOT_TOKEN":
-        logger.warning("[TelegramHub] Token ou Chat ID manquant — message ignoré.")
+        logger.warning(f"[TelegramHub] Token ou Chat ID manquant (recipient={recipient}) — message ignoré.")
         return False
 
     try:
@@ -56,7 +66,7 @@ def send_telegram(
         }
         resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
-        logger.info("[TelegramHub] Message envoyé avec succès.")
+        logger.info(f"[TelegramHub] Message envoyé avec succès au {recipient}.")
         return True
     except Exception as e:
         logger.error(f"[TelegramHub] Erreur d'envoi : {e}")
@@ -68,16 +78,7 @@ def send_crash_alert(
     context: str = "Bot Principal",
     sport: str = "",
 ) -> bool:
-    """Envoie une alerte crash d'urgence via Telegram.
-
-    Args:
-        error: L'exception qui a causé le crash.
-        context: Description de l'endroit du crash.
-        sport: Nom du sport (pour identifier le bot).
-
-    Returns:
-        True si l'alerte a été envoyée, False sinon.
-    """
+    """Envoie une alerte crash d'urgence via Telegram à l'Admin."""
     tb = traceback.format_exc()
     tb_short = tb[-500:] if len(tb) > 500 else tb
     sport_tag = f"[{sport.upper()}] " if sport else ""
@@ -90,7 +91,7 @@ def send_crash_alert(
 
     # POST direct sans retry pour maximiser la chance de livraison
     token = os.getenv("TELEGRAM_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = os.getenv("TELEGRAM_ADMIN_ID") or os.getenv("TELEGRAM_CHAT_ID")
 
     if not token or not chat_id:
         return False

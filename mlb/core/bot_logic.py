@@ -178,8 +178,8 @@ class MlbBot(BaseSportBot):
                     mise=p["Mise"]
                 )
                 
-            logger.info("Envoi Telegram MLB...")
-            send_telegram(msg)
+            logger.info("Envoi Telegram MLB désactivé par l'utilisateur.")
+            # send_telegram(msg, recipient="admin")
         else:
             logger.info("Aucun value bet MLB trouvé pour ce scan.")
 

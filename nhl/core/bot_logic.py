@@ -56,6 +56,7 @@ class NhlBot(BaseSportBot):
         self.log_path: str = './stats/picks_log.csv'
         self.players_log_path: str = './stats/players_log.csv'
         self.fichier_compos_temp: str = "compos_live.txt"
+        self.is_paused: bool = False
 
     @staticmethod
     def get_nhl_session_date() -> str:
@@ -214,6 +215,10 @@ class NhlBot(BaseSportBot):
 
     def run_scan_cycle(self) -> None:
         """Main periodic task: scans Flashscore, updates lineups, and triggers evaluation."""
+        if self.is_paused:
+            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] Bot en PAUSE. Scan ignoré.")
+            return
+
         if not self._scan_lock.acquire(blocking=False):
             logger.warning("Un scan est déjà en cours. Ignoré pour éviter les lancements multiples.")
             return
