@@ -266,10 +266,13 @@ def send_watchdog_alert(message: str) -> None:
         message: Message HTML à envoyer.
     """
     token = os.environ.get("TELEGRAM_TOKEN")
-    # Envoi à l'Admin en priorité (pour ne pas polluer le channel public)
-    chat_id = os.environ.get("TELEGRAM_ADMIN_ID") or os.environ.get("TELEGRAM_CHAT_ID")
+    # Envoi strict à l'Admin. Aucun fallback sur le canal public.
+    chat_id = os.environ.get("TELEGRAM_ADMIN_ID")
+    
     if not token or not chat_id:
+        logger.error("TELEGRAM_ADMIN_ID manquant. Alerte Watchdog ignorée pour ne pas polluer le canal.")
         return
+        
     try:
         import requests
         requests.post(

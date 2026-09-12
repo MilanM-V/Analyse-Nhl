@@ -47,8 +47,8 @@ def send_telegram(
         if recipient == "admin":
             chat_id = os.getenv("TELEGRAM_ADMIN_ID")
             if not chat_id:
-                # Fallback to chat_id if admin is not set
-                chat_id = os.getenv("TELEGRAM_CHAT_ID")
+                logger.warning("[TelegramHub] TELEGRAM_ADMIN_ID manquant. Message admin annulé (pas de fallback sur le canal public).")
+                return False
         else:
             chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
