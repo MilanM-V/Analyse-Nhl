@@ -44,12 +44,15 @@ def log_picks_to_db(
             "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
             "ixg": f.get("L10_ixG_G", 0), "hdcf": f.get("L10_iHDCF_G", 0), "sog": f.get("L10_SOG_G", 0),
             "atoi": f.get("ATOI", 0), "l10_g": f.get("L10_G_G", 0), "season_g": v5.get("G_GP", 0),
-            "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
-            "cf_pct": adv.get("CF_pct", 50), "hdca_g": adv.get("HDCA_G", 0),
-            "pk_pct": adv.get("PK%", 80), "rebounds": f.get("L10_Rebounds_G", 0),
-            "rush": f.get("L10_Rush_G", 0), "opp_b2b": adv.get("B2B", False),
-            "consec_goals": f.get("ConsecGoals", 0), "cote": p.get("Cote"),
-            "mise": p.get("MiseNum"), "game_mode": cfg.api.mode
+            "ga_g": adv.get("GA_G", 0), "hdca_g": adv.get("HDCA_G", 0),
+            "opp_b2b": adv.get("B2B", False), "consec_goals": f.get("ConsecGoals", 0),
+            "cote": p.get("Cote"), "mise": p.get("MiseNum"), "game_mode": cfg.api.mode,
+            "is_top6": bool(f.get("ATOI", 0) >= 17.0 or p["PP1"]),
+            "linemate_synergy": (v5.get("G_GP", 0) + v5.get("A_GP", 0)) if p["PP1"] else 0.0,
+            "team_scoring_env": adv.get("GA_G", 0) * adv.get("HDCA_G", 0) if adv else 0.0,
+            "prior_g60": f.get("Prior_G60", 0), "prior_a60": f.get("Prior_A60", 0),
+            "prior_sog60": f.get("Prior_SOG60", 0), "prior_sh_pct": f.get("Prior_SH_pct", 0),
+            "opp_xga_60": adv.get("Opp_xGA_60", 0) if adv else 0.0
         })
 
     for p in asts:
@@ -61,43 +64,38 @@ def log_picks_to_db(
             "adversaire": p["Adversaire"], "score": p.get("Proba", 0), "verdict": p["Categorie"],
             "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
             "atoi": f.get("ATOI", 0), "l10_a": f.get("L10_A_G", 0), "season_a": v5.get("A_GP", 0),
-            "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
-            "cf_pct": adv.get("CF_pct", 50), "pk_pct": adv.get("PK%", 80),
-            "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote"),
-            "mise": p.get("MiseNum"), "game_mode": cfg.api.mode
+            "ga_g": adv.get("GA_G", 0), "opp_b2b": adv.get("B2B", False),
+            "cote": p.get("Cote"), "mise": p.get("MiseNum"), "game_mode": cfg.api.mode,
+            "is_top6": bool(f.get("ATOI", 0) >= 17.0 or p["PP1"]),
+            "linemate_synergy": (v5.get("G_GP", 0) + v5.get("A_GP", 0)) if p["PP1"] else 0.0,
+            "team_scoring_env": adv.get("GA_G", 0) * adv.get("HDCA_G", 0) if adv else 0.0,
+            "prior_g60": f.get("Prior_G60", 0), "prior_a60": f.get("Prior_A60", 0),
+            "prior_sog60": f.get("Prior_SOG60", 0), "prior_sh_pct": f.get("Prior_SH_pct", 0),
+            "opp_xga_60": adv.get("Opp_xGA_60", 0) if adv else 0.0
         })
 
-    for p in pts:
-        f = ds.form_data.get(p["Joueur"], {})
-        v5 = ds.v5_data.get(p["Joueur"], {})
-        adv = ds.matchups.get(p["Adversaire"], {})
-        insert_pick("picks_points", {
-            "date": today, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"],
-            "adversaire": p["Adversaire"], "score": p.get("Proba", 0), "verdict": p["Categorie"],
-            "pp1": bool(p["PP1"]), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
-            "atoi": f.get("ATOI", 0), "l10_pts": f.get("L10_Pts_G", 0), "season_pts": v5.get("Pts_GP", 0),
-            "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0),
-            "cf_pct": adv.get("CF_pct", 50),
-            "opp_b2b": adv.get("B2B", False), "cote": p.get("Cote"),
-            "mise": p.get("MiseNum"), "game_mode": cfg.api.mode
-        })
+    # Marché Points supprimé tel que demandé par l'analyse.
 
     # Unified Player SQL Log
     for p in all_players:
         f, v5, adv = p["p_form"], p["p_v5"], p["adv_stats"]
         insert_player({
             "date": today, "vague": wave_label, "joueur": p["Joueur"], "equipe": p["Equipe"], "adversaire": p["Adversaire"],
-            "score_but": p["Score_But"], "score_assist": p["Score_Assist"], "score_point": p["Score_Point"],
-            "picked_but": p["Picked_But"], "picked_assist": p["Picked_Assist"], "picked_point": p["Picked_Point"],
+            "score_but": p["Score_But"], "score_assist": p["Score_Assist"],
+            "picked_but": p["Picked_But"], "picked_assist": p["Picked_Assist"],
             "pp1": "⭐" in f.get("PP1", ""), "backup": p["Backup"], "b2b": p["B2B"], "is_home": p["IsHome"],
             "ixg": f.get("L10_ixG_G", 0), "hdcf": f.get("L10_iHDCF_G", 0), "sog": f.get("L10_SOG_G", 0),
-            "atoi": f.get("ATOI", 0), "l10_g": f.get("L10_G_G", 0), "l10_a": f.get("L10_A_G", 0), "l10_pts": f.get("L10_Pts_G", 0),
-            "season_g": v5.get("G_GP", 0), "season_a": v5.get("A_GP", 0), "season_pts": v5.get("Pts_GP", 0),
-            "pdo": v5.get("PDO", 100), "ga_g": adv.get("GA_G", 0) if adv else 0,
-            "cf_pct": adv.get("CF_pct", 50) if adv else 50, "hdca_g": adv.get("HDCA_G", 0) if adv else 0,
-            "pk_pct": adv.get("PK%", 80) if adv else 80,
+            "atoi": f.get("ATOI", 0), "l10_g": f.get("L10_G_G", 0), "l10_a": f.get("L10_A_G", 0),
+            "season_g": v5.get("G_GP", 0), "season_a": v5.get("A_GP", 0),
+            "ga_g": adv.get("GA_G", 0) if adv else 0, "hdca_g": adv.get("HDCA_G", 0) if adv else 0,
             "consec_goals": f.get("ConsecGoals", 0), "game_mode": cfg.api.mode,
-            "cote": p.get("Cote"), "goalie_sv_pct": p.get("goalie_sv_pct")
+            "cote": p.get("Cote"), "goalie_sv_pct": p.get("goalie_sv_pct"),
+            "is_top6": bool(f.get("ATOI", 0) >= 17.0 or "⭐" in f.get("PP1", "")),
+            "linemate_synergy": (v5.get("G_GP", 0) + v5.get("A_GP", 0)) if "⭐" in f.get("PP1", "") else 0.0,
+            "team_scoring_env": (adv.get("GA_G", 0) * adv.get("HDCA_G", 0)) if adv else 0.0,
+            "prior_g60": f.get("Prior_G60", 0), "prior_a60": f.get("Prior_A60", 0),
+            "prior_sog60": f.get("Prior_SOG60", 0), "prior_sh_pct": f.get("Prior_SH_pct", 0),
+            "opp_xga_60": adv.get("Opp_xGA_60", 0) if adv else 0.0
         })
 
 
@@ -137,8 +135,7 @@ def log_picks_to_csv(
                 writer.writerow({k: format_csv(v) for k, v in {"date": today, "vague": wave_label, "joueur": p["Joueur"], "type": "BUT", "score": p.get("Proba", 0), "cote": p.get("Cote", ""), "but": ""}.items()})
             for p in asts:
                 writer.writerow({k: format_csv(v) for k, v in {"date": today, "vague": wave_label, "joueur": p["Joueur"], "type": "ASSIST", "score": p.get("Proba", 0), "cote": p.get("Cote", ""), "but": ""}.items()})
-            for p in pts:
-                writer.writerow({k: format_csv(v) for k, v in {"date": today, "vague": wave_label, "joueur": p["Joueur"], "type": "POINT", "score": p.get("Proba", 0), "cote": p.get("Cote", ""), "but": ""}.items()})
+    # CSV Logs (Points désactivés)
     except Exception as e:
         logger.error(f"Error writing to picks_log.csv: {e}")
 
@@ -146,10 +143,10 @@ def log_picks_to_csv(
     pl_exists = os.path.exists(players_log_path)
     try:
         with open(players_log_path, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=['date', 'vague', 'joueur', 'score_but', 'score_ast', 'score_pts'])
+            writer = csv.DictWriter(f, fieldnames=['date', 'vague', 'joueur', 'score_but', 'score_ast'])
             if not pl_exists:
                 writer.writeheader()
             for p in all_players:
-                writer.writerow({k: format_csv(v) for k, v in {"date": today, "vague": wave_label, "joueur": p["Joueur"], "score_but": p["Score_But"], "score_ast": p["Score_Assist"], "score_pts": p["Score_Point"]}.items()})
+                writer.writerow({k: format_csv(v) for k, v in {"date": today, "vague": wave_label, "joueur": p["Joueur"], "score_but": p["Score_But"], "score_ast": p["Score_Assist"]}.items()})
     except Exception as e:
         logger.error(f"Error writing to players_log.csv: {e}")

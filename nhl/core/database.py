@@ -17,19 +17,24 @@ def ensure_schema():
     """Vérifie et met à jour le schéma si nécessaire."""
     conn = get_connection()
     c = conn.cursor()
-    for table in ["picks", "players"]:
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN is_home BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN opp_b2b BOOLEAN DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN consec_goals INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+    for table in ["picks", "picks_assists", "players"]:
+        for col, col_type in [
+            ("is_home", "BOOLEAN DEFAULT 0"),
+            ("opp_b2b", "BOOLEAN DEFAULT 0"),
+            ("consec_goals", "INTEGER DEFAULT 0"),
+            ("is_top6", "BOOLEAN DEFAULT 0"),
+            ("linemate_synergy", "REAL DEFAULT 0"),
+            ("team_scoring_env", "REAL DEFAULT 0"),
+            ("prior_g60", "REAL DEFAULT 0"),
+            ("prior_a60", "REAL DEFAULT 0"),
+            ("prior_sog60", "REAL DEFAULT 0"),
+            ("prior_sh_pct", "REAL DEFAULT 0"),
+            ("opp_xga_60", "REAL DEFAULT 0")
+        ]:
+            try:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass
     conn.commit()
     conn.close()
 
@@ -48,7 +53,11 @@ def init_db():
             ixg REAL, hdcf REAL, sog REAL, atoi REAL, l10_g REAL, season_g REAL,
             pdo REAL, ga_g REAL, cf_pct REAL, hdca_g REAL, pk_pct REAL,
             rebounds REAL, rush REAL, is_home BOOLEAN, opp_b2b BOOLEAN,
-            consec_goals INTEGER, but INTEGER DEFAULT NULL
+            consec_goals INTEGER, but INTEGER DEFAULT NULL,
+            is_top6 BOOLEAN DEFAULT 0, linemate_synergy REAL DEFAULT 0,
+            team_scoring_env REAL DEFAULT 0, prior_g60 REAL DEFAULT 0,
+            prior_a60 REAL DEFAULT 0, prior_sog60 REAL DEFAULT 0,
+            prior_sh_pct REAL DEFAULT 0, opp_xga_60 REAL DEFAULT 0
         )
     ''')
 
@@ -58,9 +67,13 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT, vague TEXT, joueur TEXT, equipe TEXT, adversaire TEXT,
             score REAL, verdict TEXT, pp1 BOOLEAN, backup BOOLEAN, b2b BOOLEAN,
-            atoi REAL, l10_a REAL, season_a REAL, pdo REAL, ga_g REAL, 
-            cf_pct REAL, pk_pct REAL, is_home BOOLEAN, opp_b2b BOOLEAN,
-            assist INTEGER DEFAULT NULL
+            atoi REAL, l10_a REAL, season_a REAL,
+            pdo REAL, ga_g REAL, cf_pct REAL, pk_pct REAL,
+            is_home BOOLEAN, opp_b2b BOOLEAN, assist INTEGER DEFAULT NULL,
+            is_top6 BOOLEAN DEFAULT 0, linemate_synergy REAL DEFAULT 0,
+            team_scoring_env REAL DEFAULT 0, prior_g60 REAL DEFAULT 0,
+            prior_a60 REAL DEFAULT 0, prior_sog60 REAL DEFAULT 0,
+            prior_sh_pct REAL DEFAULT 0, opp_xga_60 REAL DEFAULT 0
         )
     ''')
 
@@ -83,12 +96,17 @@ def init_db():
             date TEXT, vague TEXT, joueur TEXT, equipe TEXT, adversaire TEXT,
             score_but REAL, score_assist REAL, score_point REAL,
             picked_but BOOLEAN, picked_assist BOOLEAN, picked_point BOOLEAN,
-            pp1 BOOLEAN, backup BOOLEAN, b2b BOOLEAN, is_home BOOLEAN,
+            pp1 BOOLEAN, backup BOOLEAN, b2b BOOLEAN,
             ixg REAL, hdcf REAL, sog REAL, atoi REAL,
             l10_g REAL, l10_a REAL, l10_pts REAL,
             season_g REAL, season_a REAL, season_pts REAL,
-            pdo REAL, ga_g REAL, cf_pct REAL, hdca_g REAL, pk_pct REAL,
-            consec_goals INTEGER DEFAULT 0,
+            pdo REAL, ga_g REAL, cf_pct REAL, hdca_g REAL,
+            pk_pct REAL, consec_goals INTEGER, game_mode TEXT,
+            cote REAL, goalie_sv_pct REAL,
+            is_top6 BOOLEAN DEFAULT 0, linemate_synergy REAL DEFAULT 0,
+            team_scoring_env REAL DEFAULT 0, prior_g60 REAL DEFAULT 0,
+            prior_a60 REAL DEFAULT 0, prior_sog60 REAL DEFAULT 0,
+            prior_sh_pct REAL DEFAULT 0, opp_xga_60 REAL DEFAULT 0,
             but INTEGER DEFAULT NULL, assist INTEGER DEFAULT NULL, point INTEGER DEFAULT NULL
         )
     ''')
