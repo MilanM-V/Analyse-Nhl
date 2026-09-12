@@ -47,7 +47,7 @@ LOG_FILE = f"{REPO_DIR}/watchdog.log"
 # Bots à gérer : {nom_sport: chemin du script relatif à REPO_DIR}
 SPORT_BOTS: Dict[str, str] = {
     "nhl": "nhl/main_bot.py",
-    "mlb": "mlb/main_bot.py",
+    # "mlb": "mlb/main_bot.py",  # Désactivé temporairement pour économiser les crédits API
     # "nba": "nba/main_bot.py",  # Décommenter quand prêt
 }
 
