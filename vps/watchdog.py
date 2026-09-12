@@ -35,7 +35,10 @@ if os.path.exists(_env_path):
 # ==========================================
 # CONFIG
 # ==========================================
-REPO_DIR = os.environ.get("REPO_DIR", "/opt/Analyse-Nhl-test")
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_REPO_DIR = os.path.dirname(_SCRIPT_DIR)
+
+REPO_DIR = os.environ.get("REPO_DIR", _DEFAULT_REPO_DIR)
 VENV_PYTHON = os.environ.get("VENV_PYTHON", f"{REPO_DIR}/venv/bin/python3")
 GIT_BRANCH = os.environ.get("GIT_BRANCH", "main")  # "main" par défaut sur le serveur de prod
 CHECK_INTERVAL = 900  # 15 minutes
@@ -263,7 +266,8 @@ def send_watchdog_alert(message: str) -> None:
         message: Message HTML à envoyer.
     """
     token = os.environ.get("TELEGRAM_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    # Envoi à l'Admin en priorité (pour ne pas polluer le channel public)
+    chat_id = os.environ.get("TELEGRAM_ADMIN_ID") or os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return
     try:
