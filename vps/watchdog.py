@@ -300,9 +300,24 @@ def health_check(processes: Dict[str, Optional[subprocess.Popen]]) -> None:
             )
             # Ne pas spammer Telegram si le bot a été arrêté proprement (0) ou via SIGTERM (-15 / 15)
             if exit_code not in (0, 15, -15):
+                error_context = ""
+                stderr_path = os.path.join(REPO_DIR, f"{sport}_stderr.log")
+                if os.path.exists(stderr_path):
+                    try:
+                        with open(stderr_path, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            if lines:
+                                # Garde les 10 dernières lignes pour avoir la stacktrace
+                                last_lines = "".join(lines[-10:]).strip()
+                                # Échappement basique pour le mode HTML de Telegram
+                                last_lines = last_lines.replace("<", "&lt;").replace(">", "&gt;")
+                                error_context = f"\n\n<b>Log d'erreur ({sport}_stderr.log) :</b>\n<code>{last_lines}</code>"
+                    except:
+                        pass
+                        
                 send_watchdog_alert(
                     f"⚠️ Bot <b>{sport.upper()}</b> crashé (code {exit_code}) — "
-                    f"Redémarrage automatique"
+                    f"Redémarrage automatique{error_context}"
                 )
             processes[sport] = start_bot(sport)
 
