@@ -386,6 +386,7 @@ def main() -> None:
             # Git pull
             if pull_latest():
                 logger.info("✅ Code mis à jour.")
+                last_commit = remote_commit  # FIX: Empêche la boucle infinie !
             else:
                 logger.error(
                     "❌ git pull échoué, redémarrage avec le code actuel."
