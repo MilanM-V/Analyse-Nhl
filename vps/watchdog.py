@@ -22,12 +22,22 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from typing import Dict, Set, Optional
 
+# Charger .env s'il existe pour la configuration du Watchdog
+_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+if os.path.exists(_env_path):
+    with open(_env_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                os.environ[key.strip()] = value.strip()
+
 # ==========================================
 # CONFIG
 # ==========================================
-REPO_DIR = "/opt/Analyse-Nhl-test"
-VENV_PYTHON = f"{REPO_DIR}/venv/bin/python3"
-GIT_BRANCH = "test"
+REPO_DIR = os.environ.get("REPO_DIR", "/opt/Analyse-Nhl-test")
+VENV_PYTHON = os.environ.get("VENV_PYTHON", f"{REPO_DIR}/venv/bin/python3")
+GIT_BRANCH = os.environ.get("GIT_BRANCH", "main")  # "main" par défaut sur le serveur de prod
 CHECK_INTERVAL = 900  # 15 minutes
 LOG_FILE = f"{REPO_DIR}/watchdog.log"
 
@@ -297,16 +307,6 @@ def health_check(processes: Dict[str, Optional[subprocess.Popen]]) -> None:
 
 def main() -> None:
     """Boucle principale du watchdog multi-sport."""
-    # Charger les variables d'environnement
-    env_path = os.path.join(REPO_DIR, ".env")
-    if os.path.exists(env_path):
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, _, value = line.partition("=")
-                    os.environ[key.strip()] = value.strip()
-
     logger.info("=" * 55)
     logger.info(f"  WATCHDOG MULTI-SPORT DÉMARRÉ (branche: {GIT_BRANCH})")
     logger.info(f"  Sports configurés : {list(SPORT_BOTS.keys())}")
